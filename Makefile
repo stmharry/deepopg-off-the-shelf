@@ -1,5 +1,4 @@
 PYTHONPATH = ./MaskDINO:.
-PRETRAINED_MODEL_DIR = /mnt/hdd/PANO/models/pretrained
 
 PY = PYTHONPATH=$(PYTHONPATH) python
 
@@ -10,3 +9,6 @@ train: PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
 train:
 	$(PY) main.py \
 		--config-file configs/config.yaml
+
+clean:
+	-rm -rf output
