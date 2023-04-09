@@ -14,10 +14,13 @@ from detectron2.engine import default_argument_parser, launch
 from detectron2.utils.visualizer import VisImage, Visualizer
 from train_net import main
 
+np.int = np.int64  # type: ignore
+np.float = np.float32  # type: ignore
+
 
 class SegmentationV3Data(TypedDict):
-    file_name: Path
-    sem_seg_file_name: Path
+    file_name: str
+    sem_seg_file_name: str
     height: int
     width: int
     image_id: str
@@ -75,8 +78,8 @@ class SegmentationV3(object):
 
             dataset.append(
                 SegmentationV3Data(
-                    file_name=file_name,
-                    sem_seg_file_name=sem_seg_file_name,
+                    file_name=str(file_name),
+                    sem_seg_file_name=str(sem_seg_file_name),
                     height=height,
                     width=width,
                     image_id=name,
@@ -112,14 +115,15 @@ class SegmentationV3(object):
                     .astype(np.uint8)
                 ),
                 ignore_label=0,
+                evaluator_type="sem_seg",
             )
 
     def debug(self, split: str = "pano_train", num: int = 4):
-        dataset: List[SegmentationV3Data] = DatasetCatalog.get(split)
-        metadata: Dict = MetadataCatalog.get(split)
+        dataset: List[SegmentationV3Data] = DatasetCatalog[split]
+        metadata: Dict = MetadataCatalog[split]
 
         for data in dataset[:num]:
-            file_name: Path = data["file_name"]
+            file_name: Path = Path(data["file_name"])
 
             image_bw: np.ndarray = iio.imread(file_name)
             image_rgb: np.ndarray = cv2.cvtColor(image_bw, cv2.COLOR_GRAY2RGB)
@@ -132,7 +136,7 @@ class SegmentationV3(object):
 
 if __name__ == "__main__":
     data = SegmentationV3(root_dir="/mnt/hdd/PANO/data")
-    data.debug()
+    # data.debug()
 
     parser = default_argument_parser()
     parser.add_argument("--eval_only", action="store_true")
