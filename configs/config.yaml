@@ -1,75 +1,93 @@
 VERSION: 2
+VIS_PERIOD: 10
 
 MODEL:
-  BACKBONE:
-    FREEZE_AT: 0
-    NAME: "build_resnet_backbone"
+  META_ARCHITECTURE: "MaskDINO"
   WEIGHTS: "https://github.com/IDEA-Research/detrex-storage/releases/download/maskdino-v0.1.0/maskdino_r50_50ep_100q_celoss_hid1024_3s_semantic_cityscapes_79.8miou.pth"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
-  RESNETS:
-    DEPTH: 50
-    STEM_TYPE: "basic" # not used
-    STEM_OUT_CHANNELS: 64
-    STRIDE_IN_1X1: False
-    OUT_FEATURES: ["res2", "res3", "res4", "res5"]
-    RES5_MULTI_GRID: [1, 1, 1] # not used
 
-  META_ARCHITECTURE: "MaskDINO"
+  BACKBONE:
+    NAME: "build_resnet_backbone"
+    FREEZE_AT: 0
+
   SEM_SEG_HEAD:
     NAME: "MaskDINOHead"
+    IN_FEATURES: ["res2", "res3", "res4", "res5"]
     IGNORE_VALUE: 255
     NUM_CLASSES: 10
-    LOSS_WEIGHT: 1.0
     CONVS_DIM: 256
-    MASK_DIM: 256
+    COMMON_STRIDE: 4
     NORM: "GN"
-    PIXEL_DECODER_NAME: "MaskDINOEncoder"
+    LOSS_WEIGHT: 1.0
+
+    # [MaskDINO] MSDeformAttn encoder config
+    DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES: ["res3", "res4", "res5"]
     DIM_FEEDFORWARD: 1024
     NUM_FEATURE_LEVELS: 3
     TOTAL_NUM_FEATURE_LEVELS: 3
-    IN_FEATURES: ["res2", "res3", "res4", "res5"]
-    DEFORMABLE_TRANSFORMER_ENCODER_IN_FEATURES: ["res3", "res4", "res5"]
-    COMMON_STRIDE: 4
+
+    # [MaskDINO] pixel decoder config
+    MASK_DIM: 256
     TRANSFORMER_ENC_LAYERS: 6
+    PIXEL_DECODER_NAME: "MaskDINOEncoder"
+
+  RESNETS:
+    DEPTH: 50
+    OUT_FEATURES: ["res2", "res3", "res4", "res5"]
+    STRIDE_IN_1X1: False
+    STEM_OUT_CHANNELS: 64
+
+  # [MaskDINO] MaskDINO model config
   MaskDINO:
-    TRANSFORMER_DECODER_NAME: "MaskDINODecoder"
+    # [MaskDINO] loss
+    SEMANTIC_CE_LOSS: True
     DEEP_SUPERVISION: True
     NO_OBJECT_WEIGHT: 0.1
     CLASS_WEIGHT: 4.0
-    MASK_WEIGHT: 5.0
     DICE_WEIGHT: 5.0
-    HIDDEN_DIM: 256
-    NUM_OBJECT_QUERIES: 100
+    MASK_WEIGHT: 5.0
+
+    # [MaskDINO] transformer config
     NHEADS: 8
     DROPOUT: 0.0
     DIM_FEEDFORWARD: 2048
     ENC_LAYERS: 0
-    PRE_NORM: False
-    ENFORCE_INPUT_PROJ: False
-    SIZE_DIVISIBILITY: 32
     DEC_LAYERS: 9 # 9+1, 9 decoder layers, add one for the loss on learnable query
+    PRE_NORM: False
+    HIDDEN_DIM: 256
+    NUM_OBJECT_QUERIES: 100
+
+    ENFORCE_INPUT_PROJ: False
+    TWO_STAGE: False
+    INITIALIZE_BOX_TYPE: "no"
+    DN: "seg"
+    DN_NUM: 100
+
+    SIZE_DIVISIBILITY: 32
+
+    # [MaskDINO] transformer module
+    TRANSFORMER_DECODER_NAME: "MaskDINODecoder"
+
+    # [MaskDINO] point loss config
     TRAIN_NUM_POINTS: 12544
     OVERSAMPLE_RATIO: 3.0
     IMPORTANCE_SAMPLE_RATIO: 0.75
-    TWO_STAGE: True
-    DN: "seg"
-    DN_NUM: 100
-    INITIALIZE_BOX_TYPE: "no"
-    SEMANTIC_CE_LOSS: True
+
+    # [MaskDINO] MaskDINO inference config
     TEST:
       SEMANTIC_ON: True
       INSTANCE_ON: False
       PANOPTIC_ON: False
-      OVERLAP_THRESHOLD: 0.8
       OBJECT_MASK_THRESHOLD: 0.8
+      OVERLAP_THRESHOLD: 0.8
 
 INPUT:
   MIN_SIZE_TRAIN:
     !!python/object/apply:eval ["[int(x * 0.1 * 512) for x in range(5, 21)]"]
   MIN_SIZE_TRAIN_SAMPLING: "choice"
-  MIN_SIZE_TEST: 512
   MAX_SIZE_TRAIN: 2048
+  MIN_SIZE_TEST: 512
   MAX_SIZE_TEST: 2048
   CROP:
     ENABLED: True
@@ -78,7 +96,7 @@ INPUT:
     SINGLE_CATEGORY_MAX_AREA: 1.0
   FORMAT: "RGB"
 
-  # DATASET_MAPPER_NAME: "MaskDINO_semantic"
+  # data config
   DATASET_MAPPER_NAME: "mask_former_semantic"
   COLOR_AUG_SSD: True
   SIZE_DIVISIBILITY: -1
@@ -92,21 +110,29 @@ DATALOADER:
   NUM_WORKERS: 4
 
 SOLVER:
-  IMS_PER_BATCH: 1
-  BASE_LR: 0.0001
+  LR_SCHEDULER_NAME: "WarmupPolyLR"
   MAX_ITER: 1_000_000
+  BASE_LR: 0.0001
+  WEIGHT_DECAY: 0.05
   WARMUP_FACTOR: 1.0
   WARMUP_ITERS: 0
-  WEIGHT_DECAY: 0.05
-  OPTIMIZER: "ADAMW"
-  BACKBONE_MULTIPLIER: 0.1
+  WARMUP_METHOD: "linear"
+  CHECKPOINT_PERIOD: 5000
+  IMS_PER_BATCH: 2
+  BIAS_LR_FACTOR: 1.0
+
   CLIP_GRADIENTS:
     ENABLED: True
     CLIP_TYPE: "full_model"
     CLIP_VALUE: 0.01
     NORM_TYPE: 2.0
+
   AMP:
-    ENABLED: True
+    ENABLED: False
+
+  # [MaskDINO] solver config
+  OPTIMIZER: "ADAMW"
+  BACKBONE_MULTIPLIER: 0.1
 
 TEST:
   EVAL_PERIOD: 5000
