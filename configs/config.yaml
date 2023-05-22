@@ -3,7 +3,7 @@ VIS_PERIOD: 10
 
 MODEL:
   META_ARCHITECTURE: "MaskDINO"
-  WEIGHTS: "https://github.com/IDEA-Research/detrex-storage/releases/download/maskdino-v0.1.0/maskdino_r50_50ep_100q_celoss_hid1024_3s_semantic_cityscapes_79.8miou.pth"
+  WEIGHTS: "https://github.com/IDEA-Research/detrex-storage/releases/download/maskdino-v0.1.0/maskdino_r50_50ep_300q_hid1024_3sd1_instance_maskenhanced_mask46.1ap_box51.5ap.pth"
   PIXEL_MEAN: [123.675, 116.280, 103.530]
   PIXEL_STD: [58.395, 57.120, 57.375]
 
@@ -15,7 +15,7 @@ MODEL:
     NAME: "MaskDINOHead"
     IN_FEATURES: ["res2", "res3", "res4", "res5"]
     IGNORE_VALUE: 255
-    NUM_CLASSES: 10
+    NUM_CLASSES: 39
     CONVS_DIM: 256
     COMMON_STRIDE: 4
     NORM: "GN"
@@ -35,33 +35,39 @@ MODEL:
   RESNETS:
     DEPTH: 50
     OUT_FEATURES: ["res2", "res3", "res4", "res5"]
-    STRIDE_IN_1X1: False
+    STRIDE_IN_1X1: false
     STEM_OUT_CHANNELS: 64
 
   # [MaskDINO] MaskDINO model config
   MaskDINO:
     # [MaskDINO] loss
-    SEMANTIC_CE_LOSS: True
-    DEEP_SUPERVISION: True
+    PANO_BOX_LOSS: false
+    SEMANTIC_CE_LOSS: false
+    DEEP_SUPERVISION: true
     NO_OBJECT_WEIGHT: 0.1
     CLASS_WEIGHT: 4.0
     DICE_WEIGHT: 5.0
     MASK_WEIGHT: 5.0
+    BOX_WEIGHT: 5.0
+    GIOU_WEIGHT: 2.0
 
     # [MaskDINO] transformer config
     NHEADS: 8
     DROPOUT: 0.0
     DIM_FEEDFORWARD: 2048
     ENC_LAYERS: 0
-    DEC_LAYERS: 9 # 9+1, 9 decoder layers, add one for the loss on learnable query
-    PRE_NORM: False
+    DEC_LAYERS: 9
+    INITIAL_PRED: true
+    PRE_NORM: false
+    BOX_LOSS: true
     HIDDEN_DIM: 256
     NUM_OBJECT_QUERIES: 100
 
-    ENFORCE_INPUT_PROJ: False
-    TWO_STAGE: False
-    INITIALIZE_BOX_TYPE: "no"
+    ENFORCE_INPUT_PROJ: false
+    TWO_STAGE: true
+    INITIALIZE_BOX_TYPE: "bitmask"
     DN: "seg"
+    DN_NOISE_SCALE: 0.4
     DN_NUM: 100
 
     SIZE_DIVISIBILITY: 32
@@ -76,37 +82,28 @@ MODEL:
 
     # [MaskDINO] MaskDINO inference config
     TEST:
-      SEMANTIC_ON: True
-      INSTANCE_ON: False
-      PANOPTIC_ON: False
-      OBJECT_MASK_THRESHOLD: 0.8
+      SEMANTIC_ON: false
+      INSTANCE_ON: true
+      PANOPTIC_ON: false
+      OBJECT_MASK_THRESHOLD: 0.25
       OVERLAP_THRESHOLD: 0.8
 
 INPUT:
-  MIN_SIZE_TRAIN:
-    !!python/object/apply:eval ["[int(x * 0.1 * 512) for x in range(5, 21)]"]
-  MIN_SIZE_TRAIN_SAMPLING: "choice"
-  MAX_SIZE_TRAIN: 2048
-  MIN_SIZE_TEST: 512
-  MAX_SIZE_TEST: 2048
-  CROP:
-    ENABLED: True
-    TYPE: "absolute"
-    SIZE: (512, 1024)
-    SINGLE_CATEGORY_MAX_AREA: 1.0
+  IMAGE_SIZE: 1024
+  MIN_SCALE: 0.1
+  MAX_SCALE: 2.0
   FORMAT: "RGB"
+  MASK_FORMAT: "bitmask"
 
   # data config
-  DATASET_MAPPER_NAME: "mask_former_semantic"
-  COLOR_AUG_SSD: True
-  SIZE_DIVISIBILITY: -1
+  DATASET_MAPPER_NAME: "coco_instance_lsj"
 
 DATASETS:
   TRAIN: ("pano_train",)
-  TEST: ("pano_val",)
+  TEST: ("pano_eval",)
 
 DATALOADER:
-  FILTER_EMPTY_ANNOTATIONS: True
+  FILTER_EMPTY_ANNOTATIONS: true
   NUM_WORKERS: 4
 
 SOLVER:
@@ -118,17 +115,17 @@ SOLVER:
   WARMUP_ITERS: 0
   WARMUP_METHOD: "linear"
   CHECKPOINT_PERIOD: 5000
-  IMS_PER_BATCH: 2
+  IMS_PER_BATCH: 1
   BIAS_LR_FACTOR: 1.0
 
   CLIP_GRADIENTS:
-    ENABLED: True
+    ENABLED: true
     CLIP_TYPE: "full_model"
     CLIP_VALUE: 0.01
     NORM_TYPE: 2.0
 
   AMP:
-    ENABLED: False
+    ENABLED: false
 
   # [MaskDINO] solver config
   OPTIMIZER: "ADAMW"
@@ -137,7 +134,7 @@ SOLVER:
 TEST:
   EVAL_PERIOD: 5000
   AUG:
-    ENABLED: False
+    ENABLED: false
     MIN_SIZES: [512, 768, 1024, 1280, 1536, 1792]
     MAX_SIZE: 4096
-    FLIP: True
+    FLIP: true
