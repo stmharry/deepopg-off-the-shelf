@@ -1,11 +1,12 @@
 import abc
+import dataclasses
 import functools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Set, Tuple, Union
 
+import ijson
 import imageio.v3 as iio
 import matplotlib.cm as cm
 import numpy as np
@@ -15,8 +16,6 @@ import pycocotools.coco
 import pycocotools.mask
 import tqdm
 from absl import logging
-from detectron2.data import DatasetCatalog, MetadataCatalog
-from detectron2.data.datasets import load_coco_json
 from pydantic import parse_obj_as
 
 from app.schemas import (
@@ -26,15 +25,34 @@ from app.schemas import (
     CocoImage,
     InstanceDetectionData,
 )
+from detectron2.data import DatasetCatalog, MetadataCatalog
+from detectron2.data.datasets import load_coco_json
 
 
-@dataclass
+@dataclasses.dataclass
 class InstanceDetection(metaclass=abc.ABCMeta):
     CATEGORY_MAPPING_RE: ClassVar[Optional[Dict[str, str]]] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"
 
     root_dir: Union[Path, str]
     category_mapping: Optional[Dict[str, str]] = None
+
+    _coco_dataset: Optional[List[Dict[str, Any]]] = dataclasses.field(default=None)
+
+    @property
+    def dataset(self) -> List[Dict[str, Any]]:
+        if not self.coco_path.exists():
+            raise ValueError(
+                f"Coco dataset does not exist: {self.coco_path!s}, please run "
+                f"`InstanceDetection.prepare_coco` first!"
+            )
+
+        if self._coco_dataset is None:
+            self._coco_dataset = load_coco_json(
+                self.coco_path, image_root=self.image_dir, dataset_name="pano"
+            )
+
+        return self._coco_dataset
 
     @property
     def image_dir(self) -> Path:
@@ -265,14 +283,25 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         with open(self.coco_path, "w") as f:
             f.write(coco.json())
 
-    def load(self) -> None:
-        logging.info(f"Loading from {self.coco_path}")
+    def _get_split(self, split: str) -> List[Dict[str, Any]]:
+        split_path: Path = self.split_dir / f"{split}.txt"
 
-        dataset: List[Dict[str, Any]] = load_coco_json(
-            self.coco_path, image_root=self.image_dir, dataset_name="pano"
+        file_names: List[str] = (
+            pd.read_csv(split_path, header=None).squeeze().tolist()  # type: ignore
         )
+        file_paths: Set[Path] = set(
+            Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
+        )
+        return [data for data in self.dataset if Path(data["file_name"]) in file_paths]
 
-        thing_classes: List[str] = MetadataCatalog.get("pano").thing_classes
+    @classmethod
+    def register(cls, root_dir: Union[Path, str]) -> None:
+        self = cls(root_dir=root_dir)
+
+        with open(self.coco_path) as f:
+            categories: Iterable[Dict] = ijson.items(f, "categories.item")
+            thing_classes: List[str] = [category["name"] for category in categories]
+
         thing_colors: npt.NDArray[np.uint8] = (
             np.r_[
                 [(0, 0, 0)],
@@ -282,29 +311,12 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             .astype(np.uint8)
         )
 
-        def _load_split(split: str) -> List[Dict[str, Any]]:
-            split_path: Path
-            if split in ["train", "eval"]:
-                split_path = self.split_dir / f"{split}.txt"
-            elif split == "debug":
-                split_path = self.split_dir / "eval.txt"
-
-            file_names: List[str] = (
-                pd.read_csv(split_path, header=None).squeeze().tolist()  # type: ignore
-            )
-            if split == "debug":
-                file_names = file_names[:10]
-
-            file_paths: Set[Path] = set(
-                Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
-            )
-
-            return [data for data in dataset if Path(data["file_name"]) in file_paths]
-
-        for split in ["train", "eval", "debug"]:
+        for split in ["all", "train", "eval", "debug"]:
             name: str = f"pano_{split}"
 
-            DatasetCatalog.register(name, functools.partial(_load_split, split=split))
+            DatasetCatalog.register(
+                name, functools.partial(self._get_split, split=split)
+            )
             MetadataCatalog.get(name).set(
                 thing_classes=thing_classes,
                 thing_colors=thing_colors,
@@ -312,17 +324,22 @@ class InstanceDetection(metaclass=abc.ABCMeta):
                 evaluator_type="coco",
             )
 
-    def get_split(self, split: str) -> List[InstanceDetectionData]:
-        if split not in ["train", "eval", "debug"]:
-            raise ValueError(f"Invalid split {split}!")
+    def get_dataset(
+        self, split: Optional[str] = None, as_schema: bool = True
+    ) -> Union[List[Dict[str, Any]], List[InstanceDetectionData]]:
+        if split is None:
+            split = "all"
 
-        return parse_obj_as(
-            List[InstanceDetectionData],
-            DatasetCatalog.get(f"pano_{split}"),
-        )
+        coco_dataset: List[Dict[str, Any]] = DatasetCatalog.get(f"pano_{split}")
+        assert coco_dataset is not None
+
+        if as_schema:
+            return parse_obj_as(List[InstanceDetectionData], coco_dataset)
+        else:
+            return coco_dataset
 
 
-@dataclass
+@dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
     CATEGORY_MAPPING_RE: ClassVar[Optional[Dict[str, str]]] = {
         r"TOOTH_(\d+)": r"TOOTH_\1",

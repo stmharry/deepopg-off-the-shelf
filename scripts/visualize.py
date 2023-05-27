@@ -4,50 +4,53 @@ from typing import Dict, List, Tuple, Union
 import cv2
 import imageio.v3 as iio
 import numpy as np
+import numpy.typing as npt
 import pycocotools.mask
 import torch
 from absl import app, flags, logging
+from pydantic import parse_obj_as
+
+from app import schemas
+from app.data import InstanceDetectionV1
 from detectron2.data import Metadata, MetadataCatalog
 from detectron2.structures import BoxMode, Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
-from pydantic import parse_obj_as
 
-from app.data import InstanceDetectionV1
-from app.schemas import InstanceDetectionPrediction
-
-flags.DEFINE_string(
-    "pred_path", "./output/inference/instances_predictions.pth", "Prediction file path."
-)
-flags.DEFINE_string("data_dir", "/mnt/hdd/PANO/data", "Data directory.")
-flags.DEFINE_string(
-    "output_dir", "/mnt/hdd/PANO/data/debug/instances", "Output directory."
-)
+flags.DEFINE_string("pred_path", None, "Prediction file path.")
+flags.DEFINE_string("data_dir", None, "Data directory.")
+flags.DEFINE_string("output_dir", None, "Output directory.")
 FLAGS = flags.FLAGS
 
 
 def as_detectron2_instances(
-    prediction: InstanceDetectionPrediction,
+    prediction: schemas.InstanceDetectionPrediction,
     image_size: Tuple[int, int],
     min_score: float,
 ) -> Instances:
-    scores = np.stack([instance.score for instance in prediction.instances])
-    pred_boxes = np.stack([instance.bbox for instance in prediction.instances])
-    pred_boxes = BoxMode.convert(pred_boxes, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
-    pred_classes = np.stack([instance.category_id for instance in prediction.instances])
-    pred_masks = np.stack(
-        [
-            pycocotools.mask.decode(instance.segmentation.dict())
-            for instance in prediction.instances
-        ]
-    )
-    selected = scores > min_score
+    scores: List[float] = []
+    pred_boxes: List[List[int]] = []
+    pred_classes: List[int] = []
+    pred_masks: List[npt.NDArray[np.uint8]] = []
+
+    for instance in prediction.instances:
+        score: float = instance.score
+
+        if score < min_score:
+            continue
+
+        scores.append(score)
+        pred_boxes.append(
+            BoxMode.convert(instance.bbox, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
+        )
+        pred_classes.append(instance.category_id)
+        pred_masks.append(pycocotools.mask.decode(instance.segmentation.dict()))
 
     return Instances(
         image_size=image_size,
-        scores=scores[selected],
-        pred_boxes=pred_boxes[selected],
-        pred_classes=pred_classes[selected],
-        pred_masks=pred_masks[selected],
+        scores=np.asarray(scores),
+        pred_boxes=np.asarray(pred_boxes),
+        pred_classes=np.asarray(pred_classes),
+        pred_masks=np.asarray(pred_masks),
     )
 
 
@@ -59,8 +62,10 @@ def main(_):
     metadata: Metadata = MetadataCatalog.get("pano_eval")
 
     predictions_obj = torch.load(FLAGS.pred_path)
-    predictions = parse_obj_as(List[InstanceDetectionPrediction], predictions_obj)
-    id_to_prediction: Dict[Union[str, int], InstanceDetectionPrediction] = {
+    predictions = parse_obj_as(
+        List[schemas.InstanceDetectionPrediction], predictions_obj
+    )
+    id_to_prediction: Dict[Union[str, int], schemas.InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
 
@@ -69,7 +74,9 @@ def main(_):
     for data in eval_dataset:
         logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
-        prediction: InstanceDetectionPrediction = id_to_prediction[data.image_id]
+        prediction: schemas.InstanceDetectionPrediction = id_to_prediction[
+            data.image_id
+        ]
         instances: Instances = as_detectron2_instances(
             prediction, image_size=(data.height, data.width), min_score=0.1
         )

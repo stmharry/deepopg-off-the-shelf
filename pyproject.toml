@@ -26,12 +26,10 @@ tqdm = "^4.65.0"
 # extra deps
 absl-py = "^1.4.0"
 data-science-types = "^0.2.23"
+ijson = "^3.2.0.post0"
 imageio = "^2.25.1"
 pandas = "^1.5.3"
 pydantic = "^1.10.7"
-
-# local deps
-maskdino = { path = "./MaskDINO", develop = true }
 rich = "^13.3.5"
 
 [tool.poetry.group.dev.dependencies]
