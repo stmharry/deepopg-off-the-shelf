@@ -9,14 +9,15 @@ LATEST_MODEL = $(shell ls -t $(OUTPUT_DIR)/model_*.pth | head -n1)
 setup:
 	$(PY) MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
-train: PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256
+train: PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32
 train:
-	$(PY) $(MAIN)
+	$(PY) $(MAIN) \
+		OUTPUT_DIR $(OUTPUT_DIR)
 
 test:
 	$(PY) $(MAIN) \
 		--eval-only \
-		MODEL.WEIGHTS ./output/model_0099999.pth \
+		MODEL.WEIGHTS $(LATEST_MODEL) \
 		DATASETS.TEST "('pano_debug',)"
 
 visualize:

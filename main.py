@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     dataset = InstanceDetectionV1(root_dir="/mnt/hdd/PANO/data/")
     dataset.prepare_coco(n_jobs=-1)
-    dataset.register()
+    dataset.load()
 
     parser = default_argument_parser()
     parser.add_argument("--eval_only", action="store_true")

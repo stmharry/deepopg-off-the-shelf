@@ -1,5 +1,5 @@
 import abc
-import logging
+import functools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -14,67 +14,18 @@ import pandas as pd
 import pycocotools.coco
 import pycocotools.mask
 import tqdm
+from absl import logging
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import load_coco_json
-from detectron2.structures import BoxMode
-from pydantic import BaseModel, parse_obj_as
+from pydantic import parse_obj_as
 
-logger = logging.getLogger(__name__)
-
-
-# coco
-
-
-class CocoRLE(BaseModel):
-    size: List[int]
-    counts: str
-
-
-class CocoCategory(BaseModel):
-    id: Optional[int] = None
-    name: str
-
-
-class CocoImage(BaseModel):
-    id: Union[str, int]
-    file_name: str
-    width: int
-    height: int
-
-
-class CocoAnnotation(BaseModel):
-    id: Union[str, int]
-    image_id: Union[str, int]
-    category_id: Union[int, str]
-    bbox: List[int]
-    segmentation: CocoRLE
-    area: int
-    iscrowd: int = 0
-
-
-class Coco(BaseModel):
-    categories: List[CocoCategory]
-    images: List[CocoImage]
-    annotations: List[CocoAnnotation]
-
-
-# instance detection
-
-
-class InstanceDetectionAnnotation(BaseModel):
-    bbox: List[int]
-    bbox_mode: BoxMode
-    category_id: int
-    segmentation: CocoRLE
-    iscrowd: int
-
-
-class InstanceDetectionData(BaseModel):
-    file_name: Path
-    height: int
-    width: int
-    image_id: str
-    annotations: List[InstanceDetectionAnnotation]
+from app.schemas import (
+    Coco,
+    CocoAnnotation,
+    CocoCategory,
+    CocoImage,
+    InstanceDetectionData,
+)
 
 
 @dataclass
@@ -283,7 +234,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
     def prepare_coco(self, force: bool = False, n_jobs: int = -1) -> None:
         if (not force) and self.coco_path.exists():
-            logger.info(f"Coco dataset exists: {self.coco_path!s}.")
+            logging.info(f"Coco dataset exists: {self.coco_path!s}.")
             return
 
         categories: List[CocoCategory] = self._prepare_categories()
@@ -314,12 +265,11 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         with open(self.coco_path, "w") as f:
             f.write(coco.json())
 
-    def register(self) -> None:
-        dataset: List[InstanceDetectionData] = parse_obj_as(
-            List[InstanceDetectionData],
-            load_coco_json(
-                self.coco_path, image_root=self.image_dir, dataset_name="pano"
-            ),
+    def load(self) -> None:
+        logging.info(f"Loading from {self.coco_path}")
+
+        dataset: List[Dict[str, Any]] = load_coco_json(
+            self.coco_path, image_root=self.image_dir, dataset_name="pano"
         )
 
         thing_classes: List[str] = MetadataCatalog.get("pano").thing_classes
@@ -332,9 +282,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             .astype(np.uint8)
         )
 
-        for split in ["train", "eval", "debug"]:
-            name: str = f"pano_{split}"
-
+        def _load_split(split: str) -> List[Dict[str, Any]]:
             split_path: Path
             if split in ["train", "eval"]:
                 split_path = self.split_dir / f"{split}.txt"
@@ -348,19 +296,30 @@ class InstanceDetection(metaclass=abc.ABCMeta):
                 file_names = file_names[:10]
 
             file_paths: Set[Path] = set(
-                Path(self.image_dir, f"{filename}.jpg") for filename in file_names
+                Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
             )
-            _dataset: List[Dict[str, Any]] = [
-                data.dict() for data in dataset if data.file_name in file_paths
-            ]
 
-            DatasetCatalog.register(name, lambda: _dataset)
+            return [data for data in dataset if Path(data["file_name"]) in file_paths]
+
+        for split in ["train", "eval", "debug"]:
+            name: str = f"pano_{split}"
+
+            DatasetCatalog.register(name, functools.partial(_load_split, split=split))
             MetadataCatalog.get(name).set(
                 thing_classes=thing_classes,
                 thing_colors=thing_colors,
                 json_file=self.coco_path,
                 evaluator_type="coco",
             )
+
+    def get_split(self, split: str) -> List[InstanceDetectionData]:
+        if split not in ["train", "eval", "debug"]:
+            raise ValueError(f"Invalid split {split}!")
+
+        return parse_obj_as(
+            List[InstanceDetectionData],
+            DatasetCatalog.get(f"pano_{split}"),
+        )
 
 
 @dataclass
