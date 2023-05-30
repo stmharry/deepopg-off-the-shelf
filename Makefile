@@ -22,31 +22,37 @@ MAIN = scripts/main.py \
 # functions
 
 NEW_MODEL_DIR = $(MODEL_DIR_ROOT)/$(shell date "+%Y-%m-%d-%H%M%S")
+MODEL_DIR ?= $(NEW_MODEL_DIR)
 LATEST_MODEL = $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 
 NEW_RESULT_DIR = $(RESULT_DIR_ROOT)/$(shell date "+%Y-%m-%d-%H%M%S")
-PRED_PATH = $(RESULT_DIR)/inference/instances_predictions.pth
+RESULT_DIR ?= $(NEW_RESULT_DIR)
+INSTANCE_PRED_PATH = $(RESULT_DIR)/inference/instances_predictions.pth
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
 	MAIN_APP = train_net:main
-	CONFIG_FILE = ./configs/config-maskdino-r50.yaml
+	CONFIG_FILE ?= ./configs/config-maskdino-r50.yaml
 
 else ifeq ($(ARCH),detectron2)
 	PYTHONPATH = ./detectron2
 	MAIN_APP = tools.lazyconfig_train_net:main
-	CONFIG_FILE = ./configs/mask_rcnn_mvitv2_t_3x.py
+	CONFIG_FILE ?= ./configs/mask_rcnn_mvitv2_t_3x.py
 
 endif
 
 ### targets
+
+# utils
+
+check-%:
+	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
 
 # maskdino targets
 
 setup-maskdino:
 	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
-train-maskdino: MODEL_DIR = $(NEW_MODEL_DIR)
 train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
@@ -69,13 +75,10 @@ debug-maskdino:
 setup-detectron2:
 	@ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
-train-detectron2: MODEL_DIR = $(NEW_MODEL_DIR)
 train-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
 
-
-test-detectron2: RESULT_DIR = $(NEW_RESULT_DIR)
 test-detectron2:
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
@@ -100,5 +103,5 @@ debug: debug-$(ARCH)
 visualize:
 	$(PY) scripts/visualize.py \
 		--data_dir $(DATA_DIR) \
-		--pred_path $(PRED_PATH) \
+		--pred_path $(INSTANCE_PRED_PATH) \
 		--output_dir $(RESULT_DIR)/visualize
