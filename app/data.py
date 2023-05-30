@@ -39,6 +39,36 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
     _coco_dataset: Optional[List[Dict[str, Any]]] = dataclasses.field(default=None)
 
+    @classmethod
+    def register(cls, root_dir: Union[Path, str]) -> None:
+        self = cls(root_dir=root_dir)
+
+        with open(self.coco_path) as f:
+            categories: Iterable[Dict] = ijson.items(f, "categories.item")
+            thing_classes: List[str] = [category["name"] for category in categories]
+
+        thing_colors: npt.NDArray[np.uint8] = (
+            np.r_[
+                [(0, 0, 0)],
+                cm.gist_rainbow(np.arange(len(thing_classes) - 1))[:, :3],  # type: ignore
+            ]
+            .__mul__(255)
+            .astype(np.uint8)
+        )
+
+        for split in ["all", "train", "eval", "debug"]:
+            name: str = f"pano_{split}"
+
+            DatasetCatalog.register(
+                name, functools.partial(self.get_split, split=split, as_schema=False)
+            )
+            MetadataCatalog.get(name).set(
+                thing_classes=thing_classes,
+                thing_colors=thing_colors,
+                json_file=self.coco_path,
+                evaluator_type="coco",
+            )
+
     @property
     def dataset(self) -> List[Dict[str, Any]]:
         if not self.coco_path.exists():
@@ -283,7 +313,12 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         with open(self.coco_path, "w") as f:
             f.write(coco.json())
 
-    def _get_split(self, split: str) -> List[Dict[str, Any]]:
+    def get_split(
+        self, split: Optional[str] = None, as_schema: bool = True
+    ) -> Union[List[Dict[str, Any]], List[InstanceDetectionData]]:
+        if split is None:
+            split = "all"
+
         split_path: Path = self.split_dir / f"{split}.txt"
 
         file_names: List[str] = (
@@ -292,46 +327,9 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         file_paths: Set[Path] = set(
             Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
         )
-        return [data for data in self.dataset if Path(data["file_name"]) in file_paths]
-
-    @classmethod
-    def register(cls, root_dir: Union[Path, str]) -> None:
-        self = cls(root_dir=root_dir)
-
-        with open(self.coco_path) as f:
-            categories: Iterable[Dict] = ijson.items(f, "categories.item")
-            thing_classes: List[str] = [category["name"] for category in categories]
-
-        thing_colors: npt.NDArray[np.uint8] = (
-            np.r_[
-                [(0, 0, 0)],
-                cm.gist_rainbow(np.arange(len(thing_classes) - 1))[:, :3],  # type: ignore
-            ]
-            .__mul__(255)
-            .astype(np.uint8)
-        )
-
-        for split in ["all", "train", "eval", "debug"]:
-            name: str = f"pano_{split}"
-
-            DatasetCatalog.register(
-                name, functools.partial(self._get_split, split=split)
-            )
-            MetadataCatalog.get(name).set(
-                thing_classes=thing_classes,
-                thing_colors=thing_colors,
-                json_file=self.coco_path,
-                evaluator_type="coco",
-            )
-
-    def get_dataset(
-        self, split: Optional[str] = None, as_schema: bool = True
-    ) -> Union[List[Dict[str, Any]], List[InstanceDetectionData]]:
-        if split is None:
-            split = "all"
-
-        coco_dataset: List[Dict[str, Any]] = DatasetCatalog.get(f"pano_{split}")
-        assert coco_dataset is not None
+        coco_dataset: List[Dict[str, Any]] = [
+            data for data in self.dataset if Path(data["file_name"]) in file_paths
+        ]
 
         if as_schema:
             return parse_obj_as(List[InstanceDetectionData], coco_dataset)

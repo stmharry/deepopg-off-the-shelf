@@ -47,10 +47,10 @@ def as_detectron2_instances(
 
     return Instances(
         image_size=image_size,
-        scores=np.asarray(scores),
-        pred_boxes=np.asarray(pred_boxes),
-        pred_classes=np.asarray(pred_classes),
-        pred_masks=np.asarray(pred_masks),
+        scores=np.array(scores),
+        pred_boxes=np.array(pred_boxes),
+        pred_classes=np.array(pred_classes),
+        pred_masks=np.array(pred_masks),
     )
 
 
