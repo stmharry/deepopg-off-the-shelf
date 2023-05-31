@@ -1,14 +1,11 @@
 ### variables
 
-ARCH = detectron2
-MODEL_DIR = /mnt/hdd/PANO/models/2023-05-30-175109
-RESULT_DIR = /mnt/hdd/PANO/results/2023-05-31-032424
-
 # common variables
 
-DATA_DIR = /mnt/hdd/PANO/data
-MODEL_DIR_ROOT = /mnt/hdd/PANO/models
-RESULT_DIR_ROOT = /mnt/hdd/PANO/results
+ROOT_DIR = /mnt/hdd/PANO
+DATA_DIR = $(ROOT_DIR)/data
+MODEL_DIR_ROOT = $(ROOT_DIR)/models
+RESULT_DIR_ROOT = $(ROOT_DIR)/results
 
 # default variables
 
@@ -25,12 +22,12 @@ MAIN = scripts/main.py \
 
 # functions
 
-NEW_MODEL_DIR = $(MODEL_DIR_ROOT)/$(shell date "+%Y-%m-%d-%H%M%S")
-MODEL_DIR ?= $(NEW_MODEL_DIR)
+NEW_NAME = $(shell date "+%Y-%m-%d-%H%M%S")
+
+MODEL_DIR = $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 LATEST_MODEL = $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 
-NEW_RESULT_DIR = $(RESULT_DIR_ROOT)/$(shell date "+%Y-%m-%d-%H%M%S")
-RESULT_DIR ?= $(NEW_RESULT_DIR)
+RESULT_DIR = $(RESULT_DIR_ROOT)/$(RESULT_NAME)
 INSTANCE_PRED_PATH = $(RESULT_DIR)/instances_predictions.pth
 
 ifeq ($(ARCH),maskdino)
@@ -45,8 +42,6 @@ endif
 
 ### targets
 
-default: test
-
 # utils
 
 check-%:
@@ -57,13 +52,15 @@ check-%:
 setup-maskdino:
 	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
+train-maskdino: MODEL_NAME = $(NEW_NAME)
 train-maskdino: CONFIG_FILE = ./configs/config-maskdino-r50.yaml
 train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 
+test-maskdino: RESULT_NAME = $(NEW_NAME)
 test-maskdino: CONFIG_FILE = $(MODEL_DIR)/config.yaml
-test-maskdino:
+test-maskdino: check-MODEL_NAME
 	$(PY) $(MAIN) --eval-only \
 		MODEL.WEIGHTS $(LATEST_MODEL) \
 		DATASETS.TEST "('pano_eval',)"
@@ -81,13 +78,15 @@ debug-maskdino:
 setup-detectron2:
 	@ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
+train-detectron2: MODEL_NAME = $(NEW_NAME)
 train-detectron2: CONFIG_FILE = ./configs/mask_rcnn_mvitv2_t_3x.py
 train-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
 
+test-detectron2: RESULT_NAME = $(NEW_NAME)
 test-detectron2: CONFIG_FILE = $(MODEL_DIR)/config.yaml
-test-detectron2:
+test-detectron2: check-MODEL_NAME
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
