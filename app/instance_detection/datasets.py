@@ -18,7 +18,7 @@ import tqdm
 from absl import logging
 from pydantic import parse_obj_as
 
-from app.schemas import (
+from app.instance_detection.schemas import (
     Coco,
     CocoAnnotation,
     CocoCategory,

@@ -10,15 +10,15 @@ import torch
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app import schemas
-from app.data import InstanceDetectionV1
-from detectron2.data import Metadata, MetadataCatalog
+from app.instance_detection import schemas
+from app.instance_detection.datasets import InstanceDetectionV1
+from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import BoxMode, Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
 
-flags.DEFINE_string("pred_path", None, "Prediction file path.")
 flags.DEFINE_string("data_dir", None, "Data directory.")
-flags.DEFINE_string("output_dir", None, "Output directory.")
+flags.DEFINE_string("result_dir", None, "Result directory.")
+flags.DEFINE_boolean("show_visualizer", False, "Visualize the results to images.")
 FLAGS = flags.FLAGS
 
 
@@ -54,13 +54,14 @@ def as_detectron2_instances(
     )
 
 
-def main(_):
-    dataset = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
+def show_visualizer(
+    dataset: List[schemas.InstanceDetectionData],
+    metadata: Metadata,
+    prediction_name: str = "instances_predictions.pth",
+) -> None:
+    prediction_path: Path = Path(FLAGS.result_dir, prediction_name)
 
-    eval_dataset = dataset.get_split("eval")
-    metadata: Metadata = MetadataCatalog.get("pano_eval")
-
-    predictions_obj = torch.load(FLAGS.pred_path)
+    predictions_obj = torch.load(prediction_path)
     predictions = parse_obj_as(
         List[schemas.InstanceDetectionPrediction], predictions_obj
     )
@@ -68,10 +69,15 @@ def main(_):
         prediction.image_id: prediction for prediction in predictions
     }
 
-    Path(FLAGS.output_dir).mkdir(exist_ok=True)
+    visualize_dir: Path = Path(FLAGS.result_dir, "visualize")
+    Path(visualize_dir).mkdir(exist_ok=True)
 
-    for data in eval_dataset:
-        assert isinstance(data, schemas.InstanceDetectionData)
+    for data in dataset:
+        visualize_path: Path = Path(visualize_dir, data.file_name.name)
+
+        if visualize_path.exists():
+            logging.info(f"Skipping {data.image_id} as it already exists.")
+            continue
 
         if data.image_id not in id_to_prediction:
             logging.warning(f"Image id {data.image_id} not found in predictions.")
@@ -91,7 +97,19 @@ def main(_):
 
         visualizer = Visualizer(image_rgb, metadata=metadata, scale=1.0)
         image_vis: VisImage = visualizer.draw_instance_predictions(instances)
-        image_vis.save(Path(FLAGS.output_dir, data.file_name.name))
+        image_vis.save(visualize_path)
+
+
+def main(_):
+    InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
+
+    dataset: List[schemas.InstanceDetectionData] = parse_obj_as(
+        List[schemas.InstanceDetectionData], DatasetCatalog.get("pano_eval")
+    )
+    metadata: Metadata = MetadataCatalog.get("pano_eval")
+
+    if FLAGS.show_visualizer:
+        show_visualizer(dataset=dataset, metadata=metadata)
 
 
 if __name__ == "__main__":

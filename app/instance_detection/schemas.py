@@ -1,8 +1,9 @@
 from pathlib import Path
 from typing import List, Optional, Union
 
-from detectron2.structures import BoxMode
 from pydantic import BaseModel
+
+from detectron2.structures import BoxMode
 
 
 class CocoRLE(BaseModel):

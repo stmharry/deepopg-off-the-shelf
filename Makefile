@@ -28,7 +28,6 @@ MODEL_DIR = $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 LATEST_MODEL = $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 
 RESULT_DIR = $(RESULT_DIR_ROOT)/$(RESULT_NAME)
-INSTANCE_PRED_PATH = $(RESULT_DIR)/instances_predictions.pth
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
@@ -107,8 +106,10 @@ train: train-$(ARCH)
 test: test-$(ARCH)
 debug: debug-$(ARCH)
 
-visualize:
-	$(PY) scripts/visualize.py \
+show:
+	$(PY) scripts/show.py \
 		--data_dir $(DATA_DIR) \
-		--pred_path $(INSTANCE_PRED_PATH) \
-		--output_dir $(RESULT_DIR)/visualize
+		--result_dir $(RESULT_DIR) \
+		--noshow_visualizer \
+		--show_coco_annotator \
+		--coco_annotator_url http://192.168.0.79:5000/api
