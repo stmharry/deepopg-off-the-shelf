@@ -55,7 +55,7 @@ def as_detectron2_instances(
 
 
 def main(_):
-    dataset = InstanceDetectionV1(root_dir=FLAGS.data_dir)
+    dataset = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
 
     eval_dataset = dataset.get_split("eval")
     metadata: Metadata = MetadataCatalog.get("pano_eval")
@@ -83,7 +83,7 @@ def main(_):
             data.image_id
         ]
         instances: Instances = as_detectron2_instances(
-            prediction, image_size=(data.height, data.width), min_score=0.1
+            prediction, image_size=(data.height, data.width), min_score=0.05
         )
 
         image_bw: np.ndarray = iio.imread(data.file_name)

@@ -40,7 +40,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     _coco_dataset: Optional[List[Dict[str, Any]]] = dataclasses.field(default=None)
 
     @classmethod
-    def register(cls, root_dir: Union[Path, str]) -> None:
+    def register(cls, root_dir: Union[Path, str]) -> "InstanceDetection":
         self = cls(root_dir=root_dir)
 
         with open(self.coco_path) as f:
@@ -68,6 +68,8 @@ class InstanceDetection(metaclass=abc.ABCMeta):
                 json_file=self.coco_path,
                 evaluator_type="coco",
             )
+
+        return self
 
     @property
     def dataset(self) -> List[Dict[str, Any]]:
