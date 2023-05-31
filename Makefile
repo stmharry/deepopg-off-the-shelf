@@ -32,12 +32,10 @@ INSTANCE_PRED_PATH = $(RESULT_DIR)/inference/instances_predictions.pth
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
 	MAIN_APP = train_net:main
-	CONFIG_FILE ?= ./configs/config-maskdino-r50.yaml
 
 else ifeq ($(ARCH),detectron2)
 	PYTHONPATH = ./detectron2
 	MAIN_APP = tools.lazyconfig_train_net:main
-	CONFIG_FILE ?= ./configs/mask_rcnn_mvitv2_t_3x.py
 
 endif
 
@@ -53,10 +51,12 @@ check-%:
 setup-maskdino:
 	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
+train-maskdino: CONFIG_FILE = ./configs/config-maskdino-r50.yaml
 train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 
+test-detectron2: CONFIG_FILE = $(MODEL_DIR)/config.yaml
 test-maskdino:
 	$(PY) $(MAIN) --eval-only \
 		MODEL.WEIGHTS $(LATEST_MODEL) \
@@ -75,10 +75,12 @@ debug-maskdino:
 setup-detectron2:
 	@ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
+train-detectron2: CONFIG_FILE = ./configs/mask_rcnn_mvitv2_t_3x.py
 train-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
 
+test-detectron2: CONFIG_FILE = $(MODEL_DIR)/config.yaml
 test-detectron2:
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
