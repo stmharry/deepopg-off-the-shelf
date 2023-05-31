@@ -1,9 +1,12 @@
 import importlib
+import warnings
 
 from absl import logging
 
 from app.data import InstanceDetectionV1
 from detectron2.engine import default_argument_parser, launch
+
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")
 
 
 def main():

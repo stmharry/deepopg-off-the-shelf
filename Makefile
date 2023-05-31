@@ -1,5 +1,9 @@
 ### variables
 
+ARCH = detectron2
+MODEL_DIR = /mnt/hdd/PANO/models/2023-05-30-175109
+RESULT_DIR = /mnt/hdd/PANO/results/2023-05-31-032424
+
 # common variables
 
 DATA_DIR = /mnt/hdd/PANO/data
@@ -27,7 +31,7 @@ LATEST_MODEL = $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 
 NEW_RESULT_DIR = $(RESULT_DIR_ROOT)/$(shell date "+%Y-%m-%d-%H%M%S")
 RESULT_DIR ?= $(NEW_RESULT_DIR)
-INSTANCE_PRED_PATH = $(RESULT_DIR)/inference/instances_predictions.pth
+INSTANCE_PRED_PATH = $(RESULT_DIR)/instances_predictions.pth
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
@@ -40,6 +44,8 @@ else ifeq ($(ARCH),detectron2)
 endif
 
 ### targets
+
+default: test
 
 # utils
 
@@ -56,7 +62,7 @@ train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 
-test-detectron2: CONFIG_FILE = $(MODEL_DIR)/config.yaml
+test-maskdino: CONFIG_FILE = $(MODEL_DIR)/config.yaml
 test-maskdino:
 	$(PY) $(MAIN) --eval-only \
 		MODEL.WEIGHTS $(LATEST_MODEL) \
@@ -85,7 +91,7 @@ test-detectron2:
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
-		dataloader.test.dataset.names=pano_debug \
+		dataloader.test.dataset.names=pano_eval \
 		dataloader.evaluator.output_dir=$(RESULT_DIR)
 
 debug-detectron2: PYTHON = python -m pdb

@@ -56,7 +56,6 @@ def as_detectron2_instances(
 
 def main(_):
     dataset = InstanceDetectionV1(root_dir=FLAGS.data_dir)
-    dataset.load()
 
     eval_dataset = dataset.get_split("eval")
     metadata: Metadata = MetadataCatalog.get("pano_eval")
@@ -72,6 +71,12 @@ def main(_):
     Path(FLAGS.output_dir).mkdir(exist_ok=True)
 
     for data in eval_dataset:
+        assert isinstance(data, schemas.InstanceDetectionData)
+
+        if data.image_id not in id_to_prediction:
+            logging.warning(f"Image id {data.image_id} not found in predictions.")
+            continue
+
         logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
         prediction: schemas.InstanceDetectionPrediction = id_to_prediction[
