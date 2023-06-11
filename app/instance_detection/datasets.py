@@ -4,7 +4,19 @@ import functools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import ijson
 import imageio.v3 as iio
@@ -28,6 +40,8 @@ from app.instance_detection.schemas import (
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import load_coco_json
 
+T = TypeVar("T", bound="InstanceDetection")
+
 
 @dataclasses.dataclass
 class InstanceDetection(metaclass=abc.ABCMeta):
@@ -40,7 +54,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     _coco_dataset: Optional[List[Dict[str, Any]]] = dataclasses.field(default=None)
 
     @classmethod
-    def register(cls, root_dir: Union[Path, str]) -> "InstanceDetection":
+    def register(cls: Type[T], root_dir: Union[Path, str]) -> T:
         self = cls(root_dir=root_dir)
 
         with open(self.coco_path) as f:
@@ -315,17 +329,21 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         with open(self.coco_path, "w") as f:
             f.write(coco.json())
 
-    def get_split(
-        self, split: Optional[str] = None, as_schema: bool = True
-    ) -> Union[List[Dict[str, Any]], List[InstanceDetectionData]]:
+    def get_split_file_names(self, split: Optional[str] = None) -> List[str]:
         if split is None:
             split = "all"
 
         split_path: Path = self.split_dir / f"{split}.txt"
-
         file_names: List[str] = (
             pd.read_csv(split_path, header=None).squeeze().tolist()  # type: ignore
         )
+
+        return file_names
+
+    def get_split(
+        self, split: Optional[str] = None, as_schema: bool = True
+    ) -> Union[List[Dict[str, Any]], List[InstanceDetectionData]]:
+        file_names: List[str] = self.get_split_file_names(split=split)
         file_paths: Set[Path] = set(
             Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
         )

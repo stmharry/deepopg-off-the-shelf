@@ -346,6 +346,7 @@ dev = ["flake8 (==3.8.1)", "flake8-bugbear", "flake8-comprehensions", "isort (==
 [package.source]
 type = "url"
 url = "https://dl.fbaipublicfiles.com/detectron2/wheels/cu113/torch1.10/detectron2-0.6%2Bcu113-cp39-cp39-linux_x86_64.whl"
+
 [[package]]
 name = "filelock"
 version = "3.12.0"
@@ -977,20 +978,6 @@ files = [
     {file = "MarkupSafe-2.1.2-cp39-cp39-win_amd64.whl", hash = "sha256:0576fe974b40a400449768941d5d0858cc624e3249dfd1e0c33674e5c7ca7aed"},
     {file = "MarkupSafe-2.1.2.tar.gz", hash = "sha256:abcabc8c2b26036d62d4c746381a6f7cf60aafcc653198ad678306986b09450d"},
 ]
-
-[[package]]
-name = "MaskDINO"
-version = "1.0"
-description = ""
-category = "main"
-optional = false
-python-versions = "*"
-files = []
-develop = true
-
-[package.source]
-type = "directory"
-url = "MaskDINO"
 
 [[package]]
 name = "matplotlib"
@@ -2022,6 +2009,7 @@ typing-extensions = "*"
 [package.source]
 type = "url"
 url = "https://download.pytorch.org/whl/cu113/torch-1.10.2%2Bcu113-cp39-cp39-linux_x86_64.whl"
+
 [[package]]
 name = "torchvision"
 version = "0.11.3+cu113"
@@ -2044,6 +2032,7 @@ scipy = ["scipy"]
 [package.source]
 type = "url"
 url = "https://download.pytorch.org/whl/cu113/torchvision-0.11.3%2Bcu113-cp39-cp39-linux_x86_64.whl"
+
 [[package]]
 name = "tqdm"
 version = "4.65.0"
@@ -2064,6 +2053,33 @@ dev = ["py-make (>=0.1.0)", "twine", "wheel"]
 notebook = ["ipywidgets (>=6)"]
 slack = ["slack-sdk"]
 telegram = ["requests"]
+
+[[package]]
+name = "types-requests"
+version = "2.31.0.1"
+description = "Typing stubs for requests"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "types-requests-2.31.0.1.tar.gz", hash = "sha256:3de667cffa123ce698591de0ad7db034a5317457a596eb0b4944e5a9d9e8d1ac"},
+    {file = "types_requests-2.31.0.1-py3-none-any.whl", hash = "sha256:afb06ef8f25ba83d59a1d424bd7a5a939082f94b94e90ab5e6116bd2559deaa3"},
+]
+
+[package.dependencies]
+types-urllib3 = "*"
+
+[[package]]
+name = "types-urllib3"
+version = "1.26.25.13"
+description = "Typing stubs for urllib3"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "types-urllib3-1.26.25.13.tar.gz", hash = "sha256:3300538c9dc11dad32eae4827ac313f5d986b8b21494801f1bf97a1ac6c03ae5"},
+    {file = "types_urllib3-1.26.25.13-py3-none-any.whl", hash = "sha256:5dbd1d2bef14efee43f5318b5d36d805a489f6600252bb53626d4bfafd95e27c"},
+]
 
 [[package]]
 name = "typing-extensions"
@@ -2162,4 +2178,4 @@ testing = ["big-O", "flake8 (<5)", "jaraco.functools", "jaraco.itertools", "more
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.10"
-content-hash = "6854710858cbdf409cd5aae2ed0c799b3dc3b4e71eddc0dd21ab10920181d39c"
+content-hash = "00bd8a765865abbd20741cef0402964c3e00d0551d97d0d47cae229b86a871dc"

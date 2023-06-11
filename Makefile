@@ -110,6 +110,8 @@ show:
 	$(PY) scripts/show.py \
 		--data_dir $(DATA_DIR) \
 		--result_dir $(RESULT_DIR) \
+		--dataset_name pano_debug \
 		--noshow_visualizer \
+		--visualizer_min_score 0.05 \
 		--show_coco_annotator \
 		--coco_annotator_url http://192.168.0.79:5000/api

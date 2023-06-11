@@ -17,18 +17,18 @@ class CocoCategory(BaseModel):
 
 
 class CocoImage(BaseModel):
-    id: Union[str, int]
+    id: Union[int, str]
     file_name: str
     width: int
     height: int
 
 
 class CocoAnnotation(BaseModel):
-    id: Union[str, int]
-    image_id: Union[str, int]
+    id: Union[int, str]
+    image_id: Union[int, str]
     category_id: Union[int, str]
     bbox: List[int]
-    segmentation: CocoRLE
+    segmentation: Union[CocoRLE, List[List[int]]]
     area: int
     iscrowd: int = 0
 
@@ -51,12 +51,12 @@ class InstanceDetectionData(BaseModel):
     file_name: Path
     height: int
     width: int
-    image_id: Union[str, int]
+    image_id: Union[int, int]
     annotations: List[InstanceDetectionAnnotation]
 
 
 class InstanceDetectionPredictionInstance(BaseModel):
-    image_id: Union[str, int]
+    image_id: Union[int, str]
     bbox: List[int]
     category_id: int
     segmentation: CocoRLE
@@ -64,5 +64,5 @@ class InstanceDetectionPredictionInstance(BaseModel):
 
 
 class InstanceDetectionPrediction(BaseModel):
-    image_id: Union[str, int]
+    image_id: Union[int, str]
     instances: List[InstanceDetectionPredictionInstance]
