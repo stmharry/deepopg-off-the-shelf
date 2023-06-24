@@ -13,7 +13,7 @@ import pycocotools.mask
 import rich.progress
 import torch
 from absl import app, flags, logging
-from pydantic import parse_file_as, parse_obj_as
+from pydantic import parse_obj_as
 
 from app.coco_annotator.clients import CocoAnnotatorClient
 from app.coco_annotator.schemas import CocoAnnotatorDataset, CocoAnnotatorImage
@@ -193,42 +193,42 @@ def show_coco_annotator(
 
     ### annotations
 
-    coco_instances: List[InstanceDetectionPredictionInstance] = parse_file_as(
-        List[InstanceDetectionPredictionInstance],
-        Path(FLAGS.result_dir, "coco_instances_results.json"),
-    )
+    predictions_obj = torch.load(Path(FLAGS.result_dir, FLAGS.prediction_name))
+    predictions = parse_obj_as(List[InstanceDetectionPrediction], predictions_obj)
 
+    num: int = 0
     coco_annotations: List[CocoAnnotation] = []
-    for num, coco_instance in rich.progress.track(
-        enumerate(coco_instances),
-        total=len(coco_instances),
-        description="Converting annotations...",
+    for prediction in rich.progress.track(
+        predictions, total=len(predictions), description="Converting predictions..."
     ):
-        if int(coco_instance.image_id) not in image_ids:
-            continue
+        instances: List[InstanceDetectionPredictionInstance] = prediction.instances
+        for coco_instance in instances:
+            if int(coco_instance.image_id) not in image_ids:
+                continue
 
-        category_id: int = result_catogory_id_to_coco_category_id[
-            coco_instance.category_id
-        ]
+            category_id: int = result_catogory_id_to_coco_category_id[
+                coco_instance.category_id
+            ]
 
-        rle_obj: Dict[str, Any] = coco_instance.segmentation.dict()
-        segmentation: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
-        contours: List[npt.NDArray[np.int32]]
-        contours, _ = cv2.findContours(
-            segmentation[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
-
-        coco_annotations.append(
-            CocoAnnotation(
-                id=num,
-                image_id=coco_instance.image_id,
-                category_id=category_id,
-                bbox=coco_instance.bbox,
-                segmentation=[contour.flatten().tolist() for contour in contours],
-                area=pycocotools.mask.area(rle_obj),
-                metadata={"score": coco_instance.score},
+            rle_obj: Dict[str, Any] = coco_instance.segmentation.dict()
+            segmentation: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
+            contours: List[npt.NDArray[np.int32]]
+            contours, _ = cv2.findContours(
+                segmentation[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
-        )
+
+            coco_annotations.append(
+                CocoAnnotation(
+                    id=num,
+                    image_id=coco_instance.image_id,
+                    category_id=category_id,
+                    bbox=coco_instance.bbox,
+                    segmentation=[contour.flatten().tolist() for contour in contours],
+                    area=pycocotools.mask.area(rle_obj),
+                    metadata={"score": coco_instance.score},
+                )
+            )
+            num += 1
 
     ### images
 
