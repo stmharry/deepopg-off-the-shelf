@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -31,6 +31,7 @@ class CocoAnnotation(BaseModel):
     segmentation: Union[CocoRLE, List[List[int]]]
     area: int
     iscrowd: int = 0
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class Coco(BaseModel):

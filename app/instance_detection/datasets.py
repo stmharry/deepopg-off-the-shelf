@@ -43,7 +43,7 @@ from detectron2.data.datasets import load_coco_json
 T = TypeVar("T", bound="InstanceDetection")
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass  # type: ignore
 class InstanceDetection(metaclass=abc.ABCMeta):
     CATEGORY_MAPPING_RE: ClassVar[Optional[Dict[str, str]]] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"

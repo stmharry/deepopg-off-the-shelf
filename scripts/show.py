@@ -34,7 +34,11 @@ from detectron2.utils.visualizer import VisImage, Visualizer
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
+flags.DEFINE_string(
+    "prediction_name", "instances_predictions.pth", "Prediction file name."
+)
 flags.DEFINE_boolean("show_visualizer", False, "Visualize the results to images.")
+flags.DEFINE_string("visualizer_dir", "visualize", "Visualizer directory.")
 flags.DEFINE_float("visualizer_min_score", 0.05, "Minimum score to visualize.")
 flags.DEFINE_boolean(
     "show_coco_annotator", False, "Visualize the results in coco annotator."
@@ -83,7 +87,6 @@ def show_visualizer(
     dataset: List[InstanceDetectionData],
     metadata: Metadata,
     min_score: float,
-    prediction_name: str = "instances_predictions.pth",
     category_re_groups: Dict[str, str] = {
         "all": ".*",
         "tooth": r"TOOTH_\d+",
@@ -91,7 +94,7 @@ def show_visualizer(
         "findings": r"(?!TOOTH_\d+)",
     },
 ) -> None:
-    prediction_path: Path = Path(FLAGS.result_dir, prediction_name)
+    prediction_path: Path = Path(FLAGS.result_dir, FLAGS.prediction_name)
 
     predictions_obj = torch.load(prediction_path)
     predictions = parse_obj_as(List[InstanceDetectionPrediction], predictions_obj)
@@ -99,7 +102,7 @@ def show_visualizer(
         prediction.image_id: prediction for prediction in predictions
     }
 
-    visualize_dir: Path = Path(FLAGS.result_dir, "visualize")
+    visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualizer_dir)
     Path(visualize_dir).mkdir(exist_ok=True)
 
     for data in dataset:
@@ -223,6 +226,7 @@ def show_coco_annotator(
                 bbox=coco_instance.bbox,
                 segmentation=[contour.flatten().tolist() for contour in contours],
                 area=pycocotools.mask.area(rle_obj),
+                metadata={"score": coco_instance.score},
             )
         )
 
