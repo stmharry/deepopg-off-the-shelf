@@ -129,18 +129,27 @@ def do_teeth_assignment(
 def do_assignment(
     reward: np.ndarray,
     quadratic_penalty: np.ndarray,
-    unique_constraint_id: Optional[np.ndarray] = None,
+    penalty_group_ids: Optional[List[Optional[int]]] = None,
+    unique_group_ids: Optional[List[Optional[int]]] = None,
     assignment_penalty: float = 0.01,
     epsilon: float = 1e-3,
 ) -> np.ndarray:
-    num: int = len(reward)
-    assert quadratic_penalty.shape == (num, num)
-
     assignment: np.ndarray
 
+    num: int = len(reward)
     if num == 0:
         assignment = np.zeros(0, dtype=np.bool_)
         return assignment
+
+    if penalty_group_ids is None:
+        penalty_group_ids = [None] * num
+
+    if unique_group_ids is None:
+        unique_group_ids = [None] * num
+
+    assert quadratic_penalty.shape == (num, num)
+    assert penalty_group_ids is not None
+    assert unique_group_ids is not None
 
     p: Dict[int, float] = {n: reward[n] for n in range(num)}
     q: Dict[Tuple[int, int], float] = {
@@ -157,26 +166,38 @@ def do_assignment(
     objectives: List[pyo.Expression] = []
     for n1 in model.N:
         objectives.append(model.P[n1] * model.x[n1])
+
         for n2 in model.N:
+            # only deal with upper triangular matrix
             if n1 > n2:
                 continue
 
-            penalty_coefficient: float
+            penalty_coefficient: float = 0.0
             if n1 == n2:
                 penalty_coefficient = assignment_penalty
-            else:
+            elif (
+                penalty_group_ids[n1] is not None
+                and penalty_group_ids[n2] is not None
+                and penalty_group_ids[n1] == penalty_group_ids[n2]
+            ):
                 penalty_coefficient = model.Q[n1, n2]
+
+            if penalty_coefficient == 0.0:
+                continue
 
             objectives.append(-penalty_coefficient * model.x[n1] * model.x[n2])
 
     constraints: List[pyo.Expression] = []
-    if unique_constraint_id is not None:
-        for category_id in np.unique(unique_constraint_id):
+    if unique_group_ids is not None:
+        for unique_constraint_id in list(set(unique_group_ids)):
+            if unique_constraint_id is None:
+                continue
+
             constraints.append(
                 sum(
                     model.x[n]
                     for n in model.N
-                    if unique_constraint_id[n] == category_id
+                    if unique_group_ids[n] == unique_constraint_id
                 )
                 <= 1
             )
@@ -215,10 +236,6 @@ def postprocess() -> None:
         List[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
-    num_categories: int = len(metadata.thing_classes)
-    is_teeth_class: List[bool] = [
-        category.startswith("TOOTH") for category in metadata.thing_classes
-    ]
 
     input_prediction_path: Path = Path(FLAGS.result_dir, FLAGS.input_prediction_name)
     predictions_obj = torch.load(input_prediction_path)
@@ -258,32 +275,37 @@ def postprocess() -> None:
 
                 iom[i, j] = iom[j, i] = iom_mask
 
-        score: np.ndarray = np.array([instance.score for instance in instances])
-        category_id: np.ndarray = np.array(
-            [instance.category_id for instance in instances]
-        )
-        is_teeth: np.ndarray = np.array(
-            [is_teeth_class[instance.category_id] for instance in instances]
-        )
+        scores: List[float] = []
+        penalty_group_ids: List[Optional[int]] = []
+        unique_group_ids: List[Optional[int]] = []
+        for instance in instances:
+            category_name: str = metadata.thing_classes[instance.category_id]
 
-        teeth_assignment: np.ndarray = do_assignment(
-            reward=score[is_teeth],
-            quadratic_penalty=iom[np.ix_(is_teeth, is_teeth)],
-            unique_constraint_id=category_id[is_teeth],
-        )
-        logging.info(f"Removing {np.sum(~teeth_assignment)} teeth instances.")
+            scores.append(instance.score)
 
-        non_teeth_assignment: np.ndarray = do_assignment(
-            reward=score[~is_teeth],
-            quadratic_penalty=iom[np.ix_(~is_teeth, ~is_teeth)],
-        )
-        logging.info(f"Removing {np.sum(~non_teeth_assignment)} non-teeth instances.")
+            penalty_group_id: Optional[int] = None
+            if category_name.startswith("TOOTH"):
+                penalty_group_id = 1
+            elif category_name == "ROOT_REMNANTS":
+                penalty_group_id = 2
+            else:
+                penalty_group_id = 3
+            penalty_group_ids.append(penalty_group_id)
 
-        assigned_instances: List[InstanceDetectionPredictionInstance] = (
-            np.array(instances)[is_teeth][teeth_assignment].tolist()
-            + np.array(instances)[~is_teeth][non_teeth_assignment].tolist()
+            unique_constraint_id: Optional[int] = None
+            if category_name.startswith("TOOTH"):
+                unique_constraint_id = instance.category_id
+            unique_group_ids.append(unique_constraint_id)
+
+        assignment: np.ndarray = do_assignment(
+            reward=np.array(scores),
+            quadratic_penalty=iom,
+            penalty_group_ids=penalty_group_ids,
+            unique_group_ids=unique_group_ids,
         )
-        prediction.instances = assigned_instances
+        logging.info(f"Removing {np.sum(~assignment)} instances.")
+
+        prediction.instances = np.array(instances)[assignment].tolist()
 
     output_prediction_path: Path = Path(FLAGS.result_dir, FLAGS.output_prediction_name)
     torch.save(
