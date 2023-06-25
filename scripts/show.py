@@ -163,7 +163,7 @@ def show_coco_annotator(
     name: str = f"{Path(FLAGS.result_dir).name}-{random_suffix}"
     image_ids: Set[int] = set([int(data.image_id) for data in dataset])
 
-    result_catogory_id_to_coco_category_id: Dict[int, int] = {
+    result_category_id_to_coco_category_id: Dict[int, int] = {
         value: key
         for (key, value) in metadata.thing_dataset_id_to_contiguous_id.items()
     }
@@ -206,7 +206,7 @@ def show_coco_annotator(
             if int(coco_instance.image_id) not in image_ids:
                 continue
 
-            category_id: int = result_catogory_id_to_coco_category_id[
+            category_id: int = result_category_id_to_coco_category_id[
                 coco_instance.category_id
             ]
 
