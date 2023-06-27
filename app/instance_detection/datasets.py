@@ -8,7 +8,6 @@ from typing import (
     Any,
     ClassVar,
     Dict,
-    Iterable,
     List,
     Optional,
     Set,
@@ -16,6 +15,7 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 import ijson
@@ -57,10 +57,9 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     def register(cls: Type[T], root_dir: Union[Path, str]) -> T:
         self = cls(root_dir=root_dir)
 
-        with open(self.coco_path) as f:
-            categories: Iterable[Dict] = ijson.items(f, "categories.item")
-            thing_classes: List[str] = [category["name"] for category in categories]
+        categories: List[CocoCategory] = self.get_coco_categories(self.coco_path)
 
+        thing_classes: List[str] = [category.name for category in categories]
         thing_colors: npt.NDArray[np.uint8] = (
             np.r_[
                 [(0, 0, 0)],
@@ -117,6 +116,27 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def coco_path(self) -> Path:
         pass
+
+    @staticmethod
+    def get_coco_categories(coco_path: Union[str, Path]) -> List[CocoCategory]:
+        with open(coco_path) as f:
+            categories: List[CocoCategory] = parse_obj_as(
+                List[CocoCategory], ijson.items(f, "categories.item")
+            )
+            sorted_categories: List[CocoCategory] = sorted(
+                categories, key=lambda category: cast(int, category.id)
+            )
+
+        return sorted_categories
+
+    @staticmethod
+    def get_coco_images(coco_path: Union[str, Path]) -> List[CocoImage]:
+        with open(coco_path) as f:
+            images: List[CocoImage] = parse_obj_as(
+                List[CocoImage], ijson.items(f, "images.item")
+            )
+
+        return images
 
     def _parse_mask_id(self, mask_id: str) -> Tuple[str, str, str]:
         names: List[str] = mask_id.split("_")

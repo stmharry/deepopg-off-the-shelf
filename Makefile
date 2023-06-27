@@ -19,6 +19,10 @@ MAIN = scripts/main.py \
 	--main-app $(MAIN_APP) \
 	--config-file $(CONFIG_FILE) \
 	--data-dir $(DATA_DIR)
+COMMANDS = scripts/commands.py \
+	--data_dir $(DATA_DIR) \
+	--result_dir $(RESULT_DIR) \
+	--dataset_name $(DATASET_NAME) \
 
 # functions
 
@@ -92,12 +96,6 @@ test-detectron2: check-MODEL_NAME
 		dataloader.test.dataset.names=pano_eval \
 		dataloader.evaluator.output_dir=$(RESULT_DIR)
 
-postprocess-detectron2:
-	$(PY) scripts/postprocess.py \
-		--data_dir $(DATA_DIR) \
-		--result_dir $(RESULT_DIR) \
-		--dataset_name pano_debug
-
 debug-detectron2: PYTHON = python -m pdb
 debug-detectron2: MODEL_DIR = /tmp/debug
 debug-detectron2:
@@ -110,17 +108,22 @@ debug-detectron2:
 setup: setup-$(ARCH)
 train: train-$(ARCH)
 test: test-$(ARCH)
-postprocess: postprocess-$(ARCH)
 debug: debug-$(ARCH)
 
-show:
-	$(PY) scripts/show.py \
-		--data_dir $(DATA_DIR) \
-		--result_dir $(RESULT_DIR) \
-		--dataset_name pano_debug \
+coco-annotator:
+	cd coco-annotator && \
+		docker compose up --build --detach
+
+postprocess:
+	$(PY) $(COMMANDS) \
+		--do_postprocess \
+		--output_prediction_name instances_predictions.postprocessed.pth
+
+visualize: check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+visualize:
+	$(PY) $(COMMANDS) \
 		--prediction_name instances_predictions.postprocessed.pth \
-		--show_visualizer \
+		--nodo_visualize \
 		--visualizer_dir visualize.postprocessed \
-		--visualizer_min_score 0.0 \
-		--show_coco_annotator \
+		--do_coco \
 		--coco_annotator_url http://192.168.0.79:5000/api
