@@ -2,11 +2,12 @@ import random
 import re
 import string
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import imageio.v3 as iio
 import numpy as np
+import pandas as pd
 import pycocotools.mask
 import pyomo.environ as pyo
 import rich.progress
@@ -37,6 +38,7 @@ flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string(
     "prediction_name", "instances_predictions.pth", "Input prediction file name."
 )
+
 # postprocess
 flags.DEFINE_bool("do_postprocess", False, "Whether to do postprocessing.")
 flags.DEFINE_string(
@@ -44,6 +46,10 @@ flags.DEFINE_string(
     "instances_predictions.postprocessed.pth",
     "Output prediction file name.",
 )
+
+# compile
+flags.DEFINE_bool("do_compile", False, "Whether to do result compilation.")
+flags.DEFINE_string("result_name", "result.csv", "Output result file name.")
 
 # visualize
 flags.DEFINE_bool("do_visualize", False, "Whether to do visualization.")
@@ -243,6 +249,108 @@ def postprocess(
     )
 
 
+def compile(
+    data_driver: InstanceDetection,
+    dataset: List[InstanceDetectionData],
+    metadata: Metadata,
+) -> None:
+    predictions: List[InstanceDetectionPrediction] = utils.load_predictions(
+        prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+    )
+    id_to_prediction: Dict[Union[str, int], InstanceDetectionPrediction] = {
+        prediction.image_id: prediction for prediction in predictions
+    }
+
+    row_results: List[Dict[str, Any]] = []
+    for data in dataset:
+        if data.image_id not in id_to_prediction:
+            logging.warning(f"Image id {data.image_id} not found in predictions.")
+            continue
+        logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
+
+        prediction: InstanceDetectionPrediction = id_to_prediction[data.image_id]
+        instances: List[InstanceDetectionPredictionInstance] = prediction.instances
+
+        df: pd.DataFrame = pd.DataFrame.from_records(
+            [instance.dict() for instance in instances]
+        )
+        df["mask"] = df["segmentation"].apply(
+            lambda segmentation: pycocotools.mask.decode(segmentation)
+        )
+
+        is_tooth: pd.Series = df.category_id.map(
+            metadata.thing_classes.__getitem__
+        ).str.startswith("TOOTH")
+        df_tooth: pd.DataFrame = df.loc[is_tooth]
+        df_nontooth: pd.DataFrame = df.loc[~is_tooth]
+
+        correlation: np.ndarray = np.zeros((len(df_tooth), len(df_nontooth)))
+        for j in range(len(df_nontooth)):
+            row_nontooth: pd.Series = df_nontooth.iloc[j]
+
+            if (
+                metadata.thing_classes[row_nontooth["category_id"]]
+                == "PERIAPICAL_RADIOLUCENT"
+            ):
+                # TODO
+                """
+                tooth_masks = np.stack(
+                    [np.zeros((data.height, data.width), dtype=np.uint8)]
+                    + df_tooth["mask"].tolist(),
+                    axis=0,
+                )
+                tooth_index = np.argmax(tooth_masks, axis=0)
+                """
+
+                continue  # DEBUG
+
+            for i in range(len(df_tooth)):
+                row_tooth: pd.Series = df_tooth.iloc[i]
+
+                iom_bbox: float = utils.calculate_iom_bbox(
+                    row_tooth["bbox"], row_nontooth["bbox"]
+                )
+                if iom_bbox == 0:
+                    continue
+
+                iom_mask: float = utils.calculate_iom_mask(
+                    row_tooth["mask"], row_nontooth["mask"]
+                )
+                logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
+
+                correlation[i, j] = iom_mask
+
+        max_correlation_index: np.ndarray = np.argmax(correlation, axis=0)
+
+        for j in range(len(df_nontooth)):
+            i = max_correlation_index[j]
+            corr = correlation[i, j]
+
+            if corr < 0.5:
+                continue
+
+            row_tooth = df_tooth.iloc[i]
+            row_nontooth = df_nontooth.iloc[j]
+
+            row_results.append(
+                {
+                    "file_name": (
+                        Path(data.file_name).relative_to(data_driver.image_dir).stem
+                    ),
+                    "fdi": int(
+                        metadata.thing_classes[row_tooth["category_id"]].split("_")[1]
+                    ),
+                    "finding": metadata.thing_classes[row_nontooth["category_id"]],
+                    "score": row_nontooth["score"],
+                }
+            )
+
+    df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(
+        ["file_name", "fdi", "finding"], ascending=True
+    )
+    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.result_name), index=False)
+
+
 def visualize(
     data_driver: InstanceDetection,
     dataset: List[InstanceDetectionData],
@@ -428,6 +536,8 @@ def main(_):
 
     if FLAGS.do_postprocess:
         postprocess(data_driver=data_driver, dataset=dataset, metadata=metadata)
+    if FLAGS.do_compile:
+        compile(data_driver=data_driver, dataset=dataset, metadata=metadata)
     if FLAGS.do_visualize:
         visualize(data_driver=data_driver, dataset=dataset, metadata=metadata)
     if FLAGS.do_coco:

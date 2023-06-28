@@ -119,6 +119,11 @@ postprocess:
 		--do_postprocess \
 		--output_prediction_name instances_predictions.postprocessed.pth
 
+compile:
+	$(PY) $(COMMANDS) \
+		--do_compile \
+		--prediction_name instances_predictions.postprocessed.pth
+
 visualize: check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 visualize:
 	$(PY) $(COMMANDS) \
