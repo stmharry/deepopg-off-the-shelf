@@ -2,7 +2,7 @@ import random
 import re
 import string
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union, cast
 
 import cv2
 import imageio.v3 as iio
@@ -11,6 +11,7 @@ import pandas as pd
 import pycocotools.mask
 import pyomo.environ as pyo
 import rich.progress
+import scipy.ndimage
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -277,6 +278,12 @@ def compile(
         df["mask"] = df["segmentation"].apply(
             lambda segmentation: pycocotools.mask.decode(segmentation)
         )
+        all_instances_mask: np.ndarray = np.logical_or.reduce(
+            df["mask"].tolist(), axis=0
+        )
+        all_instances_slice: slice = scipy.ndimage.find_objects(
+            all_instances_mask, max_label=1
+        )[0]
 
         is_tooth: pd.Series = df.category_id.map(
             metadata.thing_classes.__getitem__
@@ -284,28 +291,46 @@ def compile(
         df_tooth: pd.DataFrame = df.loc[is_tooth]
         df_nontooth: pd.DataFrame = df.loc[~is_tooth]
 
+        row_tooth: pd.Series
+        row_nontooth: pd.Series
+
         correlation: np.ndarray = np.zeros((len(df_tooth), len(df_nontooth)))
         for j in range(len(df_nontooth)):
-            row_nontooth: pd.Series = df_nontooth.iloc[j]
+            row_nontooth = df_nontooth.iloc[j]
+            non_tooth_class: str = metadata.thing_classes[row_nontooth["category_id"]]
 
-            if (
-                metadata.thing_classes[row_nontooth["category_id"]]
-                == "PERIAPICAL_RADIOLUCENT"
-            ):
+            # for `IMPLANT`
+            if non_tooth_class == "IMPLANT":
                 # TODO
-                """
-                tooth_masks = np.stack(
-                    [np.zeros((data.height, data.width), dtype=np.uint8)]
-                    + df_tooth["mask"].tolist(),
-                    axis=0,
-                )
-                tooth_index = np.argmax(tooth_masks, axis=0)
-                """
+                continue
 
-                continue  # DEBUG
+            # for `PERIAPICAL_RADIOLUCENT`
+
+            if non_tooth_class == "PERIAPICAL_RADIOLUCENT":
+                distance_to_non_tooth_instance: np.ndarray = cast(
+                    np.ndarray,
+                    scipy.ndimage.distance_transform_cdt(
+                        1 - row_nontooth["mask"][all_instances_slice]
+                    ),
+                )
+
+                for i in range(len(df_tooth)):
+                    row_tooth = df_tooth.iloc[i]
+
+                    min_dist: float = scipy.ndimage.minimum(
+                        distance_to_non_tooth_instance,
+                        labels=row_tooth["mask"][all_instances_slice],
+                    )
+                    correlation[i, j] = -min_dist
+
+                correlation[:, j] = correlation[:, j] == np.max(correlation[:, j])
+
+                continue
+
+            # for other findings
 
             for i in range(len(df_tooth)):
-                row_tooth: pd.Series = df_tooth.iloc[i]
+                row_tooth = df_tooth.iloc[i]
 
                 iom_bbox: float = utils.calculate_iom_bbox(
                     row_tooth["bbox"], row_nontooth["bbox"]
@@ -314,19 +339,21 @@ def compile(
                     continue
 
                 iom_mask: float = utils.calculate_iom_mask(
-                    row_tooth["mask"], row_nontooth["mask"]
+                    row_tooth["mask"][all_instances_slice],
+                    row_nontooth["mask"][all_instances_slice],
                 )
                 logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
 
                 correlation[i, j] = iom_mask
 
-        max_correlation_index: np.ndarray = np.argmax(correlation, axis=0)
+            correlation[:, j] = np.logical_and(
+                correlation[:, j] == np.max(correlation[:, j]),
+                correlation[:, j] > 0.5,  # overlap needs to be at least 50%
+            )
 
         for j in range(len(df_nontooth)):
-            i = max_correlation_index[j]
-            corr = correlation[i, j]
-
-            if corr < 0.5:
+            i = int(np.argmax(correlation[:, j]))
+            if correlation[i, j] == 0.0:
                 continue
 
             row_tooth = df_tooth.iloc[i]
