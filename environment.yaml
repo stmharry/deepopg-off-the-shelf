@@ -211,4 +211,3 @@ dependencies:
   - zstd=1.5.5=hc292b87_0
   - pip:
       - opencv-python==4.7.0.72
-prefix: /home/chia/anaconda3/envs/deepopg
