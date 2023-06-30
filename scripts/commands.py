@@ -278,6 +278,7 @@ def compile(
         df["mask"] = df["segmentation"].apply(
             lambda segmentation: pycocotools.mask.decode(segmentation)
         )
+
         all_instances_mask: np.ndarray = np.logical_or.reduce(
             df["mask"].tolist(), axis=0
         )
@@ -305,7 +306,6 @@ def compile(
                 continue
 
             # for `PERIAPICAL_RADIOLUCENT`
-
             if non_tooth_class == "PERIAPICAL_RADIOLUCENT":
                 distance_to_non_tooth_instance: np.ndarray = cast(
                     np.ndarray,
@@ -351,6 +351,10 @@ def compile(
                 correlation[:, j] > 0.5,  # overlap needs to be at least 50%
             )
 
+        # prepare results
+
+        file_name: str = Path(data.file_name).relative_to(data_driver.image_dir).stem
+
         for j in range(len(df_nontooth)):
             i = int(np.argmax(correlation[:, j]))
             if correlation[i, j] == 0.0:
@@ -359,18 +363,33 @@ def compile(
             row_tooth = df_tooth.iloc[i]
             row_nontooth = df_nontooth.iloc[j]
 
+            fdi: int = int(
+                metadata.thing_classes[row_tooth["category_id"]].split("_")[1]
+            )
+            category: str = metadata.thing_classes[row_nontooth["category_id"]]
+
             row_results.append(
                 {
-                    "file_name": (
-                        Path(data.file_name).relative_to(data_driver.image_dir).stem
-                    ),
-                    "fdi": int(
-                        metadata.thing_classes[row_tooth["category_id"]].split("_")[1]
-                    ),
-                    "finding": metadata.thing_classes[row_nontooth["category_id"]],
+                    "file_name": file_name,
+                    "fdi": fdi,
+                    "finding": category,
                     "score": row_nontooth["score"],
                 }
             )
+
+        for category_id, category in enumerate(metadata.thing_classes):
+            if not category.startswith("TOOTH"):
+                continue
+
+            if category_id not in df_tooth.category_id:
+                row_results.append(
+                    {
+                        "file_name": file_name,
+                        "fdi": int(category.split("_")[1]),
+                        "finding": "MISSING",
+                        "score": 1.0,  # TODO
+                    }
+                )
 
     df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(
         ["file_name", "fdi", "finding"], ascending=True
