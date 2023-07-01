@@ -4,19 +4,7 @@ import functools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import (
-    Any,
-    ClassVar,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import Any, ClassVar, TypeVar, cast
 
 import ijson
 import imageio.v3 as iio
@@ -45,21 +33,21 @@ T = TypeVar("T", bound="InstanceDetection")
 
 @dataclasses.dataclass  # type: ignore
 class InstanceDetection(metaclass=abc.ABCMeta):
-    CATEGORY_MAPPING_RE: ClassVar[Optional[Dict[str, str]]] = None
+    CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"
 
-    root_dir: Union[Path, str]
-    category_mapping: Optional[Dict[str, str]] = None
+    root_dir: Path | str
+    category_mapping: dict[str, str] | None = None
 
-    _coco_dataset: Optional[List[Dict[str, Any]]] = dataclasses.field(default=None)
+    _coco_dataset: list[dict[str, Any]] | None = dataclasses.field(default=None)
 
     @classmethod
-    def register(cls: Type[T], root_dir: Union[Path, str]) -> T:
+    def register(cls: type[T], root_dir: str | Path) -> T:
         self = cls(root_dir=root_dir)
 
-        categories: List[CocoCategory] = self.get_coco_categories(self.coco_path)
+        categories: list[CocoCategory] = self.get_coco_categories(self.coco_path)
 
-        thing_classes: List[str] = [category.name for category in categories]
+        thing_classes: list[str] = [category.name for category in categories]
         thing_colors: npt.NDArray[np.uint8] = (
             np.r_[
                 [(0, 0, 0)],
@@ -85,7 +73,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         return self
 
     @property
-    def dataset(self) -> List[Dict[str, Any]]:
+    def dataset(self) -> list[dict[str, Any]]:
         if not self.coco_path.exists():
             raise ValueError(
                 f"Coco dataset does not exist: {self.coco_path!s}, please run "
@@ -118,28 +106,28 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         pass
 
     @staticmethod
-    def get_coco_categories(coco_path: Union[str, Path]) -> List[CocoCategory]:
+    def get_coco_categories(coco_path: str | Path) -> list[CocoCategory]:
         with open(coco_path) as f:
-            categories: List[CocoCategory] = parse_obj_as(
-                List[CocoCategory], ijson.items(f, "categories.item")
+            categories: list[CocoCategory] = parse_obj_as(
+                list[CocoCategory], ijson.items(f, "categories.item")
             )
-            sorted_categories: List[CocoCategory] = sorted(
+            sorted_categories: list[CocoCategory] = sorted(
                 categories, key=lambda category: cast(int, category.id)
             )
 
         return sorted_categories
 
     @staticmethod
-    def get_coco_images(coco_path: Union[str, Path]) -> List[CocoImage]:
+    def get_coco_images(coco_path: str | Path) -> list[CocoImage]:
         with open(coco_path) as f:
-            images: List[CocoImage] = parse_obj_as(
-                List[CocoImage], ijson.items(f, "images.item")
+            images: list[CocoImage] = parse_obj_as(
+                list[CocoImage], ijson.items(f, "images.item")
             )
 
         return images
 
-    def _parse_mask_id(self, mask_id: str) -> Tuple[str, str, str]:
-        names: List[str] = mask_id.split("_")
+    def _parse_mask_id(self, mask_id: str) -> tuple[str, str, str]:
+        names: list[str] = mask_id.split("_")
 
         image_name: str = names[0]
         supercategory: str = "_".join(names[1:-1])
@@ -147,23 +135,21 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
         return (image_name, supercategory, fdi)
 
-    def _prepare_categories(self) -> List[CocoCategory]:
-        mask_paths: List[Path] = list(self.mask_dir.glob("*.png"))
+    def _prepare_categories(self) -> list[CocoCategory]:
+        mask_paths: list[Path] = list(self.mask_dir.glob("*.png"))
 
-        category_names: Set[str] = set()
+        category_names: set[str] = set()
         for mask_path in mask_paths:
             (_, supercategory, fdi) = self._parse_mask_id(mask_path.stem)
             category_name: str = f"{supercategory}_{fdi}"
             category_names.add(category_name)
 
         if self.CATEGORY_MAPPING_RE is not None:
-            mapped_category_names: Set[str] = set()
-            category_mapping: Dict[str, str] = {}
+            mapped_category_names: set[str] = set()
+            category_mapping: dict[str, str] = {}
             for category_name in category_names:
                 for from_pattern, to_pattern in self.CATEGORY_MAPPING_RE.items():
-                    match_obj: Optional[re.Match] = re.match(
-                        from_pattern, category_name
-                    )
+                    match_obj: re.Match | None = re.match(from_pattern, category_name)
                     if match_obj is None:
                         continue
 
@@ -181,15 +167,15 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             category_names = mapped_category_names
             self.category_mapping = category_mapping
 
-        categories: List[CocoCategory] = [
+        categories: list[CocoCategory] = [
             CocoCategory(name=category_name) for category_name in category_names
         ]
 
         return sorted(categories, key=lambda category: category.name)
 
     @staticmethod
-    def _prepare_image(image_path: Path, image_dir: Path) -> Dict:
-        meta: Dict = iio.immeta(image_dir / image_path)
+    def _prepare_image(image_path: Path, image_dir: Path) -> dict:
+        meta: dict = iio.immeta(image_dir / image_path)
         (width, height) = meta["shape"]
 
         return dict(
@@ -199,15 +185,15 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             height=height,
         )
 
-    def prepare_images(self, n_jobs: int = -1) -> List[CocoImage]:
-        image_paths: List[Path] = list(
+    def prepare_images(self, n_jobs: int = -1) -> list[CocoImage]:
+        image_paths: list[Path] = list(
             image_path.relative_to(self.image_dir)
             for image_path in self.image_dir.glob(self.IMAGE_GLOB)
         )
 
-        images: List[CocoImage] = []
+        images: list[CocoImage] = []
         with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-            future_to_id: Dict[Future, Path] = {}
+            future_to_id: dict[Future, Path] = {}
 
             image_path: Path
             for image_path in tqdm.tqdm(image_paths, desc="Image Job Dispatch"):
@@ -235,7 +221,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     @staticmethod
     def _prepare_annotation(
         mask_path: Path, mask_name: str, category_name: str, image_name: str
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         mask: npt.NDArray[np.uint8] = iio.imread(mask_path)
         rows: npt.NDArray[np.bool_] = np.any(mask, axis=1)  # type: ignore
         cols: npt.NDArray[np.bool_] = np.any(mask, axis=0)  # type: ignore
@@ -245,7 +231,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         if (len(y) == 0) or (len(x) == 0):
             return None
 
-        bbox: List[int] = [x[0], y[0], x[-1] - x[0] + 1, y[-1] - y[0] + 1]
+        bbox: list[int] = [x[0], y[0], x[-1] - x[0] + 1, y[-1] - y[0] + 1]
         rle: pycocotools.mask._EncodedRLE = pycocotools.mask.encode(
             np.asarray(mask, order="F")  # type:ignore
         )
@@ -262,15 +248,15 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
     def prepare_annotations(
         self,
-        category_names: Set[str],
-        image_names: Set[Union[str, int]],
+        category_names: set[str],
+        image_names: set[str | int],
         n_jobs: int = -1,
-    ) -> List[CocoAnnotation]:
-        mask_paths: List[Path] = list(self.mask_dir.glob("*.png"))
+    ) -> list[CocoAnnotation]:
+        mask_paths: list[Path] = list(self.mask_dir.glob("*.png"))
 
-        annotations: List[CocoAnnotation] = []
+        annotations: list[CocoAnnotation] = []
         with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-            future_to_id: Dict[Future, Path] = {}
+            future_to_id: dict[Future, Path] = {}
             for mask_path in tqdm.tqdm(mask_paths, desc="Annotation Job Dispatch"):
                 mask_name: str = mask_path.stem
                 (image_name, supercategory, fdi) = self._parse_mask_id(mask_name)
@@ -278,7 +264,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
                 if image_name not in image_names:
                     continue
 
-                category_name: Optional[str] = f"{supercategory}_{fdi}"
+                category_name: str | None = f"{supercategory}_{fdi}"
 
                 if self.CATEGORY_MAPPING_RE is not None:
                     assert self.category_mapping is not None
@@ -321,20 +307,20 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             logging.info(f"Coco dataset exists: {self.coco_path!s}.")
             return
 
-        categories: List[CocoCategory] = self._prepare_categories()
-        images: List[CocoImage] = self.prepare_images(n_jobs=n_jobs)
-        annotations: List[CocoAnnotation] = self.prepare_annotations(
+        categories: list[CocoCategory] = self._prepare_categories()
+        images: list[CocoImage] = self.prepare_images(n_jobs=n_jobs)
+        annotations: list[CocoAnnotation] = self.prepare_annotations(
             category_names=set(category.name for category in categories),
             image_names=set(image.id for image in images),
             n_jobs=n_jobs,
         )
 
-        category_name_to_index: Dict[Union[str, int], int] = {}
+        category_name_to_index: dict[str | int, int] = {}
         for num, category in enumerate(categories):
             category_name_to_index[category.name] = num + 1
             category.id = num + 1
 
-        image_name_to_index: Dict[Union[str, int], int] = {}
+        image_name_to_index: dict[str | int, int] = {}
         for num, image in enumerate(images):
             image_name_to_index[image.id] = num + 1
             image.id = num + 1
@@ -349,37 +335,37 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         with open(self.coco_path, "w") as f:
             f.write(coco.json())
 
-    def get_split_file_names(self, split: Optional[str] = None) -> List[str]:
+    def get_split_file_names(self, split: str | None = None) -> list[str]:
         if split is None:
             split = "all"
 
         split_path: Path = self.split_dir / f"{split}.txt"
-        file_names: List[str] = (
+        file_names: list[str] = (
             pd.read_csv(split_path, header=None).squeeze().tolist()  # type: ignore
         )
 
         return file_names
 
     def get_split(
-        self, split: Optional[str] = None, as_schema: bool = True
-    ) -> Union[List[Dict[str, Any]], List[InstanceDetectionData]]:
-        file_names: List[str] = self.get_split_file_names(split=split)
-        file_paths: Set[Path] = set(
+        self, split: str | None = None, as_schema: bool = True
+    ) -> list[dict[str, Any]] | list[InstanceDetectionData]:
+        file_names: list[str] = self.get_split_file_names(split=split)
+        file_paths: set[Path] = set(
             Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
         )
-        coco_dataset: List[Dict[str, Any]] = [
+        coco_dataset: list[dict[str, Any]] = [
             data for data in self.dataset if Path(data["file_name"]) in file_paths
         ]
 
         if as_schema:
-            return parse_obj_as(List[InstanceDetectionData], coco_dataset)
+            return parse_obj_as(list[InstanceDetectionData], coco_dataset)
         else:
             return coco_dataset
 
 
 @dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
-    CATEGORY_MAPPING_RE: ClassVar[Optional[Dict[str, str]]] = {
+    CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
         r"TOOTH_(\d+)": r"TOOTH_\1",
         r"DENTAL_IMPLANT_(\d+)": "IMPLANT",
         r"ROOT_REMNANTS_(\d+)": "ROOT_REMNANTS",

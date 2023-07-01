@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
@@ -17,7 +17,7 @@ from app.instance_detection.schemas import (
 from detectron2.structures import BoxMode, Instances
 
 
-def calculate_iom_bbox(bbox1: List[int], bbox2: List[int]) -> float:
+def calculate_iom_bbox(bbox1: list[int], bbox2: list[int]) -> float:
     x1_1, y1_1, w1, h1 = bbox1
     x1_2, y1_2, w2, h2 = bbox2
 
@@ -50,13 +50,13 @@ def calculate_iom_mask(mask1: np.ndarray, mask2: np.ndarray) -> float:
 
 def prediction_to_detectron2_instances(
     prediction: InstanceDetectionPrediction,
-    image_size: Tuple[int, int],
-    category_ids: Optional[List[int]] = None,
+    image_size: tuple[int, int],
+    category_ids: list[int] | None = None,
 ) -> Instances:
-    scores: List[float] = []
-    pred_boxes: List[List[int]] = []
-    pred_classes: List[int] = []
-    pred_masks: List[npt.NDArray[np.uint8]] = []
+    scores: list[float] = []
+    pred_boxes: list[list[int]] = []
+    pred_classes: list[int] = []
+    pred_masks: list[npt.NDArray[np.uint8]] = []
 
     for instance in prediction.instances:
         score: float = instance.score
@@ -82,20 +82,20 @@ def prediction_to_detectron2_instances(
 
 def prediction_to_coco_annotations(
     prediction: InstanceDetectionPrediction,
-    coco_categories: List[CocoCategory],
+    coco_categories: list[CocoCategory],
     start_id: int = 0,
-) -> List[CocoAnnotation]:
-    instances: List[InstanceDetectionPredictionInstance] = prediction.instances
+) -> list[CocoAnnotation]:
+    instances: list[InstanceDetectionPredictionInstance] = prediction.instances
 
-    coco_annotations: List[CocoAnnotation] = []
+    coco_annotations: list[CocoAnnotation] = []
     id: int = start_id
     for instance in instances:
-        category_id: Optional[int] = coco_categories[instance.category_id].id
+        category_id: int | None = coco_categories[instance.category_id].id
         assert category_id is not None
 
-        rle_obj: Dict[str, Any] = instance.segmentation.dict()
+        rle_obj: dict[str, Any] = instance.segmentation.dict()
         segmentation: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
-        contours: List[npt.NDArray[np.int32]]
+        contours: list[npt.NDArray[np.int32]]
         contours, _ = cv2.findContours(
             segmentation[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
@@ -116,17 +116,17 @@ def prediction_to_coco_annotations(
     return coco_annotations
 
 
-def load_predictions(prediction_path: Path) -> List[InstanceDetectionPrediction]:
+def load_predictions(prediction_path: Path) -> list[InstanceDetectionPrediction]:
     predictions_obj = torch.load(prediction_path)
-    predictions = parse_obj_as(List[InstanceDetectionPrediction], predictions_obj)
+    predictions = parse_obj_as(list[InstanceDetectionPrediction], predictions_obj)
 
     return predictions
 
 
 def save_predictions(
-    predictions: List[InstanceDetectionPrediction], prediction_path: Path
+    predictions: list[InstanceDetectionPrediction], prediction_path: Path
 ) -> None:
-    predictions_obj: List[Dict[str, Any]] = [
+    predictions_obj: list[dict[str, Any]] = [
         prediction.dict() for prediction in predictions
     ]
     torch.save(predictions_obj, prediction_path)

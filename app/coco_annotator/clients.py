@@ -1,7 +1,7 @@
 import dataclasses
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from absl import logging
 from pydantic import parse_obj_as
@@ -33,8 +33,8 @@ class CocoAnnotatorClient(object):
 
     def login(
         self,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
+        username: str | None = None,
+        password: str | None = None,
     ) -> bool:
         if username is None:
             username = os.getenv("COCO_ANNOTATOR_USERNAME")
@@ -56,7 +56,7 @@ class CocoAnnotatorClient(object):
     # datasets
 
     def create_dataset(
-        self, name: str, categories: Optional[List[str]] = None
+        self, name: str, categories: list[str] | None = None
     ) -> CocoAnnotatorDataset:
         if categories is None:
             categories = []
@@ -69,16 +69,16 @@ class CocoAnnotatorClient(object):
 
         return CocoAnnotatorDataset.parse_obj(r.json())
 
-    def get_datasets(self) -> List[CocoAnnotatorDataset]:
+    def get_datasets(self) -> list[CocoAnnotatorDataset]:
         r: Response = self._fetch(
             method="GET",
             path="/dataset",
         )
 
-        return parse_obj_as(List[CocoAnnotatorDataset], r.json())
+        return parse_obj_as(list[CocoAnnotatorDataset], r.json())
 
-    def get_dataset_by_name(self, name: str) -> Optional[CocoAnnotatorDataset]:
-        datasets: List[CocoAnnotatorDataset] = self.get_datasets()
+    def get_dataset_by_name(self, name: str) -> CocoAnnotatorDataset | None:
+        datasets: list[CocoAnnotatorDataset] = self.get_datasets()
         for dataset in datasets:
             if dataset.name == name:
                 return dataset
@@ -89,8 +89,8 @@ class CocoAnnotatorClient(object):
     def update_dataset(
         self,
         dataset_id: int,
-        categories: List[str],
-        default_annotation_metadata: Optional[Dict[str, str]] = None,
+        categories: list[str],
+        default_annotation_metadata: dict[str, str] | None = None,
     ) -> bool:
         if default_annotation_metadata is None:
             default_annotation_metadata = {}
@@ -108,18 +108,18 @@ class CocoAnnotatorClient(object):
 
     # categories
 
-    def get_categories(self) -> List[CocoAnnotatorCategory]:
+    def get_categories(self) -> list[CocoAnnotatorCategory]:
         r: Response = self._fetch(
             method="GET",
             path="/category",
         )
 
-        return parse_obj_as(List[CocoAnnotatorCategory], r.json())
+        return parse_obj_as(list[CocoAnnotatorCategory], r.json())
 
     # images
 
     def create_image(self, file_path: Path, file_name: str, dataset_id: int) -> int:
-        content_type: Optional[str] = {
+        content_type: str | None = {
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
             ".png": "image/png",
@@ -137,18 +137,18 @@ class CocoAnnotatorClient(object):
 
         return r.json()
 
-    def get_images(self, per_page: int = 1_000_000) -> List[CocoAnnotatorImage]:
+    def get_images(self, per_page: int = 1_000_000) -> list[CocoAnnotatorImage]:
         r: Response = self._fetch(
             method="GET",
             path=f"/image",
             params={"per_page": per_page},
         )
 
-        return parse_obj_as(List[CocoAnnotatorImage], r.json()["images"])
+        return parse_obj_as(list[CocoAnnotatorImage], r.json()["images"])
 
     # coco
 
-    def upload_coco(self, coco: Coco, dataset_id: int) -> Dict[str, Any]:
+    def upload_coco(self, coco: Coco, dataset_id: int) -> dict[str, Any]:
         r: Response = self._fetch(
             method="POST",
             path=f"/dataset/{dataset_id}/coco",

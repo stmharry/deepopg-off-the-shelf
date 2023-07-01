@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -7,41 +7,41 @@ from detectron2.structures import BoxMode
 
 
 class CocoRLE(BaseModel):
-    size: List[int]
+    size: list[int]
     counts: str
 
 
 class CocoCategory(BaseModel):
-    id: Optional[int] = None
+    id: int | None = None
     name: str
 
 
 class CocoImage(BaseModel):
-    id: Union[int, str]
+    id: int | str
     file_name: str
     width: int
     height: int
 
 
 class CocoAnnotation(BaseModel):
-    id: Union[int, str]
-    image_id: Union[int, str]
-    category_id: Union[int, str]
-    bbox: List[int]
-    segmentation: Union[CocoRLE, List[List[int]]]
+    id: int | str
+    image_id: int | str
+    category_id: int | str
+    bbox: list[int]
+    segmentation: CocoRLE | list[list[int]]
     area: int
     iscrowd: int = 0
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 class Coco(BaseModel):
-    categories: List[CocoCategory]
-    images: List[CocoImage]
-    annotations: List[CocoAnnotation]
+    categories: list[CocoCategory]
+    images: list[CocoImage]
+    annotations: list[CocoAnnotation]
 
 
 class InstanceDetectionAnnotation(BaseModel):
-    bbox: List[int]
+    bbox: list[int]
     bbox_mode: BoxMode
     category_id: int
     segmentation: CocoRLE
@@ -52,18 +52,18 @@ class InstanceDetectionData(BaseModel):
     file_name: Path
     height: int
     width: int
-    image_id: Union[int, int]
-    annotations: List[InstanceDetectionAnnotation]
+    image_id: int | int
+    annotations: list[InstanceDetectionAnnotation]
 
 
 class InstanceDetectionPredictionInstance(BaseModel):
-    image_id: Union[int, str]
-    bbox: List[int]
+    image_id: int | str
+    bbox: list[int]
     category_id: int
     segmentation: CocoRLE
     score: float
 
 
 class InstanceDetectionPrediction(BaseModel):
-    image_id: Union[int, str]
-    instances: List[InstanceDetectionPredictionInstance]
+    image_id: int | str
+    instances: list[InstanceDetectionPredictionInstance]
