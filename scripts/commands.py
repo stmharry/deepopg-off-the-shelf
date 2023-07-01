@@ -50,7 +50,7 @@ flags.DEFINE_string(
 
 # compile
 flags.DEFINE_bool("do_compile", False, "Whether to do result compilation.")
-flags.DEFINE_string("result_name", "result.csv", "Output result file name.")
+flags.DEFINE_string("compile_csv_name", "result.csv", "Output result file name.")
 
 # visualize
 flags.DEFINE_bool("do_visualize", False, "Whether to do visualization.")
@@ -381,7 +381,7 @@ def compile(
             if not category.startswith("TOOTH"):
                 continue
 
-            if category_id not in df_tooth.category_id:
+            if category_id not in df_tooth.category_id.tolist():
                 row_results.append(
                     {
                         "file_name": file_name,
@@ -394,7 +394,7 @@ def compile(
     df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(
         ["file_name", "fdi", "finding"], ascending=True
     )
-    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.result_name), index=False)
+    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.compile_csv_name), index=False)
 
 
 def visualize(
