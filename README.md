@@ -4,7 +4,6 @@ This repository implements [DeepOPG](https://arxiv.org/abs/2103.08290) with most
 
 ## Prerequisites
 
-- Python 3.9 (strict)
 - [Anaconda](https://docs.anaconda.com/free/anaconda/install/)
 
 ## Installation
@@ -12,6 +11,7 @@ This repository implements [DeepOPG](https://arxiv.org/abs/2103.08290) with most
 ```bash
 $ git clone https://github.com/stmharry/deepopg-off-the-shelf.git && cd deepopg-off-the-shelf
 $ conda env create -f environment.yaml && conda activate deepopg
+$ pip install -e detectron2
 ```
 
 ## Usage
