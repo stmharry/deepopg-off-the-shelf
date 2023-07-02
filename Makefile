@@ -1,42 +1,38 @@
 ### variables
 
-# common variables
-
 ROOT_DIR = /mnt/hdd/PANO
-DATA_DIR = $(ROOT_DIR)/data
-MODEL_DIR_ROOT = $(ROOT_DIR)/models
-RESULT_DIR_ROOT = $(ROOT_DIR)/results
+
+CONFIG_DIR ?= ./configs
+DATA_DIR ?= $(ROOT_DIR)/data
+MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
+RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
+
+MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
+RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
+CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
+
+DATASET_NAME ?= pano_debug
+LATEST_MODEL ?= $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
+NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 
 # default variables
 
-PYTHONPATH = .
-PYTHON = python
-PY = \
+PYTHONPATH ?= .
+PYTHON ?= python
+PY ?= \
 	PYTHONPATH=$(PYTHONPATH):. \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32 \
 		$(PYTHON)
-
-MAIN = scripts/main.py \
+MAIN ?= scripts/main.py \
 	--main-app $(MAIN_APP) \
 	--config-file $(CONFIG_FILE) \
 	--data-dir $(DATA_DIR)
-
-COMMANDS = scripts/commands.py \
+COMMANDS ?= scripts/commands.py \
 	--data_dir $(DATA_DIR) \
 	--result_dir $(RESULT_DIR) \
 	--dataset_name $(DATASET_NAME) \
 
 # functions
-
-NEW_NAME = $(shell date "+%Y-%m-%d-%H%M%S")
-
-MODEL_DIR = $(MODEL_DIR_ROOT)/$(MODEL_NAME)
-LATEST_MODEL = $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
-
-RESULT_DIR = $(RESULT_DIR_ROOT)/$(RESULT_NAME)
-
-CONFIG_DIR = ./configs
-CONFIG_FILE = $(CONFIG_DIR)/$(CONFIG_NAME)
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
