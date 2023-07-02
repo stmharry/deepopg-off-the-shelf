@@ -15,10 +15,12 @@ PY = \
 	PYTHONPATH=$(PYTHONPATH):. \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32 \
 		$(PYTHON)
+
 MAIN = scripts/main.py \
 	--main-app $(MAIN_APP) \
 	--config-file $(CONFIG_FILE) \
 	--data-dir $(DATA_DIR)
+
 COMMANDS = scripts/commands.py \
 	--data_dir $(DATA_DIR) \
 	--result_dir $(RESULT_DIR) \
@@ -32,6 +34,9 @@ MODEL_DIR = $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 LATEST_MODEL = $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 
 RESULT_DIR = $(RESULT_DIR_ROOT)/$(RESULT_NAME)
+
+CONFIG_DIR = ./configs
+CONFIG_FILE = $(CONFIG_DIR)/$(CONFIG_NAME)
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
@@ -52,11 +57,11 @@ check-%:
 
 # maskdino targets
 
-setup-maskdino:
-	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
+install-maskdino:
+	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/install.py build install
 
 train-maskdino: MODEL_NAME = $(NEW_NAME)
-train-maskdino: CONFIG_FILE = ./configs/config-maskdino-r50.yaml
+train-maskdino: CONFIG_NAME = config-maskdino-r50.yaml
 train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
@@ -78,11 +83,12 @@ debug-maskdino:
 
 # detectron2 target
 
-setup-detectron2:
-	@ln -sf ../../configs ./detectron2/detectron2/model_zoo/
+install-detectron2:
+	@pip install -e ./detectron2 && \
+		ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
 train-detectron2: MODEL_NAME = $(NEW_NAME)
-train-detectron2: CONFIG_FILE = ./configs/mask_rcnn_mvitv2_t_3x.py
+train-detectron2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
 train-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
@@ -93,8 +99,11 @@ test-detectron2: check-MODEL_NAME
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
-		dataloader.test.dataset.names=pano_eval \
-		dataloader.evaluator.output_dir=$(RESULT_DIR)
+		dataloader.test.dataset.names=$(DATASET_NAME) \
+		dataloader.evaluator.output_dir=$(RESULT_DIR) \
+		model.roi_heads.box_predictor.test_score_thresh=0.0 \
+		model.roi_heads.box_predictor.test_nms_thresh=0.0 \
+		model.roi_heads.box_predictor.test_topk_per_image=500
 
 debug-detectron2: PYTHON = python -m pdb
 debug-detectron2: MODEL_DIR = /tmp/debug
@@ -105,30 +114,26 @@ debug-detectron2:
 
 # overall targets
 
-setup: setup-$(ARCH)
-train: train-$(ARCH)
-test: test-$(ARCH)
-debug: debug-$(ARCH)
+install: install-maskdino install-detectron2
+train: check-ARCH train-$(ARCH)
+test: check-ARCH test-$(ARCH)
+debug: check-ARCH debug-$(ARCH)
 
 coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
+postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
 	$(PY) $(COMMANDS) \
 		--do_postprocess \
 		--output_prediction_name instances_predictions.postprocessed.pth
 
-compile:
-	$(PY) $(COMMANDS) \
-		--do_compile \
-		--prediction_name instances_predictions.postprocessed.pth
-
-visualize: check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+visualize: check-DATASET_NAME check-RESULT_NAME check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 visualize:
 	$(PY) $(COMMANDS) \
 		--prediction_name instances_predictions.postprocessed.pth \
-		--nodo_visualize \
+		--do_visualize \
 		--visualizer_dir visualize.postprocessed \
-		--do_coco \
+		--nodo_coco \
 		--coco_annotator_url http://192.168.0.79:5000/api
