@@ -191,9 +191,9 @@ def postprocess(
         df: pd.DataFrame = pd.DataFrame.from_records(
             [instance.dict() for instance in instances]
         )
-        # we have to find a way to "assign" a score for `MISSING`, so we sum the raw detection
-        # scores in the original instance list and subtract it from one
-        missingness = np.maximum(0, 1 - df.groupby("category_id").score.sum())
+        # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
+        # detection score in the original instance list and subtract it from one
+        missingness = np.maximum(0, 1 - df.groupby("category_id").score.max())
 
         logging.info(f"Found {len(df)} instances.")
 
@@ -345,7 +345,7 @@ def postprocess(
             row_results.append(
                 {
                     "file_name": file_name,
-                    "fdi": row_tooth["fdi"],
+                    "fdi": int(row_tooth["fdi"]),
                     "finding": row_nontooth["category_name"],
                     "score": row_nontooth["score"],
                 }
