@@ -3,6 +3,7 @@ channels:
   - pytorch
   - nvidia
   - nvidia/label/cuda-11.8.0
+  - anaconda
   - conda-forge
   - defaults
 dependencies:
@@ -22,11 +23,12 @@ dependencies:
   - brotlipy=0.7.0=py311h5eee18b_1002
   - bzip2=1.0.8=h7b6447c_0
   - c-ares=1.19.1=hd590300_0
-  - ca-certificates=2023.5.7=hbcca054_0
+  - ca-certificates=2023.01.10=h06a4308_0
   - cairo=1.16.0=ha61ee94_1014
-  - certifi=2023.5.7=pyhd8ed1ab_0
+  - certifi=2020.6.20=pyhd3eb1b0_3
   - cffi=1.15.1=py311h5eee18b_3
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
+  - cloudpickle=2.2.1=pyhd8ed1ab_0
   - colorama=0.4.6=pyhd8ed1ab_0
   - contourpy=1.1.0=py311h9547e67_0
   - cryptography=39.0.1=py311h9ce1e76_2
@@ -62,7 +64,9 @@ dependencies:
   - cuda-tools=11.8.0=0
   - cuda-visual-tools=11.8.0=0
   - cycler=0.11.0=pyhd8ed1ab_0
+  - cython=0.29.36=py311hb755f60_0
   - data-science-types=0.2.23=pyhd8ed1ab_0
+  - dataclasses=0.8=pyhc8e2a94_3
   - dbus=1.13.18=hb2f20db_0
   - expat=2.5.0=hcb278e6_1
   - ffmpeg=5.1.2=gpl_h8dda1f0_106
@@ -79,6 +83,7 @@ dependencies:
   - freeglut=3.2.2=h9c3ff4c_1
   - freetype=2.12.1=h4a9f257_0
   - fsspec=2023.6.0=pyh1a96a4e_0
+  - fvcore=0.1.5.post20221221=pyhd8ed1ab_0
   - gds-tools=1.4.0.31=0
   - gettext=0.21.1=h27087fc_0
   - giflib=5.2.1=h5eee18b_3
@@ -101,6 +106,7 @@ dependencies:
   - imageio=2.31.1=pyh24c5eb1_0
   - importlib-metadata=6.7.0=pyha770c72_0
   - intel-openmp=2023.1.0=hdb19cb5_46305
+  - iopath=0.1.9=pyhd8ed1ab_0
   - ipopt=3.14.12=hf9e1ecf_0
   - jack=1.9.22=h11f4161_0
   - jasper=2.0.33=h0ff4b12_1
@@ -237,11 +243,13 @@ dependencies:
   - platformdirs=3.8.0=pyhd8ed1ab_0
   - ply=3.11=py_1
   - pooch=1.7.0=pyha770c72_3
+  - portalocker=2.7.0=py311h38be061_0
   - pthread-stubs=0.4=h36c2ea0_1001
   - pulseaudio=16.1=hcb278e6_3
   - pulseaudio-client=16.1=h5195f5e_3
   - pulseaudio-daemon=16.1=ha8d29e2_3
   - py-opencv=4.7.0=py311h781c19f_1
+  - pycocotools=2.0.6=py311h4c7f6c3_1
   - pycparser=2.21=pyhd3eb1b0_0
   - pydantic=1.10.10=py311h459d7ec_0
   - pygments=2.15.1=pyhd8ed1ab_0
@@ -277,6 +285,7 @@ dependencies:
   - sympy=1.12=pypyh9d50eac_103
   - tabulate=0.9.0=pyhd8ed1ab_1
   - tbb=2021.8.0=hdb19cb5_0
+  - termcolor=2.3.0=pyhd8ed1ab_0
   - timm=0.9.2=pyhd8ed1ab_0
   - tk=8.6.12=h1ccaba5_0
   - toml=0.10.2=pyhd8ed1ab_0
@@ -317,6 +326,7 @@ dependencies:
   - xorg-xextproto=7.3.0=h0b41bf4_1003
   - xorg-xproto=7.0.31=h7f98852_1007
   - xz=5.4.2=h5eee18b_0
+  - yacs=0.1.8=pyhd8ed1ab_0
   - yaml=0.2.5=h7f98852_2
   - zipp=3.15.0=pyhd8ed1ab_0
   - zlib=1.2.13=hd590300_5
@@ -324,4 +334,3 @@ dependencies:
   - pip:
       - pyasn1==0.5.0
       - pyasn1-modules==0.3.0
-prefix: /home/chia/anaconda3/envs/deepopg
