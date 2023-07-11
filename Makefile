@@ -103,6 +103,7 @@ test-detectron2: check-MODEL_NAME
 
 debug-detectron2: PYTHON = python -m pdb
 debug-detectron2: MODEL_DIR = /tmp/debug
+debug-detectron2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
 debug-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR) \
