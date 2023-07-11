@@ -54,7 +54,7 @@ check-%:
 # maskdino targets
 
 install-maskdino:
-	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/install.py build install
+	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
 train-maskdino: MODEL_NAME = $(NEW_NAME)
 train-maskdino: CONFIG_NAME = config-maskdino-r50.yaml
