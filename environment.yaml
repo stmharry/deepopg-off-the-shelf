@@ -1,8 +1,8 @@
 name: deepopg
 channels:
-  - pytorch
-  - nvidia
   - nvidia/label/cuda-11.8.0
+  - nvidia
+  - pytorch
   - conda-forge
   - defaults
 dependencies:
@@ -14,7 +14,7 @@ dependencies:
   - alsa-lib=1.2.8=h166bdaf_0
   - ampl-mp=3.1.0=h2cc385e_1006
   - antlr-python-runtime=4.9.3=pyhd8ed1ab_1
-  - antlr4-python3-runtime=4.11.1=py311h06a4308_0
+  - antlr4-python3-runtime=4.9.3=pyh1a96a4e_1
   - aom=3.5.0=h27087fc_0
   - async-timeout=4.0.2=pyhd8ed1ab_0
   - attr=2.5.1=h166bdaf_1
@@ -357,4 +357,3 @@ dependencies:
   - pip:
       - pyasn1==0.5.0
       - pyasn1-modules==0.3.0
-prefix: /home/chia/anaconda3/envs/deepopg
