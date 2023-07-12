@@ -377,7 +377,10 @@ def postprocess(
 
                     dist[i] = distance_to_non_tooth_instance[y_index, x_index]
 
-                row_tooth = df_full_tooth.iloc[np.argmin(dist)]
+                df_full_tooth["dist"] = dist
+
+                idx: int = df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
+                row_tooth = df_full_tooth.loc[idx]
 
             # for `PERIAPICAL_RADIOLUCENT`
             elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
