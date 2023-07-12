@@ -281,11 +281,10 @@ def postprocess(
 
             # for `IMPLANT`
             if row_nontooth["category_name"] == "IMPLANT":
-                # TODO
-                continue
+                pass
 
             # for `PERIAPICAL_RADIOLUCENT`
-            if row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
+            elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
                 distance_to_non_tooth_instance: np.ndarray = cast(
                     np.ndarray,
                     scipy.ndimage.distance_transform_cdt(
@@ -304,31 +303,29 @@ def postprocess(
 
                 correlation[:, j] = correlation[:, j] == np.max(correlation[:, j])
 
-                continue
-
             # for other findings
+            else:
+                for i in range(num_tooth):
+                    row_tooth = df_tooth.iloc[i]
 
-            for i in range(num_tooth):
-                row_tooth = df_tooth.iloc[i]
+                    iom_bbox = utils.calculate_iom_bbox(
+                        row_tooth["bbox"], row_nontooth["bbox"]
+                    )
+                    if iom_bbox == 0:
+                        continue
 
-                iom_bbox = utils.calculate_iom_bbox(
-                    row_tooth["bbox"], row_nontooth["bbox"]
+                    iom_mask = utils.calculate_iom_mask(
+                        row_tooth["mask"][all_instances_slice],
+                        row_nontooth["mask"][all_instances_slice],
+                    )
+                    logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
+
+                    correlation[i, j] = iom_mask
+
+                correlation[:, j] = np.logical_and(
+                    correlation[:, j] == np.max(correlation[:, j]),
+                    correlation[:, j] > 0.5,  # overlap needs to be at least 50%
                 )
-                if iom_bbox == 0:
-                    continue
-
-                iom_mask = utils.calculate_iom_mask(
-                    row_tooth["mask"][all_instances_slice],
-                    row_nontooth["mask"][all_instances_slice],
-                )
-                logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
-
-                correlation[i, j] = iom_mask
-
-            correlation[:, j] = np.logical_and(
-                correlation[:, j] == np.max(correlation[:, j]),
-                correlation[:, j] > 0.5,  # overlap needs to be at least 50%
-            )
 
         # prepare results
 
