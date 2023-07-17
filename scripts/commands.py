@@ -286,6 +286,10 @@ def postprocess(
 
             # for `IMPLANT`
             if row_nontooth["category_name"] == "IMPLANT":
+                # For implant, we perform the following steps to find the closest tooth instance:
+
+                ### 1. Instantiate a `DataFrame` of all teeth
+
                 df_full_tooth: pd.DataFrame = pd.DataFrame(
                     [
                         {"fdi": f"{quadrant}{tooth}"}
@@ -293,6 +297,9 @@ def postprocess(
                         for tooth in range(1, 9)
                     ]
                 )
+
+                ### 2. Pull in relevant info for exising teeth
+
                 df_full_tooth = pd.merge(
                     df_full_tooth,
                     df_tooth[["fdi", "bbox"]],
@@ -300,6 +307,18 @@ def postprocess(
                     how="left",
                 )
                 df_full_tooth["exists"] = df_full_tooth["fdi"].isin(df_tooth["fdi"])
+
+                ### 3. We put all teeth on a regular grid, and impute the missing bbox centers
+                #
+                #  The grid is defined as follows:
+                #
+                #  |--------------|--------------|-----|--------------|--------------|
+                #  |     [18]     |     [17]     | ... |     [27]     |     [28]     |
+                #  | (-7.5, +1.0) | (-6.5, +1.0) | ... | (+6.5, +1.0) | (+7.5, +1.0) |
+                #  |--------------|--------------|-----|--------------|--------------|
+                #  |     [48]     |     [47]     | ... |     [37]     |     [38]     |
+                #  | (-7.5, -1.0) | (-6.5, -1.0) | ... | (+6.5, -1.0) | (+7.5, -1.0) |
+                #  |--------------|--------------|-----|--------------|--------------|
 
                 df_full_tooth["fdi_int"] = df_full_tooth["fdi"].astype(int)
                 df_full_tooth["top"] = pd.Series.isin(
@@ -313,7 +332,6 @@ def postprocess(
                 )
                 df_full_tooth["y"] = np.where(df_full_tooth["top"], 1, -1)
 
-                # has_tooth: pd.Series = pd.notnull(df_full_tooth["bbox"])
                 df_full_tooth.loc[
                     df_full_tooth["exists"], "bbox_x_center"
                 ] = df_full_tooth.loc[df_full_tooth["exists"], "bbox"].map(
@@ -325,6 +343,8 @@ def postprocess(
                     lambda bbox: bbox[1] + bbox[3] / 2
                 )
 
+                # this interpolator not only interpolates the missing bbox centers, but also
+                # extrapolates
                 interp = scipy.interpolate.RBFInterpolator(
                     y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
                     d=df_full_tooth.loc[
@@ -339,6 +359,8 @@ def postprocess(
                     x=df_full_tooth[["x", "y"]],
                 )
 
+                ### 4. We compute the distance from the implant to the each tooth
+
                 distance_to_non_tooth_instance = cast(
                     np.ndarray,
                     scipy.ndimage.distance_transform_cdt(
@@ -350,10 +372,11 @@ def postprocess(
                 for i in range(len(df_full_tooth)):
                     _row_tooth = df_full_tooth.iloc[i]
 
-                    # skip if tooth is present
+                    # skip if tooth is present: we don't want to match with existing teeth
                     if _row_tooth["exists"]:
                         continue
 
+                    # calculate the indices on the distance map
                     y_index: int = min(
                         all_instances_slice[0].stop - all_instances_slice[0].start - 1,
                         max(
