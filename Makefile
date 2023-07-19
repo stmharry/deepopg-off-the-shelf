@@ -124,7 +124,8 @@ postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
 	$(PY) $(COMMANDS) \
 		--do_postprocess \
-		--output_prediction_name instances_predictions.postprocessed.pth
+		--output_prediction_name instances_predictions.postprocessed.pth \
+		--output_csv_name result.csv
 
 visualize: check-DATASET_NAME check-RESULT_NAME check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 visualize:

@@ -11,6 +11,7 @@ import pandas as pd
 import pycocotools.mask
 import pyomo.environ as pyo
 import rich.progress
+import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
 from pydantic import parse_obj_as
@@ -185,6 +186,7 @@ def postprocess(
 
         logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
+        file_name: str = Path(data.file_name).relative_to(data_driver.image_dir).stem
         prediction: InstanceDetectionPrediction = id_to_prediction[data.image_id]
         instances: list[InstanceDetectionPredictionInstance] = prediction.instances
 
@@ -262,7 +264,7 @@ def postprocess(
         all_instances_mask: np.ndarray = np.logical_or.reduce(
             df["mask"].tolist(), axis=0
         )
-        all_instances_slice: slice = scipy.ndimage.find_objects(
+        all_instances_slice: tuple[slice, slice] = scipy.ndimage.find_objects(
             all_instances_mask, max_label=1
         )[0]
 
@@ -272,39 +274,161 @@ def postprocess(
         num_tooth: int = len(df_tooth)
         num_nontooth: int = len(df_nontooth)
 
-        row_tooth: pd.Series
+        row_tooth: pd.Series | None
         row_nontooth: pd.Series
 
-        correlation: np.ndarray = np.zeros((num_tooth, num_nontooth), dtype=np.float_)
         for j in range(num_nontooth):
+            row_tooth = None
             row_nontooth = df_nontooth.iloc[j]
+
+            distance_to_non_tooth_instance: np.ndarray
+            dist: np.ndarray
 
             # for `IMPLANT`
             if row_nontooth["category_name"] == "IMPLANT":
-                pass
+                # For implant, we perform the following steps to find the closest tooth instance:
 
-            # for `PERIAPICAL_RADIOLUCENT`
-            elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
-                distance_to_non_tooth_instance: np.ndarray = cast(
+                ### 1. Instantiate a `DataFrame` of all teeth
+
+                df_full_tooth: pd.DataFrame = pd.DataFrame(
+                    [
+                        {"fdi": f"{quadrant}{tooth}"}
+                        for quadrant in range(1, 5)
+                        for tooth in range(1, 9)
+                    ]
+                )
+
+                ### 2. Pull in relevant info for exising teeth
+
+                df_full_tooth = pd.merge(
+                    df_full_tooth,
+                    df_tooth[["fdi", "bbox"]],
+                    on="fdi",
+                    how="left",
+                )
+                df_full_tooth["exists"] = df_full_tooth["fdi"].isin(df_tooth["fdi"])
+
+                ### 3. We put all teeth on a regular grid, and impute the missing bbox centers
+                #
+                #  The grid is defined as follows:
+                #
+                #  |--------------|--------------|-----|--------------|--------------|
+                #  |     [18]     |     [17]     | ... |     [27]     |     [28]     |
+                #  | (-7.5, +1.0) | (-6.5, +1.0) | ... | (+6.5, +1.0) | (+7.5, +1.0) |
+                #  |--------------|--------------|-----|--------------|--------------|
+                #  |     [48]     |     [47]     | ... |     [37]     |     [38]     |
+                #  | (-7.5, -1.0) | (-6.5, -1.0) | ... | (+6.5, -1.0) | (+7.5, -1.0) |
+                #  |--------------|--------------|-----|--------------|--------------|
+
+                df_full_tooth["fdi_int"] = df_full_tooth["fdi"].astype(int)
+                df_full_tooth["top"] = pd.Series.isin(
+                    df_full_tooth["fdi_int"] // 10, [1, 2]
+                )
+                df_full_tooth["left"] = pd.Series.isin(
+                    df_full_tooth["fdi_int"] // 10, [2, 3]
+                )
+                df_full_tooth["x"] = (df_full_tooth["fdi_int"] % 10 - 0.5) * np.where(
+                    df_full_tooth["left"], 1, -1
+                )
+                df_full_tooth["y"] = np.where(df_full_tooth["top"], 1, -1)
+
+                df_full_tooth.loc[
+                    df_full_tooth["exists"], "bbox_x_center"
+                ] = df_full_tooth.loc[df_full_tooth["exists"], "bbox"].map(
+                    lambda bbox: bbox[0] + bbox[2] / 2
+                )
+                df_full_tooth.loc[
+                    df_full_tooth["exists"], "bbox_y_center"
+                ] = df_full_tooth.loc[df_full_tooth["exists"], "bbox"].map(
+                    lambda bbox: bbox[1] + bbox[3] / 2
+                )
+
+                # this interpolator not only interpolates the missing bbox centers, but also
+                # extrapolates
+                interp = scipy.interpolate.RBFInterpolator(
+                    y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
+                    d=df_full_tooth.loc[
+                        df_full_tooth["exists"], ["bbox_x_center", "bbox_y_center"]
+                    ],
+                    smoothing=1e0,
+                    kernel="thin_plate_spline",
+                )
+                df_full_tooth[
+                    ["bbox_x_center_interp", "bbox_y_center_interp"]
+                ] = interp(
+                    x=df_full_tooth[["x", "y"]],
+                )
+
+                ### 4. We compute the distance from the implant to the each tooth
+
+                distance_to_non_tooth_instance = cast(
                     np.ndarray,
                     scipy.ndimage.distance_transform_cdt(
                         1 - row_nontooth["mask"][all_instances_slice]
                     ),
                 )
 
+                dist = np.zeros((len(df_full_tooth),), dtype=np.float_)
+                for i in range(len(df_full_tooth)):
+                    _row_tooth = df_full_tooth.iloc[i]
+
+                    # skip if tooth is present: we don't want to match with existing teeth
+                    if _row_tooth["exists"]:
+                        continue
+
+                    # calculate the indices on the distance map
+                    y_index: int = min(
+                        all_instances_slice[0].stop - all_instances_slice[0].start - 1,
+                        max(
+                            0,
+                            int(
+                                _row_tooth["bbox_y_center_interp"]
+                                - all_instances_slice[0].start
+                            ),
+                        ),
+                    )
+                    x_index: int = min(
+                        all_instances_slice[1].stop - all_instances_slice[1].start - 1,
+                        max(
+                            0,
+                            int(
+                                _row_tooth["bbox_x_center_interp"]
+                                - all_instances_slice[1].start
+                            ),
+                        ),
+                    )
+
+                    dist[i] = distance_to_non_tooth_instance[y_index, x_index]
+
+                df_full_tooth["dist"] = dist
+
+                idx: int = df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
+                row_tooth = df_full_tooth.loc[idx]
+
+            # for `PERIAPICAL_RADIOLUCENT`
+            elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
+                distance_to_non_tooth_instance = cast(
+                    np.ndarray,
+                    scipy.ndimage.distance_transform_cdt(
+                        1 - row_nontooth["mask"][all_instances_slice]
+                    ),
+                )
+
+                dist = np.zeros((num_tooth,), dtype=np.float_)
                 for i in range(num_tooth):
                     row_tooth = df_tooth.iloc[i]
 
-                    min_dist: float = scipy.ndimage.minimum(
+                    dist[i] = scipy.ndimage.minimum(
                         distance_to_non_tooth_instance,
                         labels=row_tooth["mask"][all_instances_slice],
                     )
-                    correlation[i, j] = -min_dist
 
-                correlation[:, j] = correlation[:, j] == np.max(correlation[:, j])
+                row_tooth = df_tooth.iloc[np.argmin(dist)]
 
             # for other findings
             else:
+                correlation: np.ndarray = np.zeros((num_tooth,), dtype=np.float_)
+
                 for i in range(num_tooth):
                     row_tooth = df_tooth.iloc[i]
 
@@ -320,24 +444,14 @@ def postprocess(
                     )
                     logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
 
-                    correlation[i, j] = iom_mask
+                    correlation[i] = iom_mask
 
-                correlation[:, j] = np.logical_and(
-                    correlation[:, j] == np.max(correlation[:, j]),
-                    correlation[:, j] > 0.5,  # overlap needs to be at least 50%
-                )
+                # overlap needs to be at least 50% for a match
+                if np.max(correlation) > 0.5:
+                    row_tooth = df_tooth.iloc[np.argmax(correlation)]
 
-        # prepare results
-
-        file_name: str = Path(data.file_name).relative_to(data_driver.image_dir).stem
-
-        for j in range(num_nontooth):
-            i = int(np.argmax(correlation[:, j]))
-            if correlation[i, j] == 0.0:
+            if row_tooth is None:
                 continue
-
-            row_tooth = df_tooth.iloc[i]
-            row_nontooth = df_nontooth.iloc[j]
 
             row_results.append(
                 {
