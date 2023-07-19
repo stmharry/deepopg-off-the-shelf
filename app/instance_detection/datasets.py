@@ -57,7 +57,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             .astype(np.uint8)
         )
 
-        for split in ["all", "train", "eval", "debug"]:
+        for split in ["all", "train", "eval", "ntuh", "debug"]:
             name: str = f"pano_{split}"
 
             DatasetCatalog.register(
