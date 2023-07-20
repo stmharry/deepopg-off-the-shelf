@@ -1,10 +1,9 @@
 ### variables
 
-DATA_ROOT_DIR = /mnt/md0/data/PANO
 ROOT_DIR = /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
-DATA_DIR ?= $(DATA_ROOT_DIR)/data
+DATA_DIR ?= $(ROOT_DIR)/data
 MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
 RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
 
