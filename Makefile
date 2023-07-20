@@ -96,6 +96,7 @@ test-detectron2: check-MODEL_NAME
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
 		dataloader.test.dataset.names=$(DATASET_NAME) \
+		dataloader.test.dataset.filter_empty=False \
 		dataloader.evaluator.output_dir=$(RESULT_DIR) \
 		model.roi_heads.box_predictor.test_score_thresh=0.0 \
 		model.roi_heads.box_predictor.test_nms_thresh=0.0 \
