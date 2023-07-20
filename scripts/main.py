@@ -3,7 +3,7 @@ import warnings
 
 from absl import logging
 
-from app.instance_detection.datasets import InstanceDetectionV1
+from app.instance_detection.datasets import InstanceDetectionV1, InstanceDetectionV1NTUH
 from detectron2.engine import default_argument_parser, launch
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")
@@ -19,6 +19,7 @@ def main():
     logging.info(f"Command Line Args: {args!s}")
 
     InstanceDetectionV1.register(root_dir=args.data_dir)
+    InstanceDetectionV1NTUH.register(root_dir=args.data_dir)
 
     (module, name) = args.main_app.split(":")
     main_app = getattr(importlib.import_module(module), name)
