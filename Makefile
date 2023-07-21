@@ -1,12 +1,12 @@
 ### variables
 
-DATA_ROOT_DIR = /mnt/md0/data/PANO
+DATA_ROOT_DIR = /mnt/hdd/PANO
 ROOT_DIR = /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(DATA_ROOT_DIR)/data
-MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
-RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
+MODEL_DIR_ROOT ?= $(ROOT_DIR).arlen/models
+RESULT_DIR_ROOT ?= $(ROOT_DIR).arlen/results
 
 MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
