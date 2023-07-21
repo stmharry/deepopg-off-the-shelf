@@ -19,7 +19,11 @@ from pydantic import parse_obj_as
 from app import utils
 from app.coco_annotator.clients import CocoAnnotatorClient
 from app.coco_annotator.schemas import CocoAnnotatorDataset, CocoAnnotatorImage
-from app.instance_detection.datasets import InstanceDetection, InstanceDetectionV1
+from app.instance_detection.datasets import (
+    InstanceDetection,
+    InstanceDetectionV1,
+    InstanceDetectionV1NTUH,
+)
 from app.instance_detection.schemas import (
     Coco,
     CocoAnnotation,
@@ -664,7 +668,13 @@ def coco(
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
+    if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
+        data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
+    elif FLAGS.dataset_name in ["pano_ntuh"]:
+        data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
+    else:
+        raise ValueError(f"Unknown dataset name {FLAGS.dataset_name}")
+
     dataset: list[InstanceDetectionData] = parse_obj_as(
         list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )

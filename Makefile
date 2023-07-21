@@ -1,12 +1,19 @@
 ### variables
 
-DATA_ROOT_DIR = /mnt/hdd/PANO
 ROOT_DIR = /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
-DATA_DIR ?= $(DATA_ROOT_DIR)/data
+DATA_DIR ?= $(DATA_DIR)/data
 MODEL_DIR_ROOT ?= $(ROOT_DIR).arlen/models
 RESULT_DIR_ROOT ?= $(ROOT_DIR).arlen/results
+=======
+ROOT_DIR = /mnt/hdd/PANO
+
+CONFIG_DIR ?= ./configs
+DATA_DIR ?= $(ROOT_DIR)/data
+MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
+RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
+>>>>>>> 8297bf301d2ec0fdf1d79e0f389f05fc27a5f7f9
 
 MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
@@ -97,6 +104,7 @@ test-detectron2: check-MODEL_NAME
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
 		dataloader.test.dataset.names=$(DATASET_NAME) \
+		dataloader.test.dataset.filter_empty=False \
 		dataloader.evaluator.output_dir=$(RESULT_DIR) \
 		model.roi_heads.box_predictor.test_score_thresh=0.0 \
 		model.roi_heads.box_predictor.test_nms_thresh=0.0 \

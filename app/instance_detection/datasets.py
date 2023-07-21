@@ -33,6 +33,7 @@ T = TypeVar("T", bound="InstanceDetection")
 
 @dataclasses.dataclass  # type: ignore
 class InstanceDetection(metaclass=abc.ABCMeta):
+    SPLITS: ClassVar[list[str]] = []
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"
 
@@ -57,7 +58,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             .astype(np.uint8)
         )
 
-        for split in ["all", "train", "eval", "ntuh", "debug"]:
+        for split in self.SPLITS:
             name: str = f"pano_{split}"
 
             DatasetCatalog.register(
@@ -363,8 +364,8 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             return coco_dataset
 
 
-@dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
+    SPLITS: ClassVar[list[str]] = ["all", "train", "eval", "debug"]
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
         r"TOOTH_(\d+)": r"TOOTH_\1",
         r"DENTAL_IMPLANT_(\d+)": "IMPLANT",
@@ -384,4 +385,13 @@ class InstanceDetectionV1(InstanceDetection):
 
     @property
     def coco_path(self) -> Path:
-        return Path(self.root_dir, "coco", "instance-detection-v1.json")
+        return Path(self.root_dir, "coco", "instance-detection-v1-promaton.json")
+
+
+@dataclasses.dataclass
+class InstanceDetectionV1NTUH(InstanceDetectionV1):
+    SPLITS: ClassVar[list[str]] = ["ntuh"]
+
+    @property
+    def coco_path(self) -> Path:
+        return Path(self.root_dir, "coco", "instance-detection-v1-ntuh.json")
