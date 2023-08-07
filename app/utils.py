@@ -11,6 +11,7 @@ from pydantic import parse_obj_as
 from app.instance_detection.schemas import (
     CocoAnnotation,
     CocoCategory,
+    InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
 )
@@ -118,6 +119,24 @@ def prediction_to_coco_annotations(
         id += 1
 
     return coco_annotations
+
+
+def instance_detection_data_to_prediction(
+    instance_detection_data: InstanceDetectionData,
+) -> InstanceDetectionPrediction:
+    return InstanceDetectionPrediction(
+        image_id=instance_detection_data.image_id,
+        instances=[
+            InstanceDetectionPredictionInstance(
+                image_id=instance_detection_data.image_id,
+                bbox=annotation.bbox,
+                category_id=annotation.category_id,
+                segmentation=annotation.segmentation,
+                score=1.0,
+            )
+            for annotation in instance_detection_data.annotations
+        ],
+    )
 
 
 def load_predictions(prediction_path: Path) -> list[InstanceDetectionPrediction]:

@@ -110,6 +110,15 @@ debug-detectron2:
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
+postprocess-promaton: DATASET_NAME=pano_eval
+postprocess-promaton: RESULT_NAME=pano_eval
+postprocess-promaton:
+	$(PY) $(COMMANDS) \
+		--do_postprocess \
+		--postprocess_gt \
+		--output_prediction_name instances_predictions.pth \
+		--output_csv_name result.csv
+
 # overall targets
 
 install: install-maskdino install-detectron2
@@ -125,6 +134,7 @@ postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
 	$(PY) $(COMMANDS) \
 		--do_postprocess \
+		--prediction_name instances_predictions.pth \
 		--output_prediction_name instances_predictions.postprocessed.pth \
 		--output_csv_name result.csv
 

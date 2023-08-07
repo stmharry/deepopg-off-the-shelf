@@ -47,6 +47,12 @@ flags.DEFINE_string(
 
 # postprocess
 flags.DEFINE_bool("do_postprocess", False, "Whether to do postprocessing.")
+flags.DEFINE_bool(
+    "postprocess_gt",
+    False,
+    "Set to true to postprocess ground truth. Useful when we do not have ground truth finding "
+    "summary but only ground truth segmentation.",
+)
 flags.DEFINE_string(
     "output_prediction_name",
     "instances_predictions.postprocessed.pth",
@@ -175,9 +181,18 @@ def postprocess(
     dataset: list[InstanceDetectionData],
     metadata: Metadata,
 ) -> None:
-    predictions: list[InstanceDetectionPrediction] = utils.load_predictions(
-        prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.postprocess_gt:
+        predictions = [
+            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            for data in dataset
+        ]
+
+    else:
+        predictions = utils.load_predictions(
+            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        )
+
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
@@ -480,6 +495,8 @@ def postprocess(
                     }
                 )
 
+    Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
+
     utils.save_predictions(
         predictions=predictions,
         prediction_path=Path(FLAGS.result_dir, FLAGS.output_prediction_name),
@@ -487,6 +504,9 @@ def postprocess(
 
     df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(
         ["file_name", "fdi", "finding"], ascending=True
+    )
+    df_result = df_result.drop_duplicates(
+        subset=["file_name", "fdi", "finding"], keep="first"
     )
     df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv_name), index=False)
 
