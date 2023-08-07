@@ -14,6 +14,7 @@ CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
 DATASET_NAME ?= pano_debug
 LATEST_MODEL ?= $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
+COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
 # default variables
 
@@ -115,9 +116,19 @@ postprocess-promaton: RESULT_NAME=pano_eval
 postprocess-promaton:
 	$(PY) $(COMMANDS) \
 		--do_postprocess \
-		--postprocess_gt \
+		--use_gt_as_prediction \
 		--output_prediction_name instances_predictions.pth \
 		--output_csv_name result.csv
+
+visualize-promaton: DATASET_NAME=pano_eval
+visualize-promaton: RESULT_NAME=pano_eval
+visualize-promaton:
+	$(PY) $(COMMANDS) \
+		--do_visualize \
+		--use_gt_as_prediction \
+		--nodo_visualize \
+		--do_coco \
+		--coco_annotator_url $(COCO_ANNOTATOR_URL)
 
 # overall targets
 
@@ -145,4 +156,4 @@ visualize:
 		--do_visualize \
 		--visualizer_dir visualize.postprocessed \
 		--nodo_coco \
-		--coco_annotator_url http://192.168.0.79:5000/api
+		--coco_annotator_url $(COCO_ANNOTATOR_URL)

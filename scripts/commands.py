@@ -14,6 +14,7 @@ import rich.progress
 import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
+from numpy.linalg import LinAlgError
 from pydantic import parse_obj_as
 
 from app import utils
@@ -44,15 +45,15 @@ flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string(
     "prediction_name", "instances_predictions.pth", "Input prediction file name."
 )
+flags.DEFINE_bool(
+    "use_gt_as_prediction",
+    False,
+    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
+    "finding summary but only ground truth segmentation.",
+)
 
 # postprocess
 flags.DEFINE_bool("do_postprocess", False, "Whether to do postprocessing.")
-flags.DEFINE_bool(
-    "postprocess_gt",
-    False,
-    "Set to true to postprocess ground truth. Useful when we do not have ground truth finding "
-    "summary but only ground truth segmentation.",
-)
 flags.DEFINE_string(
     "output_prediction_name",
     "instances_predictions.postprocessed.pth",
@@ -182,7 +183,7 @@ def postprocess(
     metadata: Metadata,
 ) -> None:
     predictions: list[InstanceDetectionPrediction]
-    if FLAGS.postprocess_gt:
+    if FLAGS.use_gt_as_prediction:
         predictions = [
             utils.instance_detection_data_to_prediction(instance_detection_data=data)
             for data in dataset
@@ -364,14 +365,21 @@ def postprocess(
 
                 # this interpolator not only interpolates the missing bbox centers, but also
                 # extrapolates
-                interp = scipy.interpolate.RBFInterpolator(
-                    y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
-                    d=df_full_tooth.loc[
-                        df_full_tooth["exists"], ["bbox_x_center", "bbox_y_center"]
-                    ],
-                    smoothing=1e0,
-                    kernel="thin_plate_spline",
-                )
+                try:
+                    interp = scipy.interpolate.RBFInterpolator(
+                        y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
+                        d=df_full_tooth.loc[
+                            df_full_tooth["exists"], ["bbox_x_center", "bbox_y_center"]
+                        ],
+                        smoothing=1e0,
+                        kernel="thin_plate_spline",
+                    )
+                except LinAlgError:
+                    logging.warning(
+                        f"LinAlgError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
+                    )
+                    continue
+
                 df_full_tooth[
                     ["bbox_x_center_interp", "bbox_y_center_interp"]
                 ] = interp(
@@ -522,15 +530,23 @@ def visualize(
         "findings": r"(?!TOOTH_\d+)",
     },
 ) -> None:
-    predictions: list[InstanceDetectionPrediction] = utils.load_predictions(
-        prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.use_gt_as_prediction:
+        predictions = [
+            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            for data in dataset
+        ]
+    else:
+        predictions = utils.load_predictions(
+            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        )
+
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
 
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualizer_dir)
-    Path(visualize_dir).mkdir(exist_ok=True)
+    Path(visualize_dir).mkdir(parents=True, exist_ok=True)
 
     for data in dataset:
         if data.image_id not in id_to_prediction:
@@ -614,9 +630,17 @@ def coco(
 
     ### annotations
 
-    predictions: list[InstanceDetectionPrediction] = utils.load_predictions(
-        Path(FLAGS.result_dir, FLAGS.prediction_name)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.use_gt_as_prediction:
+        predictions = [
+            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            for data in dataset
+        ]
+    else:
+        predictions = utils.load_predictions(
+            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        )
+
     predictions = [
         prediction
         for prediction in predictions
