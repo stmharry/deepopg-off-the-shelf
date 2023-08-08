@@ -349,6 +349,20 @@ def postprocess(
 
                 # this interpolator not only interpolates the missing bbox centers, but also
                 # extrapolates
+                _df_full_tooth = df_full_tooth.copy()
+                _df_full_tooth.set_index(["x","y"], inplace=True)
+                for idx in df_full_tooth.loc[df_full_tooth["exists"]].index:
+                    if not df_full_tooth.loc[idx]["top"]:
+                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "bbox_y_center"] = df_full_tooth.loc[idx, "bbox_y_center"] + 150
+                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "bbox_x_center"] = df_full_tooth.loc[idx, "bbox_x_center"]
+                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "exists"] = True
+                                        
+                    if not ~df_full_tooth.loc[idx]["top"]:
+                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"] = df_full_tooth.loc[idx, "bbox_y_center"] - 150
+                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"] = df_full_tooth.loc[idx, "bbox_x_center"]
+                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "exists"] = True
+
+                df_full_tooth = _df_full_tooth.reset_index()
                 interp = scipy.interpolate.RBFInterpolator(
                     y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
                     d=df_full_tooth.loc[
@@ -357,6 +371,8 @@ def postprocess(
                     smoothing=1e0,
                     kernel="thin_plate_spline",
                 )
+                    
+
                 df_full_tooth[
                     ["bbox_x_center_interp", "bbox_y_center_interp"]
                 ] = interp(
@@ -406,8 +422,12 @@ def postprocess(
 
                 df_full_tooth["dist"] = dist
 
-                idx: int = df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
-                row_tooth = df_full_tooth.loc[idx]
+                if (~df_full_tooth["exists"]).any():
+                    idx: int = df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
+                    # if the findding distance to non_tooth is too far than filter
+                    if dist[idx] < 100:
+                        row_tooth = df_full_tooth.loc[idx]
+             
 
             # for `PERIAPICAL_RADIOLUCENT`
             elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
@@ -426,8 +446,9 @@ def postprocess(
                         distance_to_non_tooth_instance,
                         labels=row_tooth["mask"][all_instances_slice],
                     )
+                if num_tooth != 0:
+                    row_tooth = df_tooth.iloc[np.argmin(dist)]
 
-                row_tooth = df_tooth.iloc[np.argmin(dist)]
 
             # for other findings
             else:
@@ -450,9 +471,10 @@ def postprocess(
 
                     correlation[i] = iom_mask
 
-                # overlap needs to be at least 50% for a match
-                if np.max(correlation) > 0.5:
-                    row_tooth = df_tooth.iloc[np.argmax(correlation)]
+                if num_tooth != 0:
+                    # overlap needs to be at least 50% for a match
+                    if np.max(correlation) > 0.5:
+                        row_tooth = df_tooth.iloc[np.argmax(correlation)]
 
             if row_tooth is None:
                 continue
@@ -466,6 +488,7 @@ def postprocess(
                 }
             )
 
+        # for missing
         for category_id, category in enumerate(metadata.thing_classes):
             if not category.startswith("TOOTH"):
                 continue
@@ -668,9 +691,9 @@ def coco(
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
+    if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug", "pano_inter_debug"]:
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
-    elif FLAGS.dataset_name in ["pano_ntuh"]:
+    elif FLAGS.dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
         data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
     else:
         raise ValueError(f"Unknown dataset name {FLAGS.dataset_name}")

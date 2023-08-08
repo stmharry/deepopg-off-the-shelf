@@ -365,7 +365,7 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
 
 class InstanceDetectionV1(InstanceDetection):
-    SPLITS: ClassVar[list[str]] = ["all", "train", "eval", "debug"]
+    SPLITS: ClassVar[list[str]] = ["all", "train", "eval", "debug", "inter_debug"]
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
         r"TOOTH_(\d+)": r"TOOTH_\1",
         r"DENTAL_IMPLANT_(\d+)": "IMPLANT",
@@ -381,7 +381,7 @@ class InstanceDetectionV1(InstanceDetection):
 
     @property
     def split_dir(self) -> Path:
-        return Path(self.root_dir, "splits", "instance-detection-v1")
+        return Path("/mnt/hdd/PANO.arlen/data/", "splits", "instance-detection-v1")
 
     @property
     def coco_path(self) -> Path:
@@ -390,7 +390,11 @@ class InstanceDetectionV1(InstanceDetection):
 
 @dataclasses.dataclass
 class InstanceDetectionV1NTUH(InstanceDetectionV1):
-    SPLITS: ClassVar[list[str]] = ["ntuh"]
+    SPLITS: ClassVar[list[str]] = ["ntuh", "ntuh_debug"]
+
+    @property
+    def split_dir(self) -> Path:
+        return Path("/mnt/hdd/PANO.arlen/data/", "splits", "instance-detection-v1")
 
     @property
     def coco_path(self) -> Path:

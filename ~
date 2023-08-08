@@ -3,7 +3,7 @@
 ROOT_DIR = /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
-DATA_DIR ?= $(ROOT_DIR)/data
+DATA_DIR ?= $(ROOT_DIR).arlen/data
 MODEL_DIR_ROOT ?= $(ROOT_DIR).arlen/models
 RESULT_DIR_ROOT ?= $(ROOT_DIR).arlen/results
 
