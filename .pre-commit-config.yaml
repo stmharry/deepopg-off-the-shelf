@@ -42,6 +42,8 @@ repos:
         types_or:
           - python
           - pyi
+        args:
+          - --ignore-missing-imports
 
   - repo: https://github.com/commitizen-tools/commitizen
     rev: 3.6.0
