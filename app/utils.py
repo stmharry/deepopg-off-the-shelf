@@ -11,6 +11,7 @@ from pydantic import parse_obj_as
 from app.instance_detection.schemas import (
     CocoAnnotation,
     CocoCategory,
+    InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
 )
@@ -120,6 +121,24 @@ def prediction_to_coco_annotations(
     return coco_annotations
 
 
+def instance_detection_data_to_prediction(
+    instance_detection_data: InstanceDetectionData,
+) -> InstanceDetectionPrediction:
+    return InstanceDetectionPrediction(
+        image_id=instance_detection_data.image_id,
+        instances=[
+            InstanceDetectionPredictionInstance(
+                image_id=instance_detection_data.image_id,
+                bbox=annotation.bbox,
+                category_id=annotation.category_id,
+                segmentation=annotation.segmentation,
+                score=1.0,
+            )
+            for annotation in instance_detection_data.annotations
+        ],
+    )
+
+
 def load_predictions(prediction_path: Path) -> list[InstanceDetectionPrediction]:
     predictions_obj = torch.load(prediction_path)
     predictions = parse_obj_as(list[InstanceDetectionPrediction], predictions_obj)
@@ -136,14 +155,12 @@ def save_predictions(
     torch.save(predictions_obj, prediction_path)
 
 
-def dental_us2fid(
-        univeral_set: int
-) -> None:
-    grid = (univeral_set-1)//8+1
-    if grid%2 == 0:
-        index = (univeral_set-1)%8 + 1
+def dental_us2fid(univeral_set: int) -> None:
+    grid = (univeral_set - 1) // 8 + 1
+    if grid % 2 == 0:
+        index = (univeral_set - 1) % 8 + 1
     else:
-        index = 9 - ((univeral_set-1)%8 + 1)
-    
-    fid = grid*10+index
+        index = 9 - ((univeral_set - 1) % 8 + 1)
+
+    fid = grid * 10 + index
     return fid

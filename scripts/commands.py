@@ -14,6 +14,7 @@ import rich.progress
 import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
+from numpy.linalg import LinAlgError  # type: ignore
 from pydantic import parse_obj_as
 
 from app import utils
@@ -43,6 +44,12 @@ flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string(
     "prediction_name", "instances_predictions.pth", "Input prediction file name."
+)
+flags.DEFINE_bool(
+    "use_gt_as_prediction",
+    False,
+    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
+    "finding summary but only ground truth segmentation.",
 )
 
 # postprocess
@@ -175,9 +182,18 @@ def postprocess(
     dataset: list[InstanceDetectionData],
     metadata: Metadata,
 ) -> None:
-    predictions: list[InstanceDetectionPrediction] = utils.load_predictions(
-        prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.use_gt_as_prediction:
+        predictions = [
+            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            for data in dataset
+        ]
+
+    else:
+        predictions = utils.load_predictions(
+            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        )
+
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
@@ -199,7 +215,9 @@ def postprocess(
         )
         # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
         # detection score in the original instance list and subtract it from one
-        missingness = np.maximum(0, 1 - df.groupby("category_id").score.max())
+        missingness: pd.Series = np.maximum(  # type: ignore
+            0, 1 - df.groupby("category_id").score.max()
+        )
 
         logging.info(f"Found {len(df)} instances.")
 
@@ -249,10 +267,10 @@ def postprocess(
                 iom[i, j] = iom[j, i] = iom_mask
 
         assignment: np.ndarray = do_assignment(
-            reward=df["score"].values,
+            reward=df["score"].to_numpy(),
             quadratic_penalty=iom,
-            penalty_group_ids=df["penalty_group_id"].values,
-            unique_group_ids=df["unique_group_id"].values,
+            penalty_group_ids=df["penalty_group_id"].tolist(),
+            unique_group_ids=df["unique_group_id"].tolist(),
             assignment_penalty=FLAGS.min_score / 2,
         )
         df = df.loc[assignment]
@@ -350,28 +368,46 @@ def postprocess(
                 # this interpolator not only interpolates the missing bbox centers, but also
                 # extrapolates
                 _df_full_tooth = df_full_tooth.copy()
-                _df_full_tooth.set_index(["x","y"], inplace=True)
+                _df_full_tooth.set_index(["x", "y"], inplace=True)
                 for idx in df_full_tooth.loc[df_full_tooth["exists"]].index:
                     if not df_full_tooth.loc[idx]["top"]:
-                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "bbox_y_center"] = df_full_tooth.loc[idx, "bbox_y_center"] + 150
-                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "bbox_x_center"] = df_full_tooth.loc[idx, "bbox_x_center"]
-                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "exists"] = True
-                                        
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "bbox_y_center"
+                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] + 150)
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "bbox_x_center"
+                        ] = df_full_tooth.loc[idx, "bbox_x_center"]
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "exists"
+                        ] = True
+
                     if not ~df_full_tooth.loc[idx]["top"]:
-                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"] = df_full_tooth.loc[idx, "bbox_y_center"] - 150
-                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"] = df_full_tooth.loc[idx, "bbox_x_center"]
-                        _df_full_tooth.at[(df_full_tooth.loc[idx]["x"], 1), "exists"] = True
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"
+                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] - 150)
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"
+                        ] = df_full_tooth.loc[idx, "bbox_x_center"]
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "exists"
+                        ] = True
 
                 df_full_tooth = _df_full_tooth.reset_index()
-                interp = scipy.interpolate.RBFInterpolator(
-                    y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
-                    d=df_full_tooth.loc[
-                        df_full_tooth["exists"], ["bbox_x_center", "bbox_y_center"]
-                    ],
-                    smoothing=1e0,
-                    kernel="thin_plate_spline",
-                )
-                    
+
+                try:
+                    interp = scipy.interpolate.RBFInterpolator(
+                        y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
+                        d=df_full_tooth.loc[
+                            df_full_tooth["exists"], ["bbox_x_center", "bbox_y_center"]
+                        ],
+                        smoothing=1e0,
+                        kernel="thin_plate_spline",
+                    )
+                except LinAlgError:
+                    logging.warning(
+                        f"LinAlgError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
+                    )
+                    continue
 
                 df_full_tooth[
                     ["bbox_x_center_interp", "bbox_y_center_interp"]
@@ -423,11 +459,12 @@ def postprocess(
                 df_full_tooth["dist"] = dist
 
                 if (~df_full_tooth["exists"]).any():
-                    idx: int = df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
+                    idx: int = df_full_tooth.loc[
+                        ~df_full_tooth["exists"], "dist"
+                    ].idxmin()
                     # if the findding distance to non_tooth is too far than filter
                     if dist[idx] < 100:
                         row_tooth = df_full_tooth.loc[idx]
-             
 
             # for `PERIAPICAL_RADIOLUCENT`
             elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
@@ -448,7 +485,6 @@ def postprocess(
                     )
                 if num_tooth != 0:
                     row_tooth = df_tooth.iloc[np.argmin(dist)]
-
 
             # for other findings
             else:
@@ -499,9 +535,11 @@ def postprocess(
                         "file_name": file_name,
                         "fdi": int(category.split("_")[1]),
                         "finding": "MISSING",
-                        "score": missingness.get(category_id, 0.0),
+                        "score": missingness.get(category_id, 0.0),  # type: ignore
                     }
                 )
+
+    Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
     utils.save_predictions(
         predictions=predictions,
@@ -510,6 +548,9 @@ def postprocess(
 
     df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(
         ["file_name", "fdi", "finding"], ascending=True
+    )
+    df_result = df_result.drop_duplicates(
+        subset=["file_name", "fdi", "finding"], keep="first"
     )
     df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv_name), index=False)
 
@@ -525,15 +566,23 @@ def visualize(
         "findings": r"(?!TOOTH_\d+)",
     },
 ) -> None:
-    predictions: list[InstanceDetectionPrediction] = utils.load_predictions(
-        prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.use_gt_as_prediction:
+        predictions = [
+            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            for data in dataset
+        ]
+    else:
+        predictions = utils.load_predictions(
+            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        )
+
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
 
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualizer_dir)
-    Path(visualize_dir).mkdir(exist_ok=True)
+    Path(visualize_dir).mkdir(parents=True, exist_ok=True)
 
     for data in dataset:
         if data.image_id not in id_to_prediction:
@@ -617,9 +666,17 @@ def coco(
 
     ### annotations
 
-    predictions: list[InstanceDetectionPrediction] = utils.load_predictions(
-        Path(FLAGS.result_dir, FLAGS.prediction_name)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.use_gt_as_prediction:
+        predictions = [
+            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            for data in dataset
+        ]
+    else:
+        predictions = utils.load_predictions(
+            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        )
+
     predictions = [
         prediction
         for prediction in predictions
@@ -691,7 +748,13 @@ def coco(
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug", "pano_inter_debug"]:
+    if FLAGS.dataset_name in [
+        "pano_all",
+        "pano_train",
+        "pano_eval",
+        "pano_debug",
+        "pano_inter_debug",
+    ]:
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
     elif FLAGS.dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
         data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)

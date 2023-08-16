@@ -1,17 +1,17 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0
+    rev: v4.4.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
 
   - repo: https://github.com/sondrelg/pep585-upgrade
-    rev: v1.0.1
+    rev: v1
     hooks:
       - id: upgrade-type-hints
 
   - repo: https://github.com/myint/autoflake
-    rev: v1.4
+    rev: v2.2.0
     hooks:
       - id: autoflake
         exclude: .*/__init__.py
@@ -26,24 +26,17 @@ repos:
     rev: v5.10.1
     hooks:
       - id: isort
-        args: ["--profile", "black"]
+        args:
+          - --profile black
 
   - repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 23.7.0
     hooks:
       - id: black
 
-  - repo: local
-    hooks:
-      - id: mypy
-        name: mypy
-        entry: mypy
-        language: python
-        types_or: [python, pyi]
-        args: [--ignore-missing-imports]
-
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v2.27.1
+    rev: 3.6.0
     hooks:
       - id: commitizen
-        stages: [commit-msg]
+        stages:
+          - commit-msg
