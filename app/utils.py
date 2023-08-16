@@ -153,14 +153,3 @@ def save_predictions(
         prediction.dict() for prediction in predictions
     ]
     torch.save(predictions_obj, prediction_path)
-
-
-def dental_us2fid(univeral_set: int) -> None:
-    grid = (univeral_set - 1) // 8 + 1
-    if grid % 2 == 0:
-        index = (univeral_set - 1) % 8 + 1
-    else:
-        index = 9 - ((univeral_set - 1) % 8 + 1)
-
-    fid = grid * 10 + index
-    return fid
