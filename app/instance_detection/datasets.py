@@ -381,7 +381,7 @@ class InstanceDetectionV1(InstanceDetection):
 
     @property
     def split_dir(self) -> Path:
-        return Path("/mnt/hdd/PANO.arlen/data/", "splits", "instance-detection-v1")
+        return Path(self.root_dir, "splits", "instance-detection-v1")
 
     @property
     def coco_path(self) -> Path:
@@ -394,7 +394,7 @@ class InstanceDetectionV1NTUH(InstanceDetectionV1):
 
     @property
     def split_dir(self) -> Path:
-        return Path("/mnt/hdd/PANO.arlen/data/", "splits", "instance-detection-v1")
+        return Path(self.root_dir, "splits", "instance-detection-v1")
 
     @property
     def coco_path(self) -> Path:
