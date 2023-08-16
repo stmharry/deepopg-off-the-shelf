@@ -14,7 +14,7 @@ import rich.progress
 import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
-from numpy.linalg import LinAlgError
+from numpy.linalg import LinAlgError  # type: ignore
 from pydantic import parse_obj_as
 
 from app import utils
@@ -215,7 +215,9 @@ def postprocess(
         )
         # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
         # detection score in the original instance list and subtract it from one
-        missingness = np.maximum(0, 1 - df.groupby("category_id").score.max())
+        missingness: pd.Series = np.maximum(  # type: ignore
+            0, 1 - df.groupby("category_id").score.max()
+        )
 
         logging.info(f"Found {len(df)} instances.")
 
@@ -265,10 +267,10 @@ def postprocess(
                 iom[i, j] = iom[j, i] = iom_mask
 
         assignment: np.ndarray = do_assignment(
-            reward=df["score"].values,
+            reward=df["score"].to_numpy(),
             quadratic_penalty=iom,
-            penalty_group_ids=df["penalty_group_id"].values,
-            unique_group_ids=df["unique_group_id"].values,
+            penalty_group_ids=df["penalty_group_id"].tolist(),
+            unique_group_ids=df["unique_group_id"].tolist(),
             assignment_penalty=FLAGS.min_score / 2,
         )
         df = df.loc[assignment]
@@ -429,7 +431,9 @@ def postprocess(
 
                 df_full_tooth["dist"] = dist
 
-                idx: int = df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
+                idx: int = int(
+                    df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
+                )
                 row_tooth = df_full_tooth.loc[idx]
 
             # for `PERIAPICAL_RADIOLUCENT`
@@ -499,7 +503,7 @@ def postprocess(
                         "file_name": file_name,
                         "fdi": int(category.split("_")[1]),
                         "finding": "MISSING",
-                        "score": missingness.get(category_id, 0.0),
+                        "score": missingness.get(category_id, 0.0),  # type: ignore
                     }
                 )
 
