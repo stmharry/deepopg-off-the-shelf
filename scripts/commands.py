@@ -181,6 +181,7 @@ def postprocess(
     data_driver: InstanceDetection,
     dataset: list[InstanceDetectionData],
     metadata: Metadata,
+    tooth_distance: int = 150,
 ) -> None:
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
@@ -299,6 +300,8 @@ def postprocess(
         row_tooth: pd.Series | None
         row_nontooth: pd.Series
 
+        breakpoint()
+
         for j in range(num_nontooth):
             row_tooth = None
             row_nontooth = df_nontooth.iloc[j]
@@ -373,7 +376,7 @@ def postprocess(
                     if not df_full_tooth.loc[idx]["top"]:
                         _df_full_tooth.at[
                             (df_full_tooth.loc[idx]["x"], 1), "bbox_y_center"
-                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] + 150)
+                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] + tooth_distance)
                         _df_full_tooth.at[
                             (df_full_tooth.loc[idx]["x"], 1), "bbox_x_center"
                         ] = df_full_tooth.loc[idx, "bbox_x_center"]
@@ -384,7 +387,7 @@ def postprocess(
                     if not ~df_full_tooth.loc[idx]["top"]:
                         _df_full_tooth.at[
                             (df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"
-                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] - 150)
+                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] - tooth_distance)
                         _df_full_tooth.at[
                             (df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"
                         ] = df_full_tooth.loc[idx, "bbox_x_center"]
@@ -463,7 +466,7 @@ def postprocess(
                         ~df_full_tooth["exists"], "dist"
                     ].idxmin()
                     # if the findding distance to non_tooth is too far than filter
-                    if dist[idx] < 100:
+                    if dist[idx] < tooth_distance:
                         row_tooth = df_full_tooth.loc[idx]
 
             # for `PERIAPICAL_RADIOLUCENT`
