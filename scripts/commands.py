@@ -200,6 +200,7 @@ def postprocess(
     }
 
     row_results: list[dict[str, Any]] = []
+    count_results: list[dict[str, Any]] = []
     for data in dataset:
         if data.image_id not in id_to_prediction:
             logging.warning(f"Image id {data.image_id} not found in predictions.")
@@ -300,7 +301,13 @@ def postprocess(
         row_tooth: pd.Series | None
         row_nontooth: pd.Series
 
-        breakpoint()
+        count_results.append(
+            {
+                "file_name": file_name,
+                "num_implant": int(sum(df_nontooth["category_name"] == "IMPLANT"))
+            }
+        )
+
 
         for j in range(num_nontooth):
             row_tooth = None
@@ -392,7 +399,7 @@ def postprocess(
                             (df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"
                         ] = df_full_tooth.loc[idx, "bbox_x_center"]
                         _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], 1), "exists"
+                            (df_full_tooth.loc[idx]["x"], -1), "exists"
                         ] = True
 
                 df_full_tooth = _df_full_tooth.reset_index()
@@ -406,7 +413,8 @@ def postprocess(
                         smoothing=1e0,
                         kernel="thin_plate_spline",
                     )
-                except LinAlgError:
+                except ValueError:
+                # except LinAlgError:
                     logging.warning(
                         f"LinAlgError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
                     )
@@ -557,6 +565,8 @@ def postprocess(
     )
     df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv_name), index=False)
 
+    df_count_implant: pd.DataFrame = pd.DataFrame(count_results)
+    df_count_implant.to_csv(Path(FLAGS.result_dir, "count_implant.csv"), index=False)
 
 def visualize(
     data_driver: InstanceDetection,

@@ -393,9 +393,5 @@ class InstanceDetectionV1NTUH(InstanceDetectionV1):
     SPLITS: ClassVar[list[str]] = ["ntuh", "ntuh_debug"]
 
     @property
-    def split_dir(self) -> Path:
-        return Path(self.root_dir, "splits", "instance-detection-v1")
-
-    @property
     def coco_path(self) -> Path:
         return Path(self.root_dir, "coco", "instance-detection-v1-ntuh.json")
