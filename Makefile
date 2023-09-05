@@ -4,8 +4,10 @@ ROOT_DIR = /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
-MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
-RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
+MODEL_DIR_ROOT ?= $(ROOT_DIR).arlen/models
+RESULT_DIR_ROOT ?= $(ROOT_DIR).arlen/results
+
+SHEET_DIR ?= $(ROOT_DIR).arlen/google_sheet
 
 MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
@@ -31,7 +33,10 @@ MAIN ?= scripts/main.py \
 COMMANDS ?= scripts/commands.py \
 	--data_dir $(DATA_DIR) \
 	--result_dir $(RESULT_DIR) \
-	--dataset_name $(DATASET_NAME) \
+	--dataset_name $(DATASET_NAME)
+COUNT ?= scripts/count_implant.py \
+	--result_dir $(RESULT_DIR) \
+	--sheet_dir $(SHEET_DIR)
 
 # functions
 
@@ -157,3 +162,8 @@ visualize:
 		--visualizer_dir visualize.postprocessed \
 		--nodo_coco \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
+
+count: check-RESULT_NAME
+count:
+	$(PY) $(COUNT) \
+
