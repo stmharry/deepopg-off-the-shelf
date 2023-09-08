@@ -111,25 +111,6 @@ debug-detectron2:
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
-postprocess-promaton: DATASET_NAME=pano_eval
-postprocess-promaton: RESULT_NAME=pano_eval
-postprocess-promaton:
-	$(PY) $(COMMANDS) \
-		--do_postprocess \
-		--use_gt_as_prediction \
-		--output_prediction_name instances_predictions.pth \
-		--output_csv_name result.csv
-
-visualize-promaton: DATASET_NAME=pano_eval
-visualize-promaton: RESULT_NAME=pano_eval
-visualize-promaton:
-	$(PY) $(COMMANDS) \
-		--do_visualize \
-		--use_gt_as_prediction \
-		--nodo_visualize \
-		--do_coco \
-		--coco_annotator_url $(COCO_ANNOTATOR_URL)
-
 # overall targets
 
 install: install-maskdino install-detectron2
@@ -149,11 +130,29 @@ postprocess:
 		--output_prediction_name instances_predictions.postprocessed.pth \
 		--output_csv_name result.csv
 
+postprocess-gt: check-DATASET_NAME check-RESULT_NAME
+postprocess-gt:
+	$(PY) $(COMMANDS) \
+		--do_postprocess \
+		--use_gt_as_prediction \
+		--output_prediction_name instances_predictions.pth \
+		--output_csv_name result.csv
+
 visualize: check-DATASET_NAME check-RESULT_NAME check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 visualize:
 	$(PY) $(COMMANDS) \
 		--prediction_name instances_predictions.postprocessed.pth \
 		--do_visualize \
 		--visualizer_dir visualize.postprocessed \
+		--nodo_coco \
+		--coco_annotator_url $(COCO_ANNOTATOR_URL)
+
+visualize-gt: check-DATASET_NAME check-RESULT_NAME
+visualize-gt:
+	$(PY) $(COMMANDS) \
+		--do_visualize \
+		--use_gt_as_prediction \
+		--do_visualize \
+		--visualizer_dir visualize \
 		--nodo_coco \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)

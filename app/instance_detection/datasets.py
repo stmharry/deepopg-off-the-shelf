@@ -37,13 +37,13 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"
 
-    root_dir: Path | str
+    root_dir: Path
     category_mapping: dict[str, str] | None = None
 
     _coco_dataset: list[dict[str, Any]] | None = dataclasses.field(default=None)
 
     @classmethod
-    def register(cls: type[T], root_dir: str | Path) -> T:
+    def register(cls: type[T], root_dir: Path) -> T:
         self = cls(root_dir=root_dir)
 
         categories: list[CocoCategory] = self.get_coco_categories(self.coco_path)
