@@ -200,7 +200,6 @@ def postprocess(
     }
 
     row_results: list[dict[str, Any]] = []
-    count_results: list[dict[str, Any]] = []
     for data in dataset:
         if data.image_id not in id_to_prediction:
             logging.warning(f"Image id {data.image_id} not found in predictions.")
@@ -300,14 +299,6 @@ def postprocess(
 
         row_tooth: pd.Series | None
         row_nontooth: pd.Series
-
-        count_results.append(
-            {
-                "file_name": file_name,
-                "num_implant": int(sum(df_nontooth["category_name"] == "IMPLANT"))
-            }
-        )
-
 
         for j in range(num_nontooth):
             row_tooth = None
@@ -414,9 +405,8 @@ def postprocess(
                         kernel="thin_plate_spline",
                     )
                 except ValueError:
-                # except LinAlgError:
                     logging.warning(
-                        f"LinAlgError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
+                        f"ValueError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
                     )
                     continue
 
@@ -469,7 +459,7 @@ def postprocess(
 
                 df_full_tooth["dist"] = dist
 
-                if (~df_full_tooth["exists"]).any():
+                if not df_full_tooth["exists"].all():
                     idx: int = df_full_tooth.loc[
                         ~df_full_tooth["exists"], "dist"
                     ].idxmin()
@@ -518,10 +508,9 @@ def postprocess(
 
                     correlation[i] = iom_mask
 
-                if num_tooth != 0:
-                    # overlap needs to be at least 50% for a match
-                    if np.max(correlation) > 0.5:
-                        row_tooth = df_tooth.iloc[np.argmax(correlation)]
+                # overlap needs to be at least 50% for a match
+                if (num_tooth != 0) and (np.max(correlation) > 0.5):
+                    row_tooth = df_tooth.iloc[np.argmax(correlation)]
 
             if row_tooth is None:
                 continue
@@ -565,8 +554,6 @@ def postprocess(
     )
     df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv_name), index=False)
 
-    df_count_implant: pd.DataFrame = pd.DataFrame(count_results)
-    df_count_implant.to_csv(Path(FLAGS.result_dir, "count_implant.csv"), index=False)
 
 def visualize(
     data_driver: InstanceDetection,
@@ -761,13 +748,7 @@ def coco(
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    if FLAGS.dataset_name in [
-        "pano_all",
-        "pano_train",
-        "pano_eval",
-        "pano_debug",
-        "pano_inter_debug",
-    ]:
+    if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
     elif FLAGS.dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
         data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
