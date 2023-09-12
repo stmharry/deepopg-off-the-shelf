@@ -6,6 +6,7 @@ from app.instance_detection.schemas import Coco, CocoAnnotation, CocoCategory, C
 
 flags.DEFINE_string("input", None, "Input COCO file.")
 flags.DEFINE_string("output", None, "Output COCO file.")
+flags.DEFINE_string("prefix", "NTUH/", "Prefix for image file paths.")
 FLAGS = flags.FLAGS
 
 
@@ -72,7 +73,7 @@ def main(_):
         _image: CocoImage = image.copy(
             update={
                 "id": len(images) + 1,
-                "file_name": f"NTUH/{image.file_name}",
+                "file_name": f"{FLAGS.prefix}{image.file_name}",
             }
         )
         images.append(_image)
