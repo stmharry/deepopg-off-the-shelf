@@ -10,9 +10,9 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    coco = Coco.parse_file(FLAGS.input)
+    coco: Coco = Coco.parse_file(FLAGS.input)
 
-    category_name_mapping = {
+    category_name_mapping: dict[str, str] = {
         "Caries": "CARIES",
         "CrownBridge": "CROWN_BRIDGE",
         "Endo": "ENDO",
@@ -58,8 +58,9 @@ def main(_):
         CocoCategory(id=i, name=name)
         for i, name in enumerate(category_name_mapping.values(), start=1)
     ]
-    category_by_name = {category.name: category for category in categories}
-
+    category_by_name: dict[str, CocoCategory] = {
+        category.name: category for category in categories
+    }
     category_id_mapping: dict[Any, Any] = {
         category.id: category_by_name[category_name_mapping[category.name]].id
         for category in coco.categories
@@ -93,7 +94,7 @@ def main(_):
         annotations.append(_annotation)
 
         # root remnants are not labeled as category but as metadata, so we need to add them manually
-        metadata: dict = annotation.metadata or {}
+        metadata: dict[str, Any] = annotation.metadata or {}
         if metadata.get("RR") == "Y":
             _annotation = annotation.copy(
                 update={
@@ -105,7 +106,7 @@ def main(_):
             )
             annotations.append(_annotation)
 
-    coco = Coco(categories=categories, images=images, annotations=annotations)
+    coco: Coco = Coco(categories=categories, images=images, annotations=annotations)
     json_str: str = coco.json(indent=2)
     with open(FLAGS.output, "w") as f:
         f.write(json_str)
