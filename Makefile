@@ -1,6 +1,7 @@
 ### variables
 
-ROOT_DIR = /mnt/hdd/PANO
+RAW_DIR ?= /mnt/md0/data/PANO
+ROOT_DIR ?= /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
@@ -51,6 +52,15 @@ endif
 
 check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
+
+
+# golden label processing
+
+ntuh-gt-data: ROOT_DIR=$(RAW_DIR)
+ntuh-gt-data:
+	$(PY) scripts/convert-ntuh-12-coco.py \
+		--input $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
+		--output $(DATA_DIR)/coco/instance-detection-v1-ntuh.json
 
 # maskdino targets
 
