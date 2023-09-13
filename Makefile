@@ -5,8 +5,10 @@ ROOT_DIR ?= /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
-MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
-RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
+MODEL_DIR_ROOT ?= $(ROOT_DIR).arlen/models
+RESULT_DIR_ROOT ?= $(ROOT_DIR).arlen/results
+
+GOLDEN_DIR ?= $(ROOT_DIR).arlen/golden
 
 MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
@@ -32,7 +34,11 @@ MAIN ?= scripts/main.py \
 COMMANDS ?= scripts/commands.py \
 	--data_dir $(DATA_DIR) \
 	--result_dir $(RESULT_DIR) \
-	--dataset_name $(DATASET_NAME) \
+	--dataset_name $(DATASET_NAME)
+EVAL ?= scripts/evaluation.py \
+	--result_dir $(RESULT_DIR) \
+	--golden_dir $(GOLDEN_DIR) \
+	--golden_csv_name $(GOLDEN_CSV_NAME)
 
 # functions
 
@@ -166,3 +172,8 @@ visualize-gt:
 		--visualizer_dir visualize \
 		--nodo_coco \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
+
+evaluation: check-RESULT_NAME check-GOLDEN_CSV_NAME
+	$(PY) $(EVAL) \
+		--do_roc \
+		--nodo_acc
