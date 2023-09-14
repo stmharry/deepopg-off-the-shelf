@@ -69,14 +69,18 @@ def ROC(df_golden: pd.DataFrame, df_result: pd.DataFrame) -> None:
         print(roc_auc)
 
 
-def ACC(
-    df_golden: pd.DataFrame,
-    df_result: pd.DataFrame
-) -> None:
-    df_count = df_result[df_result["finding"] == "IMPLANT"].groupby("file_name").size().reset_index(name='num_implant')
-    unique_names = df_result['file_name'].unique()
-    missing_names = set(unique_names) - set(df_count['file_name'])
-    missing_data = pd.DataFrame({'file_name': list(missing_names), 'num_implant': [0] * len(missing_names)})
+def ACC(df_golden: pd.DataFrame, df_result: pd.DataFrame) -> None:
+    df_count = (
+        df_result[df_result["finding"] == "IMPLANT"]
+        .groupby("file_name")
+        .size()
+        .reset_index(name="num_implant")
+    )
+    unique_names = df_result["file_name"].unique()
+    missing_names = set(unique_names) - set(df_count["file_name"])
+    missing_data = pd.DataFrame(
+        {"file_name": list(missing_names), "num_implant": [0] * len(missing_names)}
+    )
     df_count = pd.concat([df_count, missing_data], ignore_index=True)
 
     df_golden["finding"] = df_golden["finding"] == "IMPLANT"
