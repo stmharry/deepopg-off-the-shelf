@@ -175,5 +175,5 @@ visualize-gt:
 
 evaluation: check-RESULT_NAME check-GOLDEN_CSV_NAME
 	$(PY) $(EVAL) \
-		--do_roc \
-		--nodo_acc
+		--nodo_roc \
+		--do_acc
