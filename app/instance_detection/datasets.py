@@ -354,7 +354,6 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         file_paths: set[Path] = set(
             Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
         )
-        breakpoint()
         coco_dataset: list[dict[str, Any]] = [
             data for data in self.dataset if Path(data["file_name"]) in file_paths
         ]
