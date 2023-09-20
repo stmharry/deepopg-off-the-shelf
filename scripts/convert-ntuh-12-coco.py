@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from absl import app, flags
@@ -70,10 +71,12 @@ def main(_):
     images: list[CocoImage] = []
     image_id_mapping: dict[Any, Any] = {}
     for image in coco.images:
+        file_name: str = Path(image.file_name).stem
+
         _image: CocoImage = image.copy(
             update={
                 "id": len(images) + 1,
-                "file_name": f"{FLAGS.prefix}{image.file_name}",
+                "file_name": f"{FLAGS.prefix}{file_name}.jpg",
             }
         )
         images.append(_image)

@@ -718,7 +718,7 @@ def main(_):
 
     if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
-    elif FLAGS.dataset_name in ["pano_ntuh"]:
+    elif FLAGS.dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
         data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
     else:
         raise ValueError(f"Unknown dataset name {FLAGS.dataset_name}")
