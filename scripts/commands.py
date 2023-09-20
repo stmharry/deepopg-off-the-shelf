@@ -382,7 +382,7 @@ def postprocess(
                             (df_full_tooth.loc[idx]["x"], 1), "exists"
                         ] = True
 
-                    if not ~df_full_tooth.loc[idx]["top"]:
+                    elif not ~df_full_tooth.loc[idx]["top"]:
                         _df_full_tooth.at[
                             (df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"
                         ] = (df_full_tooth.loc[idx, "bbox_y_center"] - tooth_distance)

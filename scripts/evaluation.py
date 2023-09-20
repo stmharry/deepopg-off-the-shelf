@@ -65,8 +65,8 @@ def ROC(df_golden: pd.DataFrame, df_result: pd.DataFrame) -> None:
 
         fpr, tpr, thresholds = roc_curve(golden, score, drop_intermediate=False)
         roc_auc = auc(fpr, tpr)
-        print(finding_name)
-        print(roc_auc)
+
+        ## need to plot the roc curve
 
 
 def ACC(df_golden: pd.DataFrame, df_result: pd.DataFrame) -> None:
@@ -86,14 +86,11 @@ def ACC(df_golden: pd.DataFrame, df_result: pd.DataFrame) -> None:
     df_golden["finding"] = df_golden["finding"] == "IMPLANT"
     df_golden = df_golden.groupby("file_name")["finding"].sum().reset_index()
 
-    # names_to_remove = df_implant.loc[df_implant["exclude"] == True, "file_name"]
-    # df_golden = df_golden[~df_golden["file_name"].isin(names_to_remove)]
-    # df_count = df_count[~df_count["file_name"].isin(names_to_remove)]
-
     merged_df = df_golden.merge(df_count, on="file_name", how="left")
 
     acc = sum(merged_df["finding"] == merged_df["num_implant"]) / len(merged_df)
-    print(acc)
+    
+    ## need to print the accuracy
 
 
 def main(_):
@@ -105,6 +102,8 @@ def main(_):
         ROC(df_golden=df_golden, df_result=df_result)
     if FLAGS.do_acc:
         ACC(df_golden=df_golden, df_result=df_result)
+
+    ## need add the ntuh reponses
 
 
 if __name__ == "__main__":

@@ -5,10 +5,11 @@ ROOT_DIR ?= /mnt/hdd/PANO
 
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
-MODEL_DIR_ROOT ?= $(ROOT_DIR).arlen/models
-RESULT_DIR_ROOT ?= $(ROOT_DIR).arlen/results
+MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
+RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
 
-GOLDEN_DIR ?= $(ROOT_DIR).arlen/golden
+## need to add the file in root directory
+GOLDEN_DIR ?= $(ROOT_DIR)/golden
 
 MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
