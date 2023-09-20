@@ -44,7 +44,7 @@ class InstanceDetectionAnnotation(BaseModel):
     bbox: list[int]
     bbox_mode: BoxMode
     category_id: int
-    segmentation: CocoRLE
+    segmentation: CocoRLE | list[list[int]]
     iscrowd: int
 
 

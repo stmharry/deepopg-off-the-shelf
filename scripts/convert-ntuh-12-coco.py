@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from absl import app, flags
@@ -68,17 +69,16 @@ def main(_):
     }
 
     images: list[CocoImage] = []
-    image_id_mapping: dict[Any, Any] = {}
     for image in coco.images:
+        file_name: str = Path(image.file_name).stem
+
         _image: CocoImage = image.copy(
             update={
-                "id": len(images) + 1,
-                "file_name": f"{FLAGS.prefix}{image.file_name}",
+                "id": image.id,
+                "file_name": f"{FLAGS.prefix}{file_name}.jpg",
             }
         )
         images.append(_image)
-
-        image_id_mapping[image.id] = _image.id
 
     annotations: list[CocoAnnotation] = []
     for annotation in coco.annotations:
@@ -87,7 +87,6 @@ def main(_):
         _annotation = annotation.copy(
             update={
                 "id": len(annotations) + 1,
-                "image_id": image_id_mapping[annotation.image_id],
                 "category_id": category_id_mapping[annotation.category_id],
                 "metadata": None,
             }
@@ -100,7 +99,6 @@ def main(_):
             _annotation = annotation.copy(
                 update={
                     "id": len(annotations) + 1,
-                    "image_id": image_id_mapping[annotation.image_id],
                     "category_id": category_by_name["ROOT_REMNANTS"].id,
                     "metadata": None,
                 }
