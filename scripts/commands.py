@@ -454,7 +454,8 @@ def postprocess(
                         labels=row_tooth["mask"][all_instances_slice],
                     )
 
-                row_tooth = df_tooth.iloc[np.argmin(dist)]
+                if num_tooth:
+                    row_tooth = df_tooth.iloc[np.argmin(dist)]
 
             # for other findings
             else:
@@ -478,11 +479,13 @@ def postprocess(
                     correlation[i] = iom_mask
 
                 # overlap needs to be at least 50% for a match
-                if np.max(correlation) > 0.5:
+                if num_tooth and np.max(correlation) > 0.5:
                     row_tooth = df_tooth.iloc[np.argmax(correlation)]
 
             if row_tooth is None:
                 continue
+
+            assert row_tooth is not None
 
             row_results.append(
                 {
