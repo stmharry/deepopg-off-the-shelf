@@ -181,6 +181,7 @@ def postprocess(
     data_driver: InstanceDetection,
     dataset: list[InstanceDetectionData],
     metadata: Metadata,
+    tooth_distance: int = 150,
 ) -> None:
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
@@ -367,6 +368,33 @@ def postprocess(
 
                 # this interpolator not only interpolates the missing bbox centers, but also
                 # extrapolates
+                _df_full_tooth = df_full_tooth.copy()
+                _df_full_tooth.set_index(["x", "y"], inplace=True)
+                for idx in df_full_tooth.loc[df_full_tooth["exists"]].index:
+                    if not df_full_tooth.loc[idx]["top"]:
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "bbox_y_center"
+                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] + tooth_distance)
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "bbox_x_center"
+                        ] = df_full_tooth.loc[idx, "bbox_x_center"]
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], 1), "exists"
+                        ] = True
+
+                    elif not ~df_full_tooth.loc[idx]["top"]:
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"
+                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] - tooth_distance)
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"
+                        ] = df_full_tooth.loc[idx, "bbox_x_center"]
+                        _df_full_tooth.at[
+                            (df_full_tooth.loc[idx]["x"], -1), "exists"
+                        ] = True
+
+                df_full_tooth = _df_full_tooth.reset_index()
+
                 try:
                     interp = scipy.interpolate.RBFInterpolator(
                         y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
@@ -376,9 +404,9 @@ def postprocess(
                         smoothing=1e0,
                         kernel="thin_plate_spline",
                     )
-                except LinAlgError:
+                except ValueError:
                     logging.warning(
-                        f"LinAlgError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
+                        f"ValueError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
                     )
                     continue
 
@@ -431,10 +459,13 @@ def postprocess(
 
                 df_full_tooth["dist"] = dist
 
-                idx: int = int(
-                    df_full_tooth.loc[~df_full_tooth["exists"], "dist"].idxmin()
-                )
-                row_tooth = df_full_tooth.loc[idx]
+                if not df_full_tooth["exists"].all():
+                    idx: int = df_full_tooth.loc[
+                        ~df_full_tooth["exists"], "dist"
+                    ].idxmin()
+                    # if the findding distance to non_tooth is too far than filter
+                    if dist[idx] < tooth_distance:
+                        row_tooth = df_full_tooth.loc[idx]
 
             # for `PERIAPICAL_RADIOLUCENT`
             elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
@@ -496,6 +527,7 @@ def postprocess(
                 }
             )
 
+        # for missing
         for category_id, category in enumerate(metadata.thing_classes):
             if not category.startswith("TOOTH"):
                 continue
