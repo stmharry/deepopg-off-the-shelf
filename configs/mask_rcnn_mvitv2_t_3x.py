@@ -1,13 +1,15 @@
 import warnings
 
 from fvcore.common.param_scheduler import MultiStepParamScheduler
+from projects.MViTv2.configs.common.coco_loader import dataloader
 from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import constants  # noqa
 from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import model  # noqa
-from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import dataloader, optimizer, train
+from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import optimizer, train
 
 from detectron2 import model_zoo  # type: ignore
 from detectron2.config import LazyCall as L
 from detectron2.data import get_detection_dataset_dicts
+from detectron2.data import transforms as T
 from detectron2.solver import WarmupParamScheduler
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")
@@ -15,9 +17,27 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functio
 # dataloader
 
 dataloader.train.dataset = L(get_detection_dataset_dicts)(names="pano_train")
+dataloader.train.mapper.augmentations = [
+    L(T.RandomApply)(
+        tfm_or_aug=L(T.AugmentationList)(
+            augs=[
+                L(T.ResizeShortestEdge)(
+                    short_edge_length=[400, 500, 600], sample_style="choice"
+                ),
+                L(T.RandomCrop)(crop_type="absolute_range", crop_size=(384, 600)),
+            ]
+        ),
+        prob=0.5,
+    ),
+    L(T.ResizeShortestEdge)(
+        short_edge_length=(480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800),
+        sample_style="choice",
+        max_size=1333,
+    ),
+]
 dataloader.train.mapper.instance_mask_format = "bitmask"
-dataloader.train.num_workers = 12
 dataloader.train.total_batch_size = 1
+dataloader.train.num_workers = 12
 
 dataloader.test.dataset = L(get_detection_dataset_dicts)(names="pano_eval")
 dataloader.test.mapper.instance_mask_format = "${...train.mapper.instance_mask_format}"
