@@ -371,35 +371,6 @@ def postprocess(
                     lambda bbox: bbox[1] + bbox[3] / 2
                 )
 
-                # this interpolator not only interpolates the missing bbox centers, but also
-                # extrapolates
-                _df_full_tooth = df_full_tooth.copy()
-                _df_full_tooth.set_index(["x", "y"], inplace=True)
-                for idx in df_full_tooth.loc[df_full_tooth["exists"]].index:
-                    if not df_full_tooth.loc[idx]["top"]:
-                        _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], 1), "bbox_y_center"
-                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] + tooth_distance)
-                        _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], 1), "bbox_x_center"
-                        ] = df_full_tooth.loc[idx, "bbox_x_center"]
-                        _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], 1), "exists"
-                        ] = True
-
-                    elif not ~df_full_tooth.loc[idx]["top"]:
-                        _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], -1), "bbox_y_center"
-                        ] = (df_full_tooth.loc[idx, "bbox_y_center"] - tooth_distance)
-                        _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], -1), "bbox_x_center"
-                        ] = df_full_tooth.loc[idx, "bbox_x_center"]
-                        _df_full_tooth.at[
-                            (df_full_tooth.loc[idx]["x"], -1), "exists"
-                        ] = True
-
-                df_full_tooth = _df_full_tooth.reset_index()
-
                 try:
                     interp = scipy.interpolate.RBFInterpolator(
                         y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
