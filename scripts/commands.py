@@ -199,6 +199,7 @@ def postprocess(
         prediction.image_id: prediction for prediction in predictions
     }
 
+    output_predictions: list[InstanceDetectionPrediction] = []
     row_results: list[dict[str, Any]] = []
     for data in dataset:
         if data.image_id not in id_to_prediction:
@@ -280,7 +281,11 @@ def postprocess(
         instances = parse_obj_as(
             list[InstanceDetectionPredictionInstance], df.to_dict(orient="records")
         )
-        prediction.instances = instances
+        output_predictions.append(
+            InstanceDetectionPrediction(
+                image_id=prediction.image_id, instances=instances
+            )
+        )
 
         # result csv
 
@@ -545,7 +550,7 @@ def postprocess(
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
     utils.save_predictions(
-        predictions=predictions,
+        predictions=output_predictions,
         prediction_path=Path(FLAGS.result_dir, FLAGS.output_prediction_name),
     )
 
