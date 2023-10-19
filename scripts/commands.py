@@ -398,12 +398,15 @@ def postprocess(
                         ["bbox_x_center", "bbox_y_center"],
                     ] = [950, 550]
 
-                    df_full_tooth["exists_buffer"] = ~df_full_tooth["bbox_x_center"].isna()
+                    df_full_tooth["exists_buffer"] = ~df_full_tooth[
+                        "bbox_x_center"
+                    ].isna()
 
                     interp = scipy.interpolate.RBFInterpolator(
                         y=df_full_tooth.loc[df_full_tooth["exists_buffer"], ["x", "y"]],
                         d=df_full_tooth.loc[
-                            df_full_tooth["exists_buffer"], ["bbox_x_center", "bbox_y_center"]
+                            df_full_tooth["exists_buffer"],
+                            ["bbox_x_center", "bbox_y_center"],
                         ],
                         smoothing=1e0,
                         kernel="thin_plate_spline",
