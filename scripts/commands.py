@@ -405,10 +405,6 @@ def postprocess(
                 for i in range(len(df_full_tooth)):
                     _row_tooth = df_full_tooth.iloc[i]
 
-                    # skip if tooth is present: we don't want to match with existing teeth
-                    if _row_tooth["exists"]:
-                        continue
-
                     # calculate the indices on the distance map
                     y_index: int = min(
                         all_instances_slice[0].stop - all_instances_slice[0].start - 1,
@@ -436,9 +432,8 @@ def postprocess(
                 df_full_tooth["dist"] = dist
 
                 if not df_full_tooth["exists"].all():
-                    idx: int = df_full_tooth.loc[
-                        ~df_full_tooth["exists"], "dist"
-                    ].idxmin()
+                    idx: int = df_full_tooth["dist"].idxmin()
+
                     # if the findding distance to non_tooth is too far than filter
                     if dist[idx] < tooth_distance:
                         row_tooth = df_full_tooth.loc[idx]
