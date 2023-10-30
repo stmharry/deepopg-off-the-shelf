@@ -503,15 +503,14 @@ def postprocess(
             if not category.startswith("TOOTH"):
                 continue
 
-            if category_id not in df_tooth.category_id.tolist():
-                row_results.append(
-                    {
-                        "file_name": file_name,
-                        "fdi": int(category.split("_")[1]),
-                        "finding": "MISSING",
-                        "score": missingness.get(category_id, 0.0),  # type: ignore
-                    }
-                )
+            row_results.append(
+                {
+                    "file_name": file_name,
+                    "fdi": int(category.split("_")[1]),
+                    "finding": "MISSING",
+                    "score": missingness.get(category_id, 0.0),  # type: ignore
+                }
+            )
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
