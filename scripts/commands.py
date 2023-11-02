@@ -406,10 +406,6 @@ def postprocess(
                 for i in range(len(df_full_tooth)):
                     _row_tooth = df_full_tooth.iloc[i]
 
-                    # skip if tooth is present: we don't want to match with existing teeth
-                    if _row_tooth["exists"]:
-                        continue
-
                     # calculate the indices on the distance map
                     y_index: int = min(
                         all_instances_slice[0].stop - all_instances_slice[0].start - 1,
@@ -437,9 +433,8 @@ def postprocess(
                 df_full_tooth["dist"] = dist
 
                 if not df_full_tooth["exists"].all():
-                    idx: int = df_full_tooth.loc[
-                        ~df_full_tooth["exists"], "dist"
-                    ].idxmin()
+                    idx: int = df_full_tooth["dist"].idxmin()
+
                     # if the findding distance to non_tooth is too far than filter
                     if dist[idx] < tooth_distance:
                         row_tooth = df_full_tooth.loc[idx]
@@ -509,15 +504,14 @@ def postprocess(
             if not category.startswith("TOOTH"):
                 continue
 
-            if category_id not in df_tooth.category_id.tolist():
-                row_results.append(
-                    {
-                        "file_name": file_name,
-                        "fdi": int(category.split("_")[1]),
-                        "finding": "MISSING",
-                        "score": missingness.get(category_id, 0.0),  # type: ignore
-                    }
-                )
+            row_results.append(
+                {
+                    "file_name": file_name,
+                    "fdi": int(category.split("_")[1]),
+                    "finding": "MISSING",
+                    "score": missingness.get(category_id, 0.0),  # type: ignore
+                }
+            )
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
