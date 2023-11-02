@@ -11,11 +11,12 @@ from pydantic import parse_obj_as
 from app.instance_detection.schemas import (
     CocoAnnotation,
     CocoCategory,
+    CocoRLE,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
 )
-from detectron2.structures import BoxMode, Instances
+from detectron2.structures import BoxMode, Instances, polygons_to_bitmask
 
 
 def calculate_iom_bbox(
@@ -74,7 +75,17 @@ def prediction_to_detectron2_instances(
             BoxMode.convert(instance.bbox, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
         )
         pred_classes.append(instance.category_id)
-        pred_masks.append(pycocotools.mask.decode(instance.segmentation.dict()))
+
+        if isinstance(instance.segmentation, CocoRLE):
+            bitmask = pycocotools.mask.decode(instance.segmentation.dict())
+
+        elif isinstance(instance.segmentation, list):
+            bitmask = polygons_to_bitmask(instance.segmentation, *image_size)
+
+        else:
+            raise NotImplementedError
+
+        pred_masks.append(bitmask)
 
     return Instances(
         image_size=image_size,
@@ -98,12 +109,25 @@ def prediction_to_coco_annotations(
         category_id: int | None = coco_categories[instance.category_id].id
         assert category_id is not None
 
-        rle_obj: dict[str, Any] = instance.segmentation.dict()
-        segmentation: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
-        contours: list[npt.NDArray[np.int32]]
-        contours, _ = cv2.findContours(
-            segmentation[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        polygons: list[list[int]]
+        area: int
+        if isinstance(instance.segmentation, CocoRLE):
+            rle_obj = instance.segmentation.dict()
+            area = pycocotools.mask.area(rle_obj)
+
+            segmentation: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
+            contours: list[npt.NDArray[np.int32]]
+            contours, _ = cv2.findContours(
+                segmentation[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            polygons = [contour.flatten().tolist() for contour in contours]
+
+        elif isinstance(instance.segmentation, list):
+            polygons = instance.segmentation
+            area = 0  # TODO
+
+        else:
+            raise NotImplementedError
 
         coco_annotations.append(
             CocoAnnotation(
@@ -111,8 +135,8 @@ def prediction_to_coco_annotations(
                 image_id=instance.image_id,
                 category_id=category_id,
                 bbox=instance.bbox,
-                segmentation=[contour.flatten().tolist() for contour in contours],
-                area=pycocotools.mask.area(rle_obj),
+                segmentation=polygons,
+                area=area,
                 metadata={"score": instance.score},
             )
         )

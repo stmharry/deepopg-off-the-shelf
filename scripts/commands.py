@@ -22,6 +22,7 @@ from app.coco_annotator.clients import CocoAnnotatorClient
 from app.coco_annotator.schemas import CocoAnnotatorDataset, CocoAnnotatorImage
 from app.instance_detection.datasets import (
     InstanceDetection,
+    InstanceDetectionOdontoAI,
     InstanceDetectionV1,
     InstanceDetectionV1NTUH,
 )
@@ -441,10 +442,6 @@ def postprocess(
                 for i in range(len(df_full_tooth)):
                     _row_tooth = df_full_tooth.iloc[i]
 
-                    # skip if tooth is present: we don't want to match with existing teeth
-                    if _row_tooth["exists"]:
-                        continue
-
                     # calculate the indices on the distance map
                     y_index: int = min(
                         all_instances_slice[0].stop - all_instances_slice[0].start - 1,
@@ -472,9 +469,8 @@ def postprocess(
                 df_full_tooth["dist"] = dist
 
                 if not df_full_tooth["exists"].all():
-                    idx: int = df_full_tooth.loc[
-                        ~df_full_tooth["exists"], "dist"
-                    ].idxmin()
+                    idx: int = df_full_tooth["dist"].idxmin()
+
                     # if the findding distance to non_tooth is too far than filter
                     if dist[idx] < tooth_distance:
                         row_tooth = df_full_tooth.loc[idx]
@@ -544,15 +540,14 @@ def postprocess(
             if not category.startswith("TOOTH"):
                 continue
 
-            if category_id not in df_tooth.category_id.tolist():
-                row_results.append(
-                    {
-                        "file_name": file_name,
-                        "fdi": int(category.split("_")[1]),
-                        "finding": "MISSING",
-                        "score": missingness.get(category_id, 0.0),  # type: ignore
-                    }
-                )
+            row_results.append(
+                {
+                    "file_name": file_name,
+                    "fdi": int(category.split("_")[1]),
+                    "finding": "MISSING",
+                    "score": missingness.get(category_id, 0.0),  # type: ignore
+                }
+            )
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
@@ -636,8 +631,14 @@ def visualize(
                 category_ids=category_ids,
             )
 
-            image_bw: np.ndarray = iio.imread(data.file_name)
-            image_rgb: np.ndarray = cv2.cvtColor(image_bw, cv2.COLOR_GRAY2RGB)
+            image: np.ndarray = iio.imread(data.file_name)
+            image_rgb: np.ndarray
+            if image.shape[2] == 1:
+                image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+            elif image.shape[2] == 3:
+                image_rgb = image
+            else:
+                raise NotImplementedError
 
             visualizer = Visualizer(image_rgb, metadata=metadata, scale=1.0)
             image_vis: VisImage = visualizer.draw_instance_predictions(instances)
@@ -676,7 +677,7 @@ def coco(
     ### categories
 
     coco_categories: list[CocoCategory] = InstanceDetection.get_coco_categories(
-        data_driver.coco_path
+        data_driver.coco_paths[0]
     )
 
     ### annotations
@@ -715,7 +716,7 @@ def coco(
     ca_image_names: set[str] = {ca_image.file_name for ca_image in ca_images}
 
     all_coco_images: list[CocoImage] = InstanceDetection.get_coco_images(
-        data_driver.coco_path
+        data_driver.coco_paths[0]
     )
 
     coco_images: list[CocoImage] = []
@@ -767,6 +768,12 @@ def main(_):
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
     elif FLAGS.dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
         data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
+    elif FLAGS.dataset_name in [
+        "pano_odontoai_train",
+        "pano_odontoai_val",
+        "pano_odontoai_test",
+    ]:
+        data_driver = InstanceDetectionOdontoAI.register(root_dir=FLAGS.data_dir)
     else:
         raise ValueError(f"Unknown dataset name {FLAGS.dataset_name}")
 

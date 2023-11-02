@@ -60,7 +60,7 @@ class InstanceDetectionPredictionInstance(BaseModel):
     image_id: int | str
     bbox: list[int]
     category_id: int
-    segmentation: CocoRLE
+    segmentation: CocoRLE | list[list[int]]
     score: float
 
 
