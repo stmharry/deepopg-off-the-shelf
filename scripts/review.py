@@ -146,7 +146,8 @@ def ROC_curve(
 
         golden = df_auc["golden"]
         score = df_auc["score"]
-
+        confusion_arr = confusion_matrix(golden, score != 0)
+        print(confusion_arr)
         fpr, tpr, thresholds = roc_curve(golden, score, drop_intermediate=False)
         roc_auc = auc(fpr, tpr)
         fpr_finding.append(fpr)
