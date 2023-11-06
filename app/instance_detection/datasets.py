@@ -1,9 +1,9 @@
 import abc
 import dataclasses
 import functools
-import itertools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, TypeVar, cast
 
@@ -45,24 +45,9 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
-        logging.info(f"Registering {cls.__name__!s} dataset...")
-
         self = cls(root_dir=root_dir)
 
-        categories: list[CocoCategory] | None = None
-        for coco_path in self.coco_paths:
-            _categories = self.get_coco_categories(coco_path)
-
-            if categories is None:
-                categories = _categories
-
-            elif categories != _categories:
-                raise ValueError(
-                    f"Categories from {coco_path!s} do not match previous categories!"
-                )
-
-        if categories is None:
-            raise ValueError(f"No categories found in {self.coco_paths!s}!")
+        categories: list[CocoCategory] = self.get_coco_categories(self.coco_path)
 
         thing_classes: list[str] = [category.name for category in categories]
         thing_colors: npt.NDArray[np.uint8] = (
@@ -91,21 +76,15 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
     @property
     def dataset(self) -> list[dict[str, Any]]:
-        for coco_path in self.coco_paths:
-            if not coco_path.exists():
-                raise ValueError(
-                    f"Coco dataset does not exist: {coco_path!s}, please run "
-                    f"`InstanceDetection.prepare_coco` first!"
-                )
+        if not self.coco_path.exists():
+            raise ValueError(
+                f"Coco dataset does not exist: {self.coco_path!s}, please run "
+                f"`InstanceDetection.prepare_coco` first!"
+            )
 
         if self._coco_dataset is None:
-            self._coco_dataset = list(
-                itertools.chain.from_iterable(
-                    load_coco_json(
-                        coco_path, image_root=self.image_dir, dataset_name="pano"
-                    )
-                    for coco_path in self.coco_paths
-                )
+            self._coco_dataset = load_coco_json(
+                self.coco_path, image_root=self.image_dir, dataset_name="pano"
             )
 
         return self._coco_dataset
@@ -124,20 +103,12 @@ class InstanceDetection(metaclass=abc.ABCMeta):
         pass
 
     @property
-    def coco_path(self) -> Path | None:
-        return None
+    @abc.abstractmethod
+    def coco_path(self) -> Path:
+        pass
 
-    @property
-    def coco_paths(self) -> list[Path]:
-        if self.coco_path is None:
-            raise ValueError(
-                f"InstanceDetection {self.__class__.__name__} does not have a coco_path!"
-            )
-
-        return [self.coco_path]
-
-    @classmethod
-    def get_coco_categories(cls, coco_path: str | Path) -> list[CocoCategory]:
+    @staticmethod
+    def get_coco_categories(coco_path: str | Path) -> list[CocoCategory]:
         with open(coco_path) as f:
             categories: list[CocoCategory] = parse_obj_as(
                 list[CocoCategory], ijson.items(f, "categories.item")
@@ -148,8 +119,8 @@ class InstanceDetection(metaclass=abc.ABCMeta):
 
         return sorted_categories
 
-    @classmethod
-    def get_coco_images(cls, coco_path: str | Path) -> list[CocoImage]:
+    @staticmethod
+    def get_coco_images(coco_path: str | Path) -> list[CocoImage]:
         with open(coco_path) as f:
             images: list[CocoImage] = parse_obj_as(
                 list[CocoImage], ijson.items(f, "images.item")
@@ -394,6 +365,18 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             return coco_dataset
 
 
+class InstanceDetectionV1Category(str, Enum):
+    MISSING = "MISSING"
+    IMPLANT = "IMPLANT"
+    ROOT_REMNANTS = "ROOT_REMNANTS"
+    CROWN_BRIDGE = "CROWN_BRIDGE"
+    FILLING = "FILLING"
+    ENDO = "ENDO"
+    CARIES = "CARIES"
+    PERIAPICAL_RADIOLUCENT = "PERIAPICAL_RADIOLUCENT"
+
+
+@dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
     SPLITS: ClassVar[list[str]] = ["all", "train", "eval", "debug"]
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
@@ -425,19 +408,3 @@ class InstanceDetectionV1NTUH(InstanceDetectionV1):
     @property
     def coco_path(self) -> Path:
         return Path(self.root_dir, "coco", "instance-detection-v1-ntuh.json")
-
-
-@dataclasses.dataclass
-class InstanceDetectionOdontoAI(InstanceDetection):
-    SPLITS: ClassVar[list[str]] = ["odontoai_train", "odontoao_val", "odontoai_test"]
-
-    @property
-    def split_dir(self) -> Path:
-        return Path(self.root_dir, "splits", "instance-detection-odontoai")
-
-    @property
-    def coco_paths(self) -> list[Path]:
-        return [
-            Path(self.root_dir, "coco", "instance-detection-odontoai-train.json"),
-            Path(self.root_dir, "coco", "instance-detection-odontoai-val.json"),
-        ]
