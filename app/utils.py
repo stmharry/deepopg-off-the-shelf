@@ -20,9 +20,9 @@ from detectron2.structures import BoxMode, Instances, polygons_to_bitmask
 
 
 def uns_to_fdi(uns: int) -> int:
-    quadrant = (uns - 1) // 8 + 1
-    index = (uns - 1) % 8 + 1 if quadrant % 2 == 0 else 9 - ((uns - 1) % 8 + 1)
-    fdi = quadrant * 10 + index
+    quadrant: int = (uns - 1) // 8 + 1
+    index: int = (uns - 1) % 8 + 1 if quadrant % 2 == 0 else 9 - ((uns - 1) % 8 + 1)
+    fdi: int = quadrant * 10 + index
     return fdi
 
 
