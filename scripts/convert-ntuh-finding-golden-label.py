@@ -107,14 +107,24 @@ def main(_):
                         "finding": FINDING_MAPPING[str(finding)],
                     }
                 )
-
-    (
+    df_output: pd.DataFrame = (
         pd.DataFrame(output_rows)
-        .groupby(["file_name", "fdi"])
+        .groupby(["file_name", "fdi"], as_index=False, group_keys=False)
         .apply(postprocess_tooth)
-        .sort_values()
-        .to_csv(FLAGS.output, index=False)
+        .sort_values(["file_name", "fdi", "finding"])
+    )  # type: ignore
+
+    num_images: int = len(df_output["file_name"].drop_duplicates())
+    num_teeth: int = len(df_output[["file_name", "fdi"]].drop_duplicates())
+    num_findings: int = len(df_output)
+
+    logging.info(
+        f"Found {num_images} studies, {num_teeth} teeth, and {num_findings} findings."
     )
+
+    df_output.to_csv(FLAGS.output, index=False)
+
+    logging.info(f"The golden labels are saved to {FLAGS.output}.")
 
 
 if __name__ == "__main__":
