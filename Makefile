@@ -75,6 +75,12 @@ ntuh-finding-golden-label:
 		--input_coco $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
 
+ntuh-finding-human-label: ROOT_DIR = $(RAW_DIR)
+ntuh-finding-human-label:
+	$(PY) scripts/convert-ntuh-finding-human-label.py \
+		--input_dir $(DATA_DIR)/raw/NTUH/human_label \
+		--output "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
+
 # maskdino targets
 
 install-maskdino:
