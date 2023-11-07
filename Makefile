@@ -60,14 +60,20 @@ endif
 check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
 
-
 # golden label processing
 
-ntuh-gt-data: ROOT_DIR=$(RAW_DIR)
-ntuh-gt-data:
-	$(PY) scripts/convert-ntuh-12-coco.py \
+ntuh-golden-coco: ROOT_DIR = $(RAW_DIR)
+ntuh-golden-coco:
+	$(PY) scripts/convert-ntuh-coco.py \
 		--input $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/coco/instance-detection-v1-ntuh.json
+
+ntuh-golden-findings: ROOT_DIR = $(RAW_DIR)
+ntuh-golden-findings:
+	$(PY) scripts/convert-ntuh-finding.py \
+		--input "$(DATA_DIR)/raw/NTUH/csvs/(WIP) NTUH Summary Golden Label - Per-study.csv" \
+		--input_coco $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
+		--output $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
 
 # maskdino targets
 
