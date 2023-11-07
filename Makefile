@@ -62,15 +62,15 @@ check-%:
 
 # golden label processing
 
-ntuh-golden-coco: ROOT_DIR = $(RAW_DIR)
-ntuh-golden-coco:
-	$(PY) scripts/convert-ntuh-coco.py \
+ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
+ntuh-coco-golden-label:
+	$(PY) scripts/convert-ntuh-coco-golden-label.py \
 		--input $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/coco/instance-detection-v1-ntuh.json
 
-ntuh-golden-findings: ROOT_DIR = $(RAW_DIR)
-ntuh-golden-findings:
-	$(PY) scripts/convert-ntuh-finding.py \
+ntuh-finding-golden-label: ROOT_DIR = $(RAW_DIR)
+ntuh-finding-golden-label:
+	$(PY) scripts/convert-ntuh-finding-golden-label.py \
 		--input "$(DATA_DIR)/raw/NTUH/csvs/(WIP) NTUH Summary Golden Label - Per-study.csv" \
 		--input_coco $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
