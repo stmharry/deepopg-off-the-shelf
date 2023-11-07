@@ -11,7 +11,6 @@ from app.utils import uns_to_fdi
 flags.DEFINE_string("input", None, "Input csv file as downloaded from Google Sheets.")
 flags.DEFINE_string("input_coco", None, "Input coco json file.")
 flags.DEFINE_string("output", None, "Output golden label csv file.")
-
 FLAGS = flags.FLAGS
 
 
@@ -66,10 +65,13 @@ def postprocess_tooth(df: pd.DataFrame) -> pd.DataFrame:
         # now `MISSING` is added
         has_missing = True
 
+    findings: list[str]
     if has_missing:
-        df = df.loc[df["finding"].isin(EVALUATE_WHEN_MISSING_FINDINGS)]
+        findings = EVALUATE_WHEN_MISSING_FINDINGS
     else:
-        df = df.loc[df["finding"].isin(EVALUATE_WHEN_NONMISSING_FINDINGS)]
+        findings = EVALUATE_WHEN_NONMISSING_FINDINGS
+
+    df = df.loc[df["finding"].isin(findings)]
 
     return df
 
