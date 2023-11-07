@@ -71,7 +71,7 @@ ntuh-coco-golden-label:
 ntuh-finding-golden-label: ROOT_DIR = $(RAW_DIR)
 ntuh-finding-golden-label:
 	$(PY) scripts/convert-ntuh-finding-golden-label.py \
-		--input "$(DATA_DIR)/raw/NTUH/csvs/(WIP) NTUH Summary Golden Label - Per-study.csv" \
+		--input "$(DATA_DIR)/raw/NTUH/golden_label/(WIP) NTUH Summary Golden Label - Per-study.csv" \
 		--input_coco $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
 
