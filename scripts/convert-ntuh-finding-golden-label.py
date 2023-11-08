@@ -6,6 +6,7 @@ import pandas as pd
 from absl import app, flags, logging
 
 from app.instance_detection.schemas import Coco, CocoImage
+from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.utils import uns_to_fdi
 
 flags.DEFINE_string("input", None, "Input csv file as downloaded from Google Sheets.")
@@ -15,37 +16,37 @@ FLAGS = flags.FLAGS
 
 
 FINDING_MAPPING: dict[str, str] = {
-    "Missing": "MISSING",
-    "Implant": "IMPLANT",
-    "Remnant Root": "ROOT_REMNANTS",
-    "Caries": "CARIES",
-    "Root Filled": "ENDO",
-    "Crown Bridge": "CROWN_BRIDGE",
-    "Apical Lesion": "PERIAPICAL_RADIOLUCENT",
-    "Restoration": "FILLING",
+    "Missing": Category.MISSING,
+    "Implant": Category.IMPLANT,
+    "Remnant Root": Category.ROOT_REMNANTS,
+    "Caries": Category.CARIES,
+    "Root Filled": Category.ENDO,
+    "Crown Bridge": Category.CROWN_BRIDGE,
+    "Apical Lesion": Category.PERIAPICAL_RADIOLUCENT,
+    "Restoration": Category.FILLING,
 }
 
 UNS_PATTERN: re.Pattern = re.compile(r"\[(\d+)\]")
 
 EVALUATE_WHEN_MISSING_FINDINGS: list[str] = [
-    "MISSING",
-    "IMPLANT",
+    Category.MISSING,
+    Category.IMPLANT,
 ]
 
 EVALUATE_WHEN_NONMISSING_FINDINGS: list[str] = [
-    "MISSING",  # kept only for semantics, in reality we don't have negative labels
-    "ROOT_REMNANTS",
-    "CROWN_BRIDGE",
-    "FILLING",
-    "ENDO",
-    "CARIES",
-    "PERIAPICAL_RADIOLUCENT",
+    Category.MISSING,  # kept only for semantics, in reality we don't have negative labels
+    Category.ROOT_REMNANTS,
+    Category.CROWN_BRIDGE,
+    Category.FILLING,
+    Category.ENDO,
+    Category.CARIES,
+    Category.PERIAPICAL_RADIOLUCENT,
 ]
 
 
 def postprocess_tooth(df: pd.DataFrame) -> pd.DataFrame:
-    has_missing: bool = df["finding"].eq("MISSING").any()  # type: ignore
-    has_implant: bool = df["finding"].eq("IMPLANT").any()  # type: ignore
+    has_missing: bool = df["finding"].eq(Category.MISSING).any()  # type: ignore
+    has_implant: bool = df["finding"].eq(Category.IMPLANT).any()  # type: ignore
 
     if has_implant and not has_missing:
         # when there is implant, we define the "missingness" to be true, but currently in the
@@ -57,7 +58,7 @@ def postprocess_tooth(df: pd.DataFrame) -> pd.DataFrame:
         df = pd.concat(
             [
                 df,
-                pd.Series(index | {"finding": "MISSING"}).to_frame().T,
+                pd.Series(index | {"finding": Category.MISSING}).to_frame().T,
             ],
             ignore_index=True,
         )

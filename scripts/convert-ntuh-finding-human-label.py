@@ -6,6 +6,7 @@ import pandas as pd
 from absl import app, flags, logging
 
 import app as _app  # type: ignore
+from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string(
     "input_dir",
@@ -16,14 +17,14 @@ flags.DEFINE_string("output", None, "Output human label csv file.")
 FLAGS = flags.FLAGS
 
 FINDING_MAPPING: dict[str, str] = {
-    "Missing": "MISSING",
-    "Implant": "IMPLANT",
-    "Remnant Root": "ROOT_REMNANTS",
-    "Caries": "CARIES",
-    "Root Filled": "ENDO",
-    "Crown Bridge": "CROWN_BRIDGE",
-    "Apical Lesion": "PERIAPICAL_RADIOLUCENT",
-    "Restorations": "FILLING",
+    "Missing": Category.MISSING,
+    "Implant": Category.IMPLANT,
+    "Remnant Root": Category.ROOT_REMNANTS,
+    "Caries": Category.CARIES,
+    "Root Filled": Category.ENDO,
+    "Crown Bridge": Category.CROWN_BRIDGE,
+    "Apical Lesion": Category.PERIAPICAL_RADIOLUCENT,
+    "Restorations": Category.FILLING,
 }
 
 FINDING_CSV_PATTERN: str = "Pano Finding - {} (Responses) - Form Responses 1.csv"
