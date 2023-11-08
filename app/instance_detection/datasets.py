@@ -3,7 +3,6 @@ import dataclasses
 import functools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
-from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, TypeVar, cast
 
@@ -363,17 +362,6 @@ class InstanceDetection(metaclass=abc.ABCMeta):
             return parse_obj_as(list[InstanceDetectionData], coco_dataset)
         else:
             return coco_dataset
-
-
-class InstanceDetectionV1Category(str, Enum):
-    MISSING = "MISSING"
-    IMPLANT = "IMPLANT"
-    ROOT_REMNANTS = "ROOT_REMNANTS"
-    CROWN_BRIDGE = "CROWN_BRIDGE"
-    FILLING = "FILLING"
-    ENDO = "ENDO"
-    CARIES = "CARIES"
-    PERIAPICAL_RADIOLUCENT = "PERIAPICAL_RADIOLUCENT"
 
 
 @dataclasses.dataclass

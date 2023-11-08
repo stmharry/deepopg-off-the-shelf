@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.instance_detection.types import InstanceDetectionV1Category
 from detectron2.structures import BoxMode
 
 
@@ -67,3 +68,9 @@ class InstanceDetectionPredictionInstance(BaseModel):
 class InstanceDetectionPrediction(BaseModel):
     image_id: int | str
     instances: list[InstanceDetectionPredictionInstance]
+
+
+class Finding(BaseModel):
+    file_name: str
+    fdi: int
+    finding: InstanceDetectionV1Category
