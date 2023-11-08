@@ -1,0 +1,12 @@
+from enum import Enum
+
+
+class InstanceDetectionV1Category(str, Enum):
+    MISSING = "MISSING"
+    IMPLANT = "IMPLANT"
+    ROOT_REMNANTS = "ROOT_REMNANTS"
+    CROWN_BRIDGE = "CROWN_BRIDGE"
+    FILLING = "FILLING"
+    ENDO = "ENDO"
+    CARIES = "CARIES"
+    PERIAPICAL_RADIOLUCENT = "PERIAPICAL_RADIOLUCENT"
