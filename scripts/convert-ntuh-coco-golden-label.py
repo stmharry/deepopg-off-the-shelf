@@ -4,6 +4,7 @@ from typing import Any
 from absl import app, flags
 
 from app.instance_detection.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
+from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string("input", None, "Input COCO file.")
 flags.DEFINE_string("output", None, "Output COCO file.")
@@ -11,13 +12,13 @@ flags.DEFINE_string("prefix", "NTUH/", "Prefix for image file paths.")
 FLAGS = flags.FLAGS
 
 CATEGORY_MAPPING: dict[str, str] = {
-    "Caries": "CARIES",
-    "CrownBridge": "CROWN_BRIDGE",
-    "Endo": "ENDO",
-    "Restoration": "FILLING",
-    "Implant": "IMPLANT",
-    "ApicalLesion": "PERIAPICAL_RADIOLUCENT",
-    "_": "ROOT_REMNANTS",  # not labeled as category but as metadata
+    "Caries": Category.CARIES,
+    "CrownBridge": Category.CROWN_BRIDGE,
+    "Endo": Category.ENDO,
+    "Restoration": Category.FILLING,
+    "Implant": Category.IMPLANT,
+    "ApicalLesion": Category.PERIAPICAL_RADIOLUCENT,
+    "_": Category.ROOT_REMNANTS,  # not labeled as category but as metadata
     "UNS8": "TOOTH_11",
     "UNS7": "TOOTH_12",
     "UNS6": "TOOTH_13",
@@ -99,7 +100,7 @@ def main(_):
             _annotation = annotation.copy(
                 update={
                     "id": len(annotations) + 1,
-                    "category_id": category_by_name["ROOT_REMNANTS"].id,
+                    "category_id": category_by_name[Category.ROOT_REMNANTS].id,
                     "metadata": None,
                 }
             )
