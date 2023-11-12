@@ -372,7 +372,42 @@ def postprocess(
                     lambda bbox: bbox[1] + bbox[3] / 2
                 )
 
-                try:
+                if not (
+                    df_full_tooth.loc[df_full_tooth["top"], "exists"].any()
+                    and df_full_tooth.loc[~df_full_tooth["top"], "exists"].any()
+                ):
+                    df_full_tooth.loc[
+                        df_full_tooth["fdi_int"] == 11,
+                        ["bbox_x_center", "bbox_y_center"],
+                    ] = [950, 500]
+                    df_full_tooth.loc[
+                        df_full_tooth["fdi_int"] == 21,
+                        ["bbox_x_center", "bbox_y_center"],
+                    ] = [1000, 500]
+                    df_full_tooth.loc[
+                        df_full_tooth["fdi_int"] == 31,
+                        ["bbox_x_center", "bbox_y_center"],
+                    ] = [1000, 550]
+                    df_full_tooth.loc[
+                        df_full_tooth["fdi_int"] == 41,
+                        ["bbox_x_center", "bbox_y_center"],
+                    ] = [950, 550]
+
+                    df_full_tooth["exists_buffer"] = ~df_full_tooth[
+                        "bbox_x_center"
+                    ].isna()
+
+                    interp = scipy.interpolate.RBFInterpolator(
+                        y=df_full_tooth.loc[df_full_tooth["exists_buffer"], ["x", "y"]],
+                        d=df_full_tooth.loc[
+                            df_full_tooth["exists_buffer"],
+                            ["bbox_x_center", "bbox_y_center"],
+                        ],
+                        smoothing=1e0,
+                        kernel="thin_plate_spline",
+                    )
+
+                else:
                     interp = scipy.interpolate.RBFInterpolator(
                         y=df_full_tooth.loc[df_full_tooth["exists"], ["x", "y"]],
                         d=df_full_tooth.loc[
@@ -381,11 +416,6 @@ def postprocess(
                         smoothing=1e0,
                         kernel="thin_plate_spline",
                     )
-                except ValueError:
-                    logging.warning(
-                        f"ValueError encountered when interpolating bbox centers for {row_nontooth['fdi']}."
-                    )
-                    continue
 
                 df_full_tooth[
                     ["bbox_x_center_interp", "bbox_y_center_interp"]
