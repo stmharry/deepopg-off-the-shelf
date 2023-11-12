@@ -61,7 +61,7 @@ flags.DEFINE_string(
     "Output prediction file name.",
 )
 flags.DEFINE_string("output_csv_name", "result.csv", "Output result file name.")
-flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
+flags.DEFINE_float("min_score", 0.00, "Confidence score threshold.")
 
 # visualize
 flags.DEFINE_bool("do_visualize", False, "Whether to do visualization.")
