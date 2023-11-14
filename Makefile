@@ -186,7 +186,7 @@ visualize-gt:
 		--nodo_coco \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
 
-evaluation: check-RESULT_NAME check-GOLDEN_CSV_NAME
-	$(PY) $(EVAL) \
-		--nodo_roc \
-		--do_acc
+evaluate:
+	$(PY) scripts/evaluate-auroc.py \
+		--result_dir $(RESULT_DIR) \
+		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
