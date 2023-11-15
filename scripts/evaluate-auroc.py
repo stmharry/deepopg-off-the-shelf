@@ -5,6 +5,10 @@ import pandas as pd
 import sklearn.metrics
 from absl import app, flags, logging
 
+from app.instance_detection.types import (
+    EVALUATE_WHEN_MISSING_FINDINGS,
+    EVALUATE_WHEN_NONMISSING_FINDINGS,
+)
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string("result_dir", None, "Result directory.")
@@ -12,21 +16,6 @@ flags.DEFINE_string("pred_csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
 
 FLAGS = flags.FLAGS
-
-EVALUATE_WHEN_MISSING_FINDINGS: list[str] = [
-    Category.MISSING,
-    Category.IMPLANT,
-]
-
-EVALUATE_WHEN_NONMISSING_FINDINGS: list[str] = [
-    Category.MISSING,  # kept only for semantics, in reality we don't have negative labels
-    Category.ROOT_REMNANTS,
-    Category.CROWN_BRIDGE,
-    Category.FILLING,
-    Category.ENDO,
-    Category.CARIES,
-    Category.PERIAPICAL_RADIOLUCENT,
-]
 
 
 def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
