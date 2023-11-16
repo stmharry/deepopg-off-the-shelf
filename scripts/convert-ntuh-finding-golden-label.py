@@ -6,6 +6,10 @@ import pandas as pd
 from absl import app, flags, logging
 
 from app.instance_detection.schemas import Coco, CocoImage
+from app.instance_detection.types import (
+    EVALUATE_WHEN_MISSING_FINDINGS,
+    EVALUATE_WHEN_NONMISSING_FINDINGS,
+)
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.utils import uns_to_fdi
 
@@ -28,23 +32,8 @@ FINDING_MAPPING: dict[str, str] = {
 
 UNS_PATTERN: re.Pattern = re.compile(r"\[(\d+)\]")
 
-EVALUATE_WHEN_MISSING_FINDINGS: list[str] = [
-    Category.MISSING,
-    Category.IMPLANT,
-]
 
-EVALUATE_WHEN_NONMISSING_FINDINGS: list[str] = [
-    Category.MISSING,  # kept only for semantics, in reality we don't have negative labels
-    Category.ROOT_REMNANTS,
-    Category.CROWN_BRIDGE,
-    Category.FILLING,
-    Category.ENDO,
-    Category.CARIES,
-    Category.PERIAPICAL_RADIOLUCENT,
-]
-
-
-def postprocess_tooth(df: pd.DataFrame) -> pd.DataFrame:
+def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
     has_missing: bool = df["finding"].eq(Category.MISSING).any()  # type: ignore
     has_implant: bool = df["finding"].eq(Category.IMPLANT).any()  # type: ignore
 
@@ -111,7 +100,7 @@ def main(_):
     df_output: pd.DataFrame = (
         pd.DataFrame(output_rows)
         .groupby(["file_name", "fdi"], as_index=False, group_keys=False)
-        .apply(postprocess_tooth)
+        .apply(process_per_tooth)
         .sort_values(["file_name", "fdi", "finding"])
     )  # type: ignore
 
