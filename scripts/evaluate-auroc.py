@@ -88,12 +88,22 @@ def evaluate_roc(df_golden: pd.DataFrame, df_pred: pd.DataFrame) -> None:
             drop_intermediate=False,
         )
 
-        fig, ax = plt.subplots(figsize=(8, 8))
+        fig, ax = plt.subplots(figsize=(4, 4))
         ax.plot(fpr, tpr)
+        ax.plot([0, 1], [0, 1], linestyle="--", color="k")
+
+        ax.set_xlabel("False Positive Rate")
+        ax.set_ylabel("True Positive Rate")
+        ax.set_title(f"ROC curve for finding {finding.value}")
 
         figure_dir: Path = Path(FLAGS.result_dir, "figures")
         figure_dir.mkdir(parents=True, exist_ok=True)
-        fig.savefig(Path(figure_dir, f"{finding.value}.png"))
+
+        fig.tight_layout()
+        fig.savefig(Path(figure_dir, f"{finding.value}.pdf"))
+
+        if finding == Category.ENDO:
+            breakpoint()
 
 
 def main(_):
