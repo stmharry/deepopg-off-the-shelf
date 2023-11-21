@@ -151,6 +151,13 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
+convert-coco-to-yolo: check-DATASET_NAME
+convert-coco-to-yolo: DATASET_NAME = pano_all
+convert-coco-to-yolo:
+	$(PY) $(COMMANDS) \
+		--do_convert_to_yolo \
+		--yolo_dir $(DATA_DIR)/yolo/promaton \
+
 postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
 	$(PY) $(COMMANDS) \

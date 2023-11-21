@@ -61,6 +61,31 @@ def calculate_iom_mask(
     return (np.sum(intersection) + epsilon2) / (min(area_1, area_2) + epsilon1)
 
 
+def convert_to_polygon(segmentation: CocoRLE | list) -> tuple[list[list[int]], int]:
+    polygons: list[list[int]]
+    area: int
+
+    if isinstance(segmentation, CocoRLE):
+        rle_obj = segmentation.dict()
+        area: int = pycocotools.mask.area(rle_obj)
+
+        seg_arr: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
+        contours: list[npt.NDArray[np.int32]]
+        contours, _ = cv2.findContours(
+            seg_arr[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        polygons: list[list[int]] = [contour.flatten().tolist() for contour in contours]
+
+    elif isinstance(segmentation, list):
+        polygons: list[list[int]] = segmentation
+        area: int = 0  # TODO
+
+    else:
+        raise NotImplementedError
+
+    return polygons, area
+
+
 def prediction_to_detectron2_instances(
     prediction: InstanceDetectionPrediction,
     image_size: tuple[int, int],
@@ -118,23 +143,7 @@ def prediction_to_coco_annotations(
 
         polygons: list[list[int]]
         area: int
-        if isinstance(instance.segmentation, CocoRLE):
-            rle_obj = instance.segmentation.dict()
-            area = pycocotools.mask.area(rle_obj)
-
-            segmentation: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
-            contours: list[npt.NDArray[np.int32]]
-            contours, _ = cv2.findContours(
-                segmentation[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            polygons = [contour.flatten().tolist() for contour in contours]
-
-        elif isinstance(instance.segmentation, list):
-            polygons = instance.segmentation
-            area = 0  # TODO
-
-        else:
-            raise NotImplementedError
+        polygons, area = convert_to_polygon(instance.segmentation)
 
         coco_annotations.append(
             CocoAnnotation(
