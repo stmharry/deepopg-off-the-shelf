@@ -156,7 +156,7 @@ test-yolo: RESULT_NAME ?= $(NEW_NAME)
 test-yolo: MODEL_CHECKPOINT ?= $(YOLO_LATEST_MODEL_CHECKPOINT)
 test-yolo:
 	$(YOLO_PREDICT) \
-		source="$(DATA_DIR)/yolo/val.txt" \
+		source="$(DATA_DIR)/yolo/$(DATASET_NAME).txt" \
 		project="$(RESULT_DIR_ROOT)" \
 		name="./$(RESULT_NAME)" \
 		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \

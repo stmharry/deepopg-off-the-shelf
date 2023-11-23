@@ -24,8 +24,10 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    directory_name: str
     data_driver: InstanceDetection
+    directory_name: str
+    splits: list[str]
+
     if FLAGS.dataset_name == "pano_all":
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
         directory_name = "PROMATON"
@@ -46,11 +48,11 @@ def main(_):
 
     # Write names.txt
 
-    yolo_dir: Path = Path(FLAGS.data_dir, FLAGS.yolo_dir, directory_name)
+    yolo_dir: Path = Path(FLAGS.data_dir, FLAGS.yolo_dir)
     yolo_dir.mkdir(parents=True, exist_ok=True)
 
     for split in splits:
-        names_path: Path = Path(yolo_dir, f"{split}.txt")
+        names_path: Path = Path(yolo_dir, f"pano_{split}.txt")
         names_path.write_text(
             "\n".join(
                 [
@@ -97,8 +99,8 @@ def main(_):
 
     yolo_metadata: dict[str, Any] = {
         "path": FLAGS.data_dir,
-        "train": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "train.txt")),
-        "val": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "eval.txt")),
+        "train": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "pano_train.txt")),
+        "val": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "pano_eval.txt")),
         "names": {
             index: category for index, category in enumerate(metadata.thing_classes)
         },
