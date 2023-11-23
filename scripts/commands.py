@@ -57,7 +57,7 @@ flags.DEFINE_bool(
 
 # convert to yolo
 flags.DEFINE_bool("do_convert_to_yolo", False, "Whether to convert to yolo.")
-flags.DEFINE_string("yolo_dir", "yolo", "Yolo directory.")
+flags.DEFINE_string("yolo_dir", "yolo", "Yolo directory (relative to `data_dir`.")
 
 # postprocess
 flags.DEFINE_bool("do_postprocess", False, "Whether to do postprocessing.")
@@ -85,25 +85,34 @@ def convert_to_yolo(
     dataset: list[InstanceDetectionData],
     metadata: Metadata,
 ) -> None:
+    yolo_dir: Path = Path(FLAGS.data_dir, FLAGS.yolo_dir)
+
+    for split in ["train", "eval"]:
+        names_path: Path = Path(yolo_dir, f"{split}.txt")
+        names_path.write_text(
+            "\n".join(
+                [
+                    str(Path(FLAGS.data_dir, "images", f"{file_name}.jpg"))
+                    for file_name in data_driver.get_split_file_names(split)
+                ]
+            )
+        )
+
     yolo_metadata: dict[str, Any] = {
         "path": FLAGS.data_dir,
-        "train": [
-            str(Path("images", f"{file_name}.jpg"))
-            for file_name in data_driver.get_split_file_names("train")
-        ],
-        "val": [
-            str(Path("images", f"{file_name}.jpg"))
-            for file_name in data_driver.get_split_file_names("eval")
-        ],
+        "train": str(Path(FLAGS.yolo_dir, "train.txt")),
+        "val": str(Path(FLAGS.yolo_dir, "eval.txt")),
         "names": {
             index: category for index, category in enumerate(metadata.thing_classes)
         },
     }
-    yaml_path: Path = Path(FLAGS.yolo_dir, "metadata.yaml")
+    yaml_path: Path = Path(yolo_dir, "metadata.yaml")
     with open(yaml_path, "w") as f:
         yaml.dump(yolo_metadata, f)
 
-    label_dir: Path = Path(FLAGS.yolo_dir, "labels")
+    #
+
+    label_dir: Path = Path(FLAGS.data_dir, "labels", "PROMATON")
     label_dir.mkdir(parents=True, exist_ok=True)
 
     for data in dataset:

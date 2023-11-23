@@ -8,15 +8,13 @@ DATA_DIR ?= $(ROOT_DIR)/data
 MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
 RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
 
-## need to add the file in root directory
-GOLDEN_DIR ?= $(ROOT_DIR)/golden
-
 MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
 CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
 
 DATASET_NAME ?= pano_debug
 LATEST_MODEL ?= $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
+YOLO_LATEST_MODEL ?= $(MODEL_DIR)/weights/best.pt
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
@@ -26,7 +24,7 @@ PYTHONPATH ?= .
 PYTHON ?= python
 PY ?= \
 	PYTHONPATH=$(PYTHONPATH):. \
-	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:32 \
+	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 \
 		$(PYTHON)
 MAIN ?= scripts/main.py \
 	--main-app $(MAIN_APP) \
@@ -36,10 +34,9 @@ COMMANDS ?= scripts/commands.py \
 	--data_dir $(DATA_DIR) \
 	--result_dir $(RESULT_DIR) \
 	--dataset_name $(DATASET_NAME)
-EVAL ?= scripts/evaluation.py \
-	--result_dir $(RESULT_DIR) \
-	--golden_dir $(GOLDEN_DIR) \
-	--golden_csv_name $(GOLDEN_CSV_NAME)
+
+YOLO ?= $(PY) $(shell which yolo)
+YOLO_SEGMENT ?= $(YOLO) segment
 
 # functions
 
@@ -86,14 +83,14 @@ ntuh-finding-human-label:
 install-maskdino:
 	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
-train-maskdino: MODEL_NAME = $(NEW_NAME)
-train-maskdino: CONFIG_NAME = config-maskdino-r50.yaml
+train-maskdino: MODEL_NAME ?= $(NEW_NAME)
+train-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
 train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 
-test-maskdino: RESULT_NAME = $(NEW_NAME)
-test-maskdino: CONFIG_FILE = $(MODEL_DIR)/config.yaml
+test-maskdino: RESULT_NAME ?= $(NEW_NAME)
+test-maskdino: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
 test-maskdino: check-MODEL_NAME
 	$(PY) $(MAIN) --eval-only \
 		MODEL.WEIGHTS $(LATEST_MODEL) \
@@ -113,14 +110,14 @@ install-detectron2:
 	@pip install -e ./detectron2 && \
 		ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
-train-detectron2: MODEL_NAME = $(NEW_NAME)
-train-detectron2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
+train-detectron2: MODEL_NAME ?= $(NEW_NAME)
+train-detectron2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
 train-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
 
-test-detectron2: RESULT_NAME = $(NEW_NAME)
-test-detectron2: CONFIG_FILE = $(MODEL_DIR)/config.yaml
+test-detectron2: RESULT_NAME ?= $(NEW_NAME)
+test-detectron2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
 test-detectron2: check-MODEL_NAME
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
@@ -140,6 +137,31 @@ debug-detectron2:
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
+# yolo target
+
+# when passing `cfg`, all other arguments will be ignored
+train-yolo: MODEL_NAME = $(NEW_NAME)
+train-yolo: TMP_FILE := $(shell mktemp --suffix=.yaml)
+train-yolo:
+	cat $(CONFIG_FILE) > $(TMP_FILE) && \
+		echo "mode: train" >> $(TMP_FILE) && \
+		echo "data: $(DATA_DIR)/yolo/metadata.yaml" >> $(TMP_FILE) && \
+		echo "project: $(MODEL_DIR_ROOT)" >> $(TMP_FILE) && \
+		echo "name: ./$(MODEL_NAME)" >> $(TMP_FILE) && \
+		$(YOLO_SEGMENT) train cfg="$(TMP_FILE)"
+
+test-yolo: RESULT_NAME ?= $(NEW_NAME)
+test-yolo:
+	$(YOLO_SEGMENT) predict \
+		source="$(DATA_DIR)/yolo/val.txt" \
+		project="$(RESULT_DIR_ROOT)" \
+		name="./$(RESULT_NAME)" \
+		model="$(YOLO_LATEST_MODEL)" \
+		exist_ok=True \
+		save=True \
+		save_conf=True \
+		save_txt=True
+
 # overall targets
 
 install: install-maskdino install-detectron2
@@ -155,8 +177,7 @@ convert-coco-to-yolo: check-DATASET_NAME
 convert-coco-to-yolo: DATASET_NAME = pano_all
 convert-coco-to-yolo:
 	$(PY) $(COMMANDS) \
-		--do_convert_to_yolo \
-		--yolo_dir $(DATA_DIR)/yolo/promaton \
+		--do_convert_to_yolo
 
 postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:

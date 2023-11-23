@@ -1,0 +1,10 @@
+model: "yolov8m-seg.pt"
+epochs: 25
+batch: 1
+imgsz: 1280
+workers: 12
+pretrained: true
+# augmentation
+scale: 0.25
+flipud: 0.0
+fliplr: 0.0

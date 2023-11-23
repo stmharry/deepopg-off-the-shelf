@@ -1,0 +1,6 @@
+model: "yolov8n-seg.pt"
+epochs: 25
+batch: 1
+imgsz: 1280
+workers: 12
+pretrained: true
