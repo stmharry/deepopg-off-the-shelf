@@ -177,7 +177,6 @@ coco-annotator:
 		docker compose up --build --detach
 
 convert-coco-to-yolo: check-DATASET_NAME
-convert-coco-to-yolo: DATASET_NAME = pano_all
 convert-coco-to-yolo:
 	$(PY) scripts/convert-coco-to-yolo.py \
 		--data_dir $(DATA_DIR) \

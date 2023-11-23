@@ -8,7 +8,11 @@ from absl import app, flags, logging
 from pydantic import parse_obj_as
 
 from app import utils
-from app.instance_detection.datasets import InstanceDetectionV1
+from app.instance_detection.datasets import (
+    InstanceDetection,
+    InstanceDetectionV1,
+    InstanceDetectionV1NTUH,
+)
 from app.instance_detection.schemas import InstanceDetectionData
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
@@ -20,8 +24,18 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
+    directory_name: str
+    data_driver: InstanceDetection
     if FLAGS.dataset_name == "pano_all":
         data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
+        directory_name = "PROMATON"
+        splits = ["train", "eval"]
+
+    elif FLAGS.dataset_name == "pano_ntuh":
+        data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
+        directory_name = "NTUH"
+        splits = ["ntuh"]
+
     else:
         raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
 
@@ -30,11 +44,12 @@ def main(_):
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
-    #
+    # Write names.txt
 
-    yolo_dir: Path = Path(FLAGS.data_dir, FLAGS.yolo_dir, "PROMATON")
+    yolo_dir: Path = Path(FLAGS.data_dir, FLAGS.yolo_dir, directory_name)
+    yolo_dir.mkdir(parents=True, exist_ok=True)
 
-    for split in ["train", "eval"]:
+    for split in splits:
         names_path: Path = Path(yolo_dir, f"{split}.txt")
         names_path.write_text(
             "\n".join(
@@ -45,21 +60,9 @@ def main(_):
             )
         )
 
-    yolo_metadata: dict[str, Any] = {
-        "path": FLAGS.data_dir,
-        "train": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "train.txt")),
-        "val": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "eval.txt")),
-        "names": {
-            index: category for index, category in enumerate(metadata.thing_classes)
-        },
-    }
-    yaml_path: Path = Path(yolo_dir, "metadata.yaml")
-    with open(yaml_path, "w") as f:
-        yaml.dump(yolo_metadata, f)
+    # Write labels
 
-    #
-
-    label_dir: Path = Path(FLAGS.data_dir, "labels", "PROMATON")
+    label_dir: Path = Path(FLAGS.data_dir, "labels", directory_name)
     label_dir.mkdir(parents=True, exist_ok=True)
 
     for data in dataset:
@@ -85,6 +88,24 @@ def main(_):
                 line: str = " ".join(map("{:.4f}".format, polygon))
 
                 f.write(f"{annotation.category_id} {line}\n")
+
+    if FLAGS.dataset_name != "pano_all":
+        logging.info(f"Skip writing metadata.yaml for dataset: {FLAGS.dataset_name}")
+        return
+
+    # Write metadata.yaml
+
+    yolo_metadata: dict[str, Any] = {
+        "path": FLAGS.data_dir,
+        "train": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "train.txt")),
+        "val": str(Path(yolo_dir.relative_to(FLAGS.data_dir), "eval.txt")),
+        "names": {
+            index: category for index, category in enumerate(metadata.thing_classes)
+        },
+    }
+    yaml_path: Path = Path(yolo_dir, "metadata.yaml")
+    with open(yaml_path, "w") as f:
+        yaml.dump(yolo_metadata, f)
 
 
 if __name__ == "__main__":
