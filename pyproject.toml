@@ -27,6 +27,13 @@ tqdm = "^4.65.0"
 data-science-types = "^0.2.23"
 pandas = "^1.5.3"
 scikit-learn = "^1.3.2"
+tensorboard = "^2.15.1"
+ultralytics = "^8.0.215"
+
+# mypy
+mypy = "^1.2.0"
+types-requests = "^2.31.0.1"
+requests = "^2.31.0"
 
 # extra deps
 absl-py = "^1.4.0"
@@ -34,15 +41,8 @@ ijson = "^3.2.0.post0"
 imageio = "^2.25.1"
 pydantic = "^1.10.7"
 rich = "^13.3.5"
-types-requests = "^2.31.0.1"
 pyomo = { extras = ["optional"], version = "^6.6.1" }
-ultralytics = "^8.0.215"
 pyyaml = "^6.0.1"
-tensorboard = "^2.15.1"
-
-[tool.poetry.group.dev.dependencies]
-mypy = "^1.2.0"
-requests = "^2.31.0"
 
 [tool.pyright]
 include = ["app"]
