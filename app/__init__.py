@@ -1,1 +1,2 @@
-from app.logging import logging  # noqa
+import app.logging  # noqa
+import app.patch  # noqa
