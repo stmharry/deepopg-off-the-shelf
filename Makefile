@@ -14,7 +14,7 @@ CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
 
 DATASET_NAME ?= pano_debug
 LATEST_MODEL ?= $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
-YOLO_LATEST_MODEL ?= $(MODEL_DIR)/weights/best.pt
+YOLO_LATEST_MODEL_CHECKPOINT ?= weights/best.pt
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
@@ -35,8 +35,9 @@ COMMANDS ?= scripts/commands.py \
 	--result_dir $(RESULT_DIR) \
 	--dataset_name $(DATASET_NAME)
 
-YOLO ?= $(PY) $(shell which yolo)
-YOLO_SEGMENT ?= $(YOLO) segment
+# we enter yolo with a script to patch `amp`
+YOLO_TRAIN ?= $(PY) scripts/main_yolo.py segment train
+YOLO_PREDICT ?= $(shell which yolo) segment predict
 
 # functions
 
@@ -139,7 +140,8 @@ debug-detectron2:
 
 # yolo target
 
-# when passing `cfg`, all other arguments will be ignored
+# when passing `cfg`, all other arguments will be ignored,
+# so we dump the config to a temp file and append the rest
 train-yolo: MODEL_NAME = $(NEW_NAME)
 train-yolo: TMP_FILE := $(shell mktemp --suffix=.yaml)
 train-yolo:
@@ -148,15 +150,16 @@ train-yolo:
 		echo "data: $(DATA_DIR)/yolo/metadata.yaml" >> $(TMP_FILE) && \
 		echo "project: $(MODEL_DIR_ROOT)" >> $(TMP_FILE) && \
 		echo "name: ./$(MODEL_NAME)" >> $(TMP_FILE) && \
-		$(YOLO_SEGMENT) train cfg="$(TMP_FILE)"
+		$(YOLO_TRAIN) cfg="$(TMP_FILE)"
 
 test-yolo: RESULT_NAME ?= $(NEW_NAME)
+test-yolo: MODEL_CHECKPOINT ?= $(YOLO_LATEST_MODEL_CHECKPOINT)
 test-yolo:
-	$(YOLO_SEGMENT) predict \
+	$(YOLO_PREDICT) \
 		source="$(DATA_DIR)/yolo/val.txt" \
 		project="$(RESULT_DIR_ROOT)" \
 		name="./$(RESULT_NAME)" \
-		model="$(YOLO_LATEST_MODEL)" \
+		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \
 		exist_ok=True \
 		save=True \
 		save_conf=True \
@@ -176,8 +179,9 @@ coco-annotator:
 convert-coco-to-yolo: check-DATASET_NAME
 convert-coco-to-yolo: DATASET_NAME = pano_all
 convert-coco-to-yolo:
-	$(PY) $(COMMANDS) \
-		--do_convert_to_yolo
+	$(PY) scripts/convert-coco-to-yolo.py \
+		--data_dir $(DATA_DIR) \
+		--dataset_name $(DATASET_NAME)
 
 postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:

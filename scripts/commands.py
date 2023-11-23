@@ -13,8 +13,6 @@ import pyomo.environ as pyo
 import rich.progress
 import scipy.interpolate
 import scipy.ndimage
-import ultralytics.data.converter
-import yaml
 from absl import app, flags, logging
 from numpy.linalg import LinAlgError  # type: ignore
 from pydantic import parse_obj_as
@@ -55,10 +53,6 @@ flags.DEFINE_bool(
     "finding summary but only ground truth segmentation.",
 )
 
-# convert to yolo
-flags.DEFINE_bool("do_convert_to_yolo", False, "Whether to convert to yolo.")
-flags.DEFINE_string("yolo_dir", "yolo", "Yolo directory (relative to `data_dir`.")
-
 # postprocess
 flags.DEFINE_bool("do_postprocess", False, "Whether to do postprocessing.")
 flags.DEFINE_string(
@@ -78,66 +72,6 @@ flags.DEFINE_bool("do_coco", False, "Whether to create coco annotator visualizat
 flags.DEFINE_string("coco_annotator_url", None, "Coco annotator API url.")
 
 FLAGS = flags.FLAGS
-
-
-def convert_to_yolo(
-    data_driver: InstanceDetection,
-    dataset: list[InstanceDetectionData],
-    metadata: Metadata,
-) -> None:
-    yolo_dir: Path = Path(FLAGS.data_dir, FLAGS.yolo_dir)
-
-    for split in ["train", "eval"]:
-        names_path: Path = Path(yolo_dir, f"{split}.txt")
-        names_path.write_text(
-            "\n".join(
-                [
-                    str(Path(FLAGS.data_dir, "images", f"{file_name}.jpg"))
-                    for file_name in data_driver.get_split_file_names(split)
-                ]
-            )
-        )
-
-    yolo_metadata: dict[str, Any] = {
-        "path": FLAGS.data_dir,
-        "train": str(Path(FLAGS.yolo_dir, "train.txt")),
-        "val": str(Path(FLAGS.yolo_dir, "eval.txt")),
-        "names": {
-            index: category for index, category in enumerate(metadata.thing_classes)
-        },
-    }
-    yaml_path: Path = Path(yolo_dir, "metadata.yaml")
-    with open(yaml_path, "w") as f:
-        yaml.dump(yolo_metadata, f)
-
-    #
-
-    label_dir: Path = Path(FLAGS.data_dir, "labels", "PROMATON")
-    label_dir.mkdir(parents=True, exist_ok=True)
-
-    for data in dataset:
-        logging.info(f"Converting {data.file_name.stem}...")
-
-        label_path: Path = Path(label_dir, data.file_name.stem + ".txt")
-
-        with open(label_path, "w") as f:
-            for annotation in data.annotations:
-                polygons, _ = utils.convert_to_polygon(annotation.segmentation)
-
-                if len(polygons) == 0:
-                    continue
-
-                if len(polygons) == 1:
-                    polygon = np.reshape(polygons[0], (-1, 2))
-
-                else:
-                    polygons = ultralytics.data.converter.merge_multi_segment(polygons)
-                    polygon = np.concatenate(polygons, axis=0)
-
-                polygon = (polygon / np.array([data.width, data.height])).flatten()
-                line: str = " ".join(map("{:.4f}".format, polygon))
-
-                f.write(f"{annotation.category_id} {line}\n")
 
 
 def do_assignment(
@@ -812,8 +746,6 @@ def main(_):
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
-    if FLAGS.do_convert_to_yolo:
-        convert_to_yolo(data_driver=data_driver, dataset=dataset, metadata=metadata)
     if FLAGS.do_postprocess:
         postprocess(data_driver=data_driver, dataset=dataset, metadata=metadata)
     if FLAGS.do_visualize:
