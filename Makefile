@@ -93,6 +93,7 @@ train-maskdino:
 test-maskdino: RESULT_NAME ?= $(NEW_NAME)
 test-maskdino: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
 test-maskdino: check-MODEL_NAME
+test-maskdino:
 	$(PY) $(MAIN) --eval-only \
 		MODEL.WEIGHTS $(LATEST_MODEL) \
 		DATASETS.TEST "('pano_eval',)"
@@ -120,6 +121,7 @@ train-detectron2:
 test-detectron2: RESULT_NAME ?= $(NEW_NAME)
 test-detectron2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
 test-detectron2: check-MODEL_NAME
+test-detectron2:
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
@@ -140,6 +142,12 @@ debug-detectron2:
 
 # yolo target
 
+convert-coco-to-yolo: check-DATASET_NAME
+convert-coco-to-yolo:
+	$(PY) scripts/convert-coco-to-yolo.py \
+		--data_dir $(DATA_DIR) \
+		--dataset_name $(DATASET_NAME)
+
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
 train-yolo: MODEL_NAME = $(NEW_NAME)
@@ -154,6 +162,7 @@ train-yolo:
 
 test-yolo: RESULT_NAME ?= $(NEW_NAME)
 test-yolo: MODEL_CHECKPOINT ?= $(YOLO_LATEST_MODEL_CHECKPOINT)
+test-yolo: check-DATASET_NAME
 test-yolo:
 	$(YOLO_PREDICT) \
 		source="$(DATA_DIR)/yolo/$(DATASET_NAME).txt" \
@@ -175,12 +184,6 @@ debug: check-ARCH debug-$(ARCH)
 coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
-
-convert-coco-to-yolo: check-DATASET_NAME
-convert-coco-to-yolo:
-	$(PY) scripts/convert-coco-to-yolo.py \
-		--data_dir $(DATA_DIR) \
-		--dataset_name $(DATASET_NAME)
 
 postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
