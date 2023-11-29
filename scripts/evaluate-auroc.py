@@ -87,10 +87,24 @@ def evaluate_roc(df_golden: pd.DataFrame, df_pred: pd.DataFrame) -> None:
             y_score=df_finding["score"],
             drop_intermediate=False,
         )
+        roc_auc = sklearn.metrics.roc_auc_score(
+            y_true=df_finding["label"],
+            y_score=df_finding["score"],
+        )
 
         fig, ax = plt.subplots(figsize=(4, 4))
         ax.plot(fpr, tpr)
         ax.plot([0, 1], [0, 1], linestyle="--", color="k")
+
+        ax.text(
+            1,
+            0,
+            f"AUC = {roc_auc:.2%}",
+            verticalalignment="bottom",
+            horizontalalignment="right",
+            fontsize=10,
+            bbox=dict(boxstyle="round", facecolor="1.0"),
+        )
 
         ax.set_xlabel("False Positive Rate")
         ax.set_ylabel("True Positive Rate")
