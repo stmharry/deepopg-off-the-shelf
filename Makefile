@@ -33,9 +33,9 @@ MAIN ?= scripts/main.py \
 	--data-dir $(DATA_DIR)
 
 COMMON_ARGS ?= \
-	--data-dir $(DATA_DIR) \
-	--result-dir $(RESULT_DIR) \
-	--dataset-name $(DATASET_NAME)
+	--data_dir $(DATA_DIR) \
+	--result_dir $(RESULT_DIR) \
+	--dataset_name $(DATASET_NAME)
 
 # we enter yolo with a script to patch `amp`
 YOLO_TRAIN ?= $(PY) scripts/main_yolo.py segment train
@@ -203,7 +203,8 @@ postprocess:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--prediction_name instances_predictions.pth \
 		--output_prediction_name instances_predictions.postprocessed.pth \
-		--output_csv_name result.csv
+		--output_csv_name result.csv \
+		--min_score 0.0001
 
 postprocess-gt: check-DATASET_NAME check-RESULT_NAME
 postprocess-gt:
@@ -234,4 +235,5 @@ evaluate: check-RESULT_NAME
 evaluate:
 	$(PY) scripts/evaluate-auroc.py \
 		--result_dir $(RESULT_DIR) \
+		--pred_csv_name result.csv \
 		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
