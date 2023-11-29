@@ -148,7 +148,7 @@ convert-coco-to-yolo:
 		--data_dir $(DATA_DIR) \
 		--dataset_name $(DATASET_NAME)
 
-convert-yolo-labels-to-detectron2-prediction-pt: check-DATASET_NAME check-RESULT_DIR
+convert-yolo-labels-to-detectron2-prediction-pt: check-DATASET_NAME check-RESULT_NAME
 convert-yolo-labels-to-detectron2-prediction-pt:
 	$(PY) scripts/convert-yolo-labels-to-detectron2-prediction-pt.py \
 		--data_dir $(DATA_DIR) \

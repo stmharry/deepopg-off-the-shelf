@@ -1,10 +1,17 @@
 model: "yolov8m-seg.pt"
-epochs: 25
+epochs: 50
 batch: 1
-imgsz: 1280
+imgsz: 1024
+save_period: 5
 workers: 12
+
+cos_lr: false
 pretrained: true
-# augmentation
-scale: 0.25
+
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.9
+scale: 0.5
 flipud: 0.0
 fliplr: 0.0
+mosaic: 1.0
