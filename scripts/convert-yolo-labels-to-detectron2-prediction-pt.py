@@ -46,20 +46,21 @@ def main(_):
 
         instances: list[InstanceDetectionPredictionInstance] = []
         for line in lines:
-            items = line.split()
+            items: list[str] = line.split()
 
             try:
                 category_id: int = int(items[0])
                 score: float = float(items[-1])
-                segmentation: np.ndarray = np.fromiter(items[1:-1], float).reshape(
-                    -1, 2
-                ) * np.array([data.width, data.height])
+                segmentation: np.ndarray = np.fromiter(
+                    items[1:-1],  # type: ignore
+                    dtype=np.float32,
+                ).reshape(-1, 2) * np.array([data.width, data.height])
 
                 if segmentation.size == 0:
                     raise ValueError("Empty segmentation")
 
             except ValueError as e:
-                logging.error(
+                logging.warning(
                     f"Error when parsing line from {label_file_path!s}: {line.strip()} due to '{e}', skipping..."
                 )
                 continue
@@ -74,7 +75,7 @@ def main(_):
                         segmentation[:, 1].max() - segmentation[:, 1].min(),
                     ],
                     category_id=category_id,
-                    segmentation=[segmentation.flatten().tolist()],
+                    segmentation=[list(segmentation.flatten().tolist())],
                     score=score,
                 )
             )
