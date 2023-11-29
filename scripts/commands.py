@@ -596,6 +596,9 @@ def visualize(
             )
 
             image: np.ndarray = iio.imread(data.file_name)
+            if image.ndim == 2:
+                image = np.expand_dims(image, axis=2)
+
             image_rgb: np.ndarray
             if image.shape[2] == 1:
                 image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
