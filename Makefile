@@ -23,6 +23,7 @@ COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 PYTHONPATH ?= .
 PYTHON ?= python
 PY ?= \
+	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) \
 	PYTHONPATH=$(PYTHONPATH):. \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 \
 		$(PYTHON)
@@ -30,14 +31,17 @@ MAIN ?= scripts/main.py \
 	--main-app $(MAIN_APP) \
 	--config-file $(CONFIG_FILE) \
 	--data-dir $(DATA_DIR)
-COMMANDS ?= scripts/commands.py \
-	--data_dir $(DATA_DIR) \
-	--result_dir $(RESULT_DIR) \
-	--dataset_name $(DATASET_NAME)
+
+COMMON_ARGS ?= \
+	--data-dir $(DATA_DIR) \
+	--result-dir $(RESULT_DIR) \
+	--dataset-name $(DATASET_NAME)
 
 # we enter yolo with a script to patch `amp`
 YOLO_TRAIN ?= $(PY) scripts/main_yolo.py segment train
-YOLO_PREDICT ?= $(shell which yolo) segment predict
+YOLO_PREDICT ?= \
+	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) \
+	$(shell which yolo) segment predict
 
 # functions
 
@@ -150,10 +154,7 @@ convert-coco-to-yolo:
 
 convert-yolo-labels-to-detectron2-prediction-pt: check-DATASET_NAME check-RESULT_NAME
 convert-yolo-labels-to-detectron2-prediction-pt:
-	$(PY) scripts/convert-yolo-labels-to-detectron2-prediction-pt.py \
-		--data_dir $(DATA_DIR) \
-		--result_dir $(RESULT_DIR) \
-		--dataset_name $(DATASET_NAME) \
+	$(PY) scripts/convert-yolo-labels-to-detectron2-prediction-pt.py $(COMMON_ARGS) \
 		--prediction_name instances_predictions.pth
 
 # when passing `cfg`, all other arguments will be ignored,
@@ -178,10 +179,10 @@ test-yolo:
 		name="./$(RESULT_NAME)" \
 		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \
 		exist_ok=True \
-		conf=0.01 \
+		conf=0.0001 \
 		iou=0.0 \
 		max_det=500 \
-		save=False \
+		save=True \
 		save_txt=True \
 		save_conf=True \
 		save_crop=True
@@ -199,39 +200,37 @@ coco-annotator:
 
 postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
-	$(PY) $(COMMANDS) \
-		--do_postprocess \
+	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--prediction_name instances_predictions.pth \
 		--output_prediction_name instances_predictions.postprocessed.pth \
 		--output_csv_name result.csv
 
 postprocess-gt: check-DATASET_NAME check-RESULT_NAME
 postprocess-gt:
-	$(PY) $(COMMANDS) \
-		--do_postprocess \
+	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--use_gt_as_prediction \
 		--output_prediction_name instances_predictions.pth \
 		--output_csv_name result.csv
 
-visualize: check-DATASET_NAME check-RESULT_NAME check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+visualize: check-DATASET_NAME check-RESULT_NAME
 visualize:
-	$(PY) $(COMMANDS) \
-		--prediction_name instances_predictions.postprocessed.pth \
-		--do_visualize \
-		--visualizer_dir visualize.postprocessed \
-		--nodo_coco \
-		--coco_annotator_url $(COCO_ANNOTATOR_URL)
+	$(PY) scripts/visualize.py $(COMMON_ARGS) \
+		--prediction_name instances_predictions.pth \
+		--visualizer_dir visualize
 
 visualize-gt: check-DATASET_NAME check-RESULT_NAME
 visualize-gt:
-	$(PY) $(COMMANDS) \
-		--do_visualize \
+	$(PY) scripts/visualize.py $(COMMON_ARGS) \
 		--use_gt_as_prediction \
-		--do_visualize \
-		--visualizer_dir visualize \
-		--nodo_coco \
+		--visualizer_dir visualize
+
+visualize-coco: check-DATASET_NAME check-RESULT_NAME check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+visualize-coco:
+	$(PY) scripts/visualize-coco.py $(COMMON_ARGS) \
+		--prediction_name instances_predictions.pth \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
 
+evaluate: check-RESULT_NAME
 evaluate:
 	$(PY) scripts/evaluate-auroc.py \
 		--result_dir $(RESULT_DIR) \

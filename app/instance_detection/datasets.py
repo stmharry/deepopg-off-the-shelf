@@ -44,6 +44,23 @@ class InstanceDetection(metaclass=abc.ABCMeta):
     _coco_dataset: list[dict[str, Any]] | None = dataclasses.field(default=None)
 
     @classmethod
+    def register_by_name(cls, dataset_name: str, root_dir: Path) -> "InstanceDetection":
+        if dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
+            data_driver = InstanceDetectionV1.register(root_dir=root_dir)
+        elif dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
+            data_driver = InstanceDetectionV1NTUH.register(root_dir=root_dir)
+        elif dataset_name in [
+            "pano_odontoai_train",
+            "pano_odontoai_val",
+            "pano_odontoai_test",
+        ]:
+            data_driver = InstanceDetectionOdontoAI.register(root_dir=root_dir)
+        else:
+            raise ValueError(f"Unknown dataset name {dataset_name}")
+
+        return data_driver
+
+    @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
         logging.info(f"Registering {cls.__name__!s} dataset...")
 

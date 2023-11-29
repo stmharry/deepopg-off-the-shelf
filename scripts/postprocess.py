@@ -1,33 +1,16 @@
-import random
-import re
-import string
 from pathlib import Path
 from typing import Any, cast
 
-import cv2
-import imageio.v3 as iio
 import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
-import rich.progress
 import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.coco_annotator.clients import CocoAnnotatorClient
-from app.coco_annotator.schemas import CocoAnnotatorDataset, CocoAnnotatorImage
-from app.instance_detection.datasets import (
-    InstanceDetection,
-    InstanceDetectionOdontoAI,
-    InstanceDetectionV1,
-    InstanceDetectionV1NTUH,
-)
+from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import (
-    Coco,
-    CocoAnnotation,
-    CocoCategory,
-    CocoImage,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
@@ -38,15 +21,10 @@ from app.utils import (
     calculate_iom_mask,
     instance_detection_data_to_prediction,
     load_predictions,
-    prediction_to_coco_annotations,
-    prediction_to_detectron2_instances,
     save_predictions,
 )
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
-from detectron2.structures import Instances
-from detectron2.utils.visualizer import VisImage, Visualizer
 
-# common arguments
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
@@ -59,9 +37,6 @@ flags.DEFINE_bool(
     "Set to true to perform command on ground truth. Useful when we do not have ground truth "
     "finding summary but only ground truth segmentation.",
 )
-
-# postprocess
-flags.DEFINE_bool("do_postprocess", False, "Whether to do postprocessing.")
 flags.DEFINE_string(
     "output_prediction_name",
     "instances_predictions.postprocessed.pth",
@@ -69,14 +44,11 @@ flags.DEFINE_string(
 )
 flags.DEFINE_string("output_csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
-
-# visualize
-flags.DEFINE_bool("do_visualize", False, "Whether to do visualization.")
-flags.DEFINE_string("visualizer_dir", "visualize", "Visualizer directory.")
-
-# coco
-flags.DEFINE_bool("do_coco", False, "Whether to create coco annotator visualization.")
-flags.DEFINE_string("coco_annotator_url", None, "Coco annotator API url.")
+flags.DEFINE_integer(
+    "tooth_distance",
+    150,
+    "Implant has to be within this distance to be considered valid.",
+)
 
 FLAGS = flags.FLAGS
 
@@ -185,12 +157,17 @@ def do_assignment(
     return assignment
 
 
-def postprocess(
-    data_driver: InstanceDetection,
-    dataset: list[InstanceDetectionData],
-    metadata: Metadata,
-    tooth_distance: int = 150,
-) -> None:
+def main(_):
+    logging.set_verbosity(logging.INFO)
+
+    data_driver: InstanceDetection = InstanceDetection.register_by_name(
+        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
+    )
+    dataset: list[InstanceDetectionData] = parse_obj_as(
+        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
+    )
+    metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
+
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
@@ -456,12 +433,9 @@ def postprocess(
                 if not df_full_tooth["exists"].all():
                     idx: int = df_full_tooth["dist"].idxmin()
 
-                    # if the findding distance to non_tooth is too far than filter
-                    if dist[idx] < tooth_distance:
+                    # if the finding distance to non_tooth is too far than filter
+                    if dist[idx] < FLAGS.tooth_distance:
                         row_tooth = df_full_tooth.loc[idx]
-
-            # for `PERIAPICAL_RADIOLUCENT`
-            # elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
 
             # for other findings
             else:
@@ -483,31 +457,6 @@ def postprocess(
 
                 if num_tooth:
                     row_tooth = df_tooth.iloc[np.argmin(dist)]
-
-            # # for other findings
-            # else:
-            #     correlation: np.ndarray = np.zeros((num_tooth,), dtype=np.float_)
-            #
-            #     for i in range(num_tooth):
-            #         row_tooth = df_tooth.iloc[i]
-            #
-            #         iom_bbox = utils.calculate_iom_bbox(
-            #             row_tooth["bbox"], row_nontooth["bbox"]
-            #         )
-            #         if iom_bbox == 0:
-            #             continue
-            #
-            #         iom_mask = utils.calculate_iom_mask(
-            #             row_tooth["mask"][all_instances_slice],
-            #             row_nontooth["mask"][all_instances_slice],
-            #         )
-            #         logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
-            #
-            #         correlation[i] = iom_mask
-            #
-            #     # overlap needs to be at least 50% for a match
-            #     if num_tooth and np.max(correlation) > 0.5:
-            #         row_tooth = df_tooth.iloc[np.argmax(correlation)]
 
             if row_tooth is None:
                 continue
@@ -551,235 +500,6 @@ def postprocess(
         subset=["file_name", "fdi", "finding"], keep="first"
     )
     df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv_name), index=False)
-
-
-def visualize(
-    data_driver: InstanceDetection,
-    dataset: list[InstanceDetectionData],
-    metadata: Metadata,
-    category_re_groups: dict[str, str] = {
-        "all": ".*",
-        "tooth": r"TOOTH_\d+",
-        "m3": r"TOOTH_(18|28|38|48)",
-        "findings": r"(?!TOOTH_\d+)",
-    },
-) -> None:
-    predictions: list[InstanceDetectionPrediction]
-    if FLAGS.use_gt_as_prediction:
-        predictions = [
-            instance_detection_data_to_prediction(instance_detection_data=data)
-            for data in dataset
-        ]
-    else:
-        predictions = load_predictions(
-            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
-        )
-
-    id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
-        prediction.image_id: prediction for prediction in predictions
-    }
-
-    visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualizer_dir)
-    Path(visualize_dir).mkdir(parents=True, exist_ok=True)
-
-    for data in dataset:
-        if data.image_id not in id_to_prediction:
-            logging.warning(f"Image id {data.image_id} not found in predictions.")
-            continue
-
-        logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
-
-        prediction: InstanceDetectionPrediction = id_to_prediction[data.image_id]
-
-        for group_name, re_pattern in category_re_groups.items():
-            image_path: Path
-            if group_name == "all":
-                image_path = Path(
-                    visualize_dir, f"{data.file_name.stem}{data.file_name.suffix}"
-                )
-            else:
-                image_path = Path(
-                    visualize_dir,
-                    f"{data.file_name.stem}_{group_name}{data.file_name.suffix}",
-                )
-
-            if image_path.exists():
-                logging.info(f"Skipping {data.image_id} as it already exists.")
-                continue
-
-            category_ids: list[int] = [
-                category_id
-                for (category_id, category) in enumerate(metadata.thing_classes)
-                if re.match(re_pattern, category)
-            ]
-
-            instances: Instances = prediction_to_detectron2_instances(
-                prediction,
-                height=data.height,
-                width=data.width,
-                category_ids=category_ids,
-            )
-
-            image: np.ndarray = iio.imread(data.file_name)
-            if image.ndim == 2:
-                image = np.expand_dims(image, axis=2)
-
-            image_rgb: np.ndarray
-            if image.shape[2] == 1:
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            elif image.shape[2] == 3:
-                image_rgb = image
-            else:
-                raise NotImplementedError
-
-            visualizer = Visualizer(image_rgb, metadata=metadata, scale=1.0)
-            image_vis: VisImage = visualizer.draw_instance_predictions(instances)
-
-            logging.info(f"Saving to {image_path}.")
-            image_vis.save(image_path)
-
-
-def coco(
-    data_driver: InstanceDetection,
-    dataset: list[InstanceDetectionData],
-    metadata: Metadata,
-) -> None:
-    url: str = FLAGS.coco_annotator_url
-
-    random_suffix: str = "".join(random.sample(string.ascii_lowercase, 4))
-    name: str = f"{Path(FLAGS.result_dir).name}-{random_suffix}"
-    image_ids: set[int] = set([int(data.image_id) for data in dataset])
-
-    ###
-
-    client: CocoAnnotatorClient = CocoAnnotatorClient(url=url)
-    client.login()
-
-    ### dataset
-
-    ca_dataset: CocoAnnotatorDataset | None
-    ca_dataset = client.get_dataset_by_name(name=name)
-    if ca_dataset is None:
-        ca_dataset = client.create_dataset(name=name)
-
-    client.update_dataset(ca_dataset.id, categories=metadata.thing_classes)
-
-    assert ca_dataset is not None
-
-    ### categories
-
-    coco_categories: list[CocoCategory] = InstanceDetection.get_coco_categories(
-        data_driver.coco_paths[0]
-    )
-
-    ### annotations
-
-    predictions: list[InstanceDetectionPrediction]
-    if FLAGS.use_gt_as_prediction:
-        predictions = [
-            instance_detection_data_to_prediction(instance_detection_data=data)
-            for data in dataset
-        ]
-    else:
-        predictions = load_predictions(
-            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
-        )
-
-    predictions = [
-        prediction
-        for prediction in predictions
-        if int(prediction.image_id) in image_ids
-    ]
-
-    coco_annotations: list[CocoAnnotation] = []
-    for prediction in rich.progress.track(
-        predictions, total=len(predictions), description="Converting predictions..."
-    ):
-        _coco_annotations: list[CocoAnnotation] = prediction_to_coco_annotations(
-            prediction=prediction,
-            coco_categories=coco_categories,
-            start_id=len(coco_annotations),
-        )
-        coco_annotations.extend(_coco_annotations)
-
-    ### images
-
-    ca_images: list[CocoAnnotatorImage] = client.get_images()
-    ca_image_names: set[str] = {ca_image.file_name for ca_image in ca_images}
-
-    all_coco_images: list[CocoImage] = InstanceDetection.get_coco_images(
-        data_driver.coco_paths[0]
-    )
-
-    coco_images: list[CocoImage] = []
-    for coco_image in all_coco_images:
-        # not in this dataset
-        if coco_image.id not in image_ids:
-            continue
-
-        file_name: Path = Path(coco_image.file_name)
-        ca_image_name: str = f"{file_name.stem}-{random_suffix}{file_name.suffix}"
-
-        # already uploaded
-        if ca_image_name in ca_image_names:
-            continue
-
-        try:
-            client.create_image(
-                file_path=Path(data_driver.image_dir, coco_image.file_name),
-                file_name=ca_image_name,
-                dataset_id=ca_dataset.id,
-            )
-
-        except ValueError:
-            logging.warning(f"Failed to create image {ca_image_name}")
-            continue
-
-        coco_images.append(
-            CocoImage(
-                id=coco_image.id,
-                file_name=ca_image_name,
-                width=coco_image.width,
-                height=coco_image.height,
-            )
-        )
-
-    coco: Coco = Coco(
-        images=coco_images,
-        categories=coco_categories,
-        annotations=coco_annotations,
-    )
-
-    client.upload_coco(coco=coco, dataset_id=ca_dataset.id)
-
-
-def main(_):
-    logging.set_verbosity(logging.INFO)
-
-    if FLAGS.dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
-        data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
-    elif FLAGS.dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
-        data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
-    elif FLAGS.dataset_name in [
-        "pano_odontoai_train",
-        "pano_odontoai_val",
-        "pano_odontoai_test",
-    ]:
-        data_driver = InstanceDetectionOdontoAI.register(root_dir=FLAGS.data_dir)
-    else:
-        raise ValueError(f"Unknown dataset name {FLAGS.dataset_name}")
-
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
-    )
-    metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
-
-    if FLAGS.do_postprocess:
-        postprocess(data_driver=data_driver, dataset=dataset, metadata=metadata)
-    if FLAGS.do_visualize:
-        visualize(data_driver=data_driver, dataset=dataset, metadata=metadata)
-    if FLAGS.do_coco:
-        coco(data_driver=data_driver, dataset=dataset, metadata=metadata)
 
 
 if __name__ == "__main__":
