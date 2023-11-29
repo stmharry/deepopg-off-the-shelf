@@ -148,6 +148,14 @@ convert-coco-to-yolo:
 		--data_dir $(DATA_DIR) \
 		--dataset_name $(DATASET_NAME)
 
+convert-yolo-labels-to-detectron2-prediction-pt: check-DATASET_NAME check-RESULT_DIR
+convert-yolo-labels-to-detectron2-prediction-pt:
+	$(PY) scripts/convert-yolo-labels-to-detectron2-prediction-pt.py \
+		--data_dir $(DATA_DIR) \
+		--result_dir $(RESULT_DIR) \
+		--dataset_name $(DATASET_NAME) \
+		--prediction_name instances_predictions.pth
+
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
 train-yolo: MODEL_NAME = $(NEW_NAME)
@@ -170,9 +178,13 @@ test-yolo:
 		name="./$(RESULT_NAME)" \
 		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \
 		exist_ok=True \
-		save=True \
+		conf=0.01 \
+		iou=0.0 \
+		max_det=500 \
+		save=False \
+		save_txt=True \
 		save_conf=True \
-		save_txt=True
+		save_crop=True
 
 # overall targets
 
