@@ -10,7 +10,7 @@ from app.instance_detection.schemas import (
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
 )
-from app.utils import save_predictions
+from app.utils import Mask, save_predictions
 from detectron2.data import DatasetCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory")
@@ -51,20 +51,21 @@ def main(_):
             try:
                 category_id: int = int(items[0])
                 score: float = float(items[-1])
-                segmentation: np.ndarray = np.fromiter(
+                polygon: np.ndarray = np.fromiter(
                     items[1:-1],  # type: ignore
                     dtype=np.float32,
                 ).reshape(-1, 2) * np.array([data.width, data.height])
 
-                if segmentation.size == 0:
+                if polygon.size == 0:
                     raise ValueError("Empty segmentation")
 
-                bbox: list[int] = [
-                    segmentation[:, 0].min(),
-                    segmentation[:, 1].min(),
-                    segmentation[:, 0].max() - segmentation[:, 0].min(),
-                    segmentation[:, 1].max() - segmentation[:, 1].min(),
-                ]
+                mask: Mask = Mask.from_obj(
+                    [polygon.flatten().tolist()],
+                    height=data.height,
+                    width=data.width,
+                )
+
+                bbox: list[int] = mask.bbox_xywh
                 if bbox[0] >= data.width or bbox[1] >= data.height:
                     raise ValueError("bbox out of bound")
 
@@ -82,7 +83,7 @@ def main(_):
                     image_id=data.image_id,
                     bbox=bbox,
                     category_id=category_id,
-                    segmentation=[list(segmentation.flatten().tolist())],
+                    segmentation=mask.polygons,
                     score=score,
                 )
             )

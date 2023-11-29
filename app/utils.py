@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -6,6 +7,7 @@ import numpy as np
 import numpy.typing as npt
 import pycocotools.mask
 import torch
+import ultralytics.data.converter
 from pydantic import parse_obj_as
 
 from app.instance_detection.schemas import (
@@ -61,34 +63,183 @@ def calculate_iom_mask(
     return (np.sum(intersection) + epsilon2) / (min(area_1, area_2) + epsilon1)
 
 
-def convert_to_polygon(segmentation: CocoRLE | list) -> tuple[list[list[int]], int]:
-    polygons: list[list[int]]
-    area: int
+@dataclasses.dataclass
+class Mask(object):
+    _rle: CocoRLE | None = None
+    _polygons: list[list[int]] | None = None
+    _bitmask: npt.NDArray[np.uint8] | None = None
 
-    if isinstance(segmentation, CocoRLE):
-        rle_obj = segmentation.dict()
-        area: int = pycocotools.mask.area(rle_obj)
+    _height: int | None = None
+    _width: int | None = None
 
-        seg_arr: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
+    def __post_init__(self) -> None:
+        if all(
+            [
+                self._rle is None,
+                self._polygons is None,
+                self._bitmask is None,
+            ]
+        ):
+            raise ValueError("Either rle, polygons or bitmask must be provided")
+
+    @classmethod
+    def from_obj(
+        cls,
+        obj: Any,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> "Mask":
+        if isinstance(obj, CocoRLE):
+            return cls(_rle=obj)
+
+        elif isinstance(obj, list):
+            if (height is None) or (width is None):
+                raise ValueError("Height and width must be provided")
+
+            return cls(_polygons=obj, _height=height, _width=width)
+
+        elif isinstance(obj, np.ndarray):
+            return cls(_bitmask=obj)
+
+        else:
+            raise NotImplementedError
+
+    # We have the following four conversions:
+    #   1. rle -> bitmask
+    #   2. bitmask -> rle
+    #   3. polygons -> bitmask
+    #   4. bitmask -> polygons
+
+    @classmethod
+    def convert_rle_to_bitmask(cls, rle: CocoRLE) -> npt.NDArray[np.uint8]:
+        rle_obj: dict = rle.dict()
+        bitmask: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
+        return bitmask
+
+    @classmethod
+    def convert_bitmask_to_rle(cls, bitmask: npt.NDArray[np.uint8]) -> CocoRLE:
+        rle_obj: dict = pycocotools.mask.encode(bitmask.ravel(order="F"))
+        rle: CocoRLE = CocoRLE.parse_obj(rle_obj)
+        return rle
+
+    @classmethod
+    def convert_polygons_to_bitmask(
+        cls, polygons: list[list[int]], height: int, width: int
+    ) -> npt.NDArray[np.uint8]:
+        bitmask: npt.NDArray[np.uint8] = polygons_to_bitmask(polygons, height, width)
+        return bitmask
+
+    @classmethod
+    def convert_bitmask_to_polygons(
+        cls, bitmask: npt.NDArray[np.uint8]
+    ) -> list[list[int]]:
         contours: list[npt.NDArray[np.int32]]
         contours, _ = cv2.findContours(
-            seg_arr[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            bitmask[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         polygons: list[list[int]] = [contour.flatten().tolist() for contour in contours]
+        return polygons
 
-    elif isinstance(segmentation, list):
-        polygons: list[list[int]] = segmentation
-        area: int = 0  # TODO
+    @property
+    def rle(self) -> CocoRLE:
+        if self._rle is not None:
+            return self._rle
 
-    else:
-        raise NotImplementedError
+        bitmask: npt.NDArray[np.uint8]
+        if self._bitmask is not None:
+            bitmask = self._bitmask
 
-    return polygons, area
+        else:
+            assert self._polygons is not None
+            assert self._height is not None
+            assert self._width is not None
+
+            bitmask = self.convert_polygons_to_bitmask(
+                self._polygons, height=self._height, width=self._width
+            )
+
+        return self.convert_bitmask_to_rle(bitmask)
+
+    @property
+    def polygon(self) -> list[int] | None:
+        polygons: list[list[int]] = self.polygons
+
+        if len(polygons) == 0:
+            return None
+
+        if len(polygons) == 1:
+            return polygons[0]
+
+        polygons = ultralytics.data.converter.merge_multi_segment(polygons)
+        polygon = np.concatenate(polygons, axis=0)
+
+        return list(polygon.flatten().tolist())
+
+    @property
+    def polygons(self) -> list[list[int]]:
+        if self._polygons is not None:
+            return self._polygons
+
+        bitmask: npt.NDArray[np.uint8]
+        if self._bitmask is not None:
+            bitmask = self._bitmask
+
+        else:
+            assert self._rle is not None
+
+            bitmask = self.convert_rle_to_bitmask(self._rle)
+
+        return self.convert_bitmask_to_polygons(bitmask)
+
+    @property
+    def bitmask(self) -> npt.NDArray[np.uint8]:
+        if self._bitmask is not None:
+            return self._bitmask
+
+        if self._rle is not None:
+            return self.convert_rle_to_bitmask(self._rle)
+
+        assert self._polygons is not None
+        assert self._height is not None
+        assert self._width is not None
+
+        return self.convert_polygons_to_bitmask(
+            self._polygons, height=self._height, width=self._width
+        )
+
+    @property
+    def area(self) -> int:
+        return np.sum(self.bitmask)
+
+    @property
+    def bbox_xywh(self) -> list[int]:
+        polygons: list[list[int]] = self.polygons
+
+        x_min: int = min(
+            [np.array(polygon).reshape(-1, 2)[:, 0].min() for polygon in polygons]
+        )
+        y_min: int = min(
+            [np.array(polygon).reshape(-1, 2)[:, 1].min() for polygon in polygons]
+        )
+        x_max: int = max(
+            [np.array(polygon).reshape(-1, 2)[:, 0].max() for polygon in polygons]
+        )
+        y_max: int = max(
+            [np.array(polygon).reshape(-1, 2)[:, 1].max() for polygon in polygons]
+        )
+
+        return [
+            x_min,
+            y_min,
+            x_max - x_min,
+            y_max - y_min,
+        ]
 
 
 def prediction_to_detectron2_instances(
     prediction: InstanceDetectionPrediction,
-    image_size: tuple[int, int],
+    height: int,
+    width: int,
     category_ids: list[int] | None = None,
 ) -> Instances:
     scores: list[float] = []
@@ -108,19 +259,16 @@ def prediction_to_detectron2_instances(
         )
         pred_classes.append(instance.category_id)
 
-        if isinstance(instance.segmentation, CocoRLE):
-            bitmask = pycocotools.mask.decode(instance.segmentation.dict())
+        mask: Mask = Mask.from_obj(
+            instance.segmentation,
+            height=height,
+            width=width,
+        )
 
-        elif isinstance(instance.segmentation, list):
-            bitmask = polygons_to_bitmask(instance.segmentation, *image_size)
-
-        else:
-            raise NotImplementedError
-
-        pred_masks.append(bitmask)
+        pred_masks.append(mask.bitmask)
 
     return Instances(
-        image_size=image_size,
+        image_size=(height, width),
         scores=np.array(scores),
         pred_boxes=np.array(pred_boxes),
         pred_classes=np.array(pred_classes),
@@ -141,9 +289,7 @@ def prediction_to_coco_annotations(
         category_id: int | None = coco_categories[instance.category_id].id
         assert category_id is not None
 
-        polygons: list[list[int]]
-        area: int
-        polygons, area = convert_to_polygon(instance.segmentation)
+        mask: Mask = Mask.from_obj(instance.segmentation)
 
         coco_annotations.append(
             CocoAnnotation(
@@ -151,8 +297,8 @@ def prediction_to_coco_annotations(
                 image_id=instance.image_id,
                 category_id=category_id,
                 bbox=instance.bbox,
-                segmentation=polygons,
-                area=area,
+                segmentation=mask.polygons,
+                area=mask.area,
                 metadata={"score": instance.score},
             )
         )

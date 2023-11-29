@@ -2,18 +2,17 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import ultralytics.data.converter
 import yaml
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app import utils
 from app.instance_detection.datasets import (
     InstanceDetection,
     InstanceDetectionV1,
     InstanceDetectionV1NTUH,
 )
 from app.instance_detection.schemas import InstanceDetectionData
+from app.utils import Mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -68,26 +67,23 @@ def main(_):
     label_dir.mkdir(parents=True, exist_ok=True)
 
     for data in dataset:
-        logging.info(f"Converting {data.file_name.stem}...")
-
         label_path: Path = Path(label_dir, data.file_name.stem + ".txt")
+
+        logging.info(f"Converting '{data.file_name.stem}' into {label_path!s}...")
 
         with open(label_path, "w") as f:
             for annotation in data.annotations:
-                polygons, _ = utils.convert_to_polygon(annotation.segmentation)
-
-                if len(polygons) == 0:
+                mask: Mask = Mask.from_obj(
+                    annotation.segmentation, width=data.width, height=data.height
+                )
+                polygon: list[int] | None = mask.polygon
+                if polygon is None:
                     continue
 
-                if len(polygons) == 1:
-                    polygon = np.reshape(polygons[0], (-1, 2))
-
-                else:
-                    polygons = ultralytics.data.converter.merge_multi_segment(polygons)
-                    polygon = np.concatenate(polygons, axis=0)
-
-                polygon = (polygon / np.array([data.width, data.height])).flatten()
-                line: str = " ".join(map("{:.4f}".format, polygon))
+                polygon_array: np.ndarray = np.array(polygon).reshape(-1, 2) / np.array(
+                    [data.width, data.height]
+                )
+                line: str = " ".join(map("{:.4f}".format, polygon_array.flatten()))
 
                 f.write(f"{annotation.category_id} {line}\n")
 
