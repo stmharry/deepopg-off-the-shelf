@@ -32,7 +32,12 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def evaluate_roc(df_golden: pd.DataFrame, df_pred: pd.DataFrame) -> None:
+def main(_):
+    logging.set_verbosity(logging.INFO)
+
+    df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
+    df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.pred_csv_name))
+
     golden_file_names = set(df_golden["file_name"])
     pred_file_names = set(df_pred["file_name"])
 
@@ -115,18 +120,6 @@ def evaluate_roc(df_golden: pd.DataFrame, df_pred: pd.DataFrame) -> None:
 
         fig.tight_layout()
         fig.savefig(Path(figure_dir, f"{finding.value}.pdf"))
-
-        if finding == Category.ENDO:
-            breakpoint()
-
-
-def main(_):
-    logging.set_verbosity(logging.INFO)
-
-    df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
-    df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.pred_csv_name))
-
-    evaluate_roc(df_golden=df_golden, df_pred=df_pred)
 
 
 if __name__ == "__main__":

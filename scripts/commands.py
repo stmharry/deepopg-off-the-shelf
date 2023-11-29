@@ -8,16 +8,13 @@ import cv2
 import imageio.v3 as iio
 import numpy as np
 import pandas as pd
-import pycocotools.mask
 import pyomo.environ as pyo
 import rich.progress
 import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
-from numpy.linalg import LinAlgError  # type: ignore
 from pydantic import parse_obj_as
 
-from app import utils
 from app.coco_annotator.clients import CocoAnnotatorClient
 from app.coco_annotator.schemas import CocoAnnotatorDataset, CocoAnnotatorImage
 from app.instance_detection.datasets import (
@@ -34,6 +31,16 @@ from app.instance_detection.schemas import (
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
+)
+from app.utils import (
+    Mask,
+    calculate_iom_bbox,
+    calculate_iom_mask,
+    instance_detection_data_to_prediction,
+    load_predictions,
+    prediction_to_coco_annotations,
+    prediction_to_detectron2_instances,
+    save_predictions,
 )
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -187,12 +194,12 @@ def postprocess(
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
-            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            instance_detection_data_to_prediction(instance_detection_data=data)
             for data in dataset
         ]
 
     else:
-        predictions = utils.load_predictions(
+        predictions = load_predictions(
             prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
         )
 
@@ -216,16 +223,32 @@ def postprocess(
         df: pd.DataFrame = pd.DataFrame.from_records(
             [instance.dict() for instance in instances]
         )
+
+        if len(df) == 0:
+            continue
+
+        df["area"] = df["segmentation"].apply(
+            lambda segmentation: Mask.from_obj(
+                segmentation, width=data.width, height=data.height
+            ).area
+        )
+        df = df.loc[df.area > 0]
+        logging.info(f"Found {len(df)} instances.")
+
+        if len(df) == 0:
+            continue
+
         # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
         # detection score in the original instance list and subtract it from one
         missingness: pd.Series = np.maximum(  # type: ignore
             0, 1 - df.groupby("category_id").score.max()
         )
 
-        logging.info(f"Found {len(df)} instances.")
-
         df = df.loc[df.score > FLAGS.min_score]
         logging.info(f"Found {len(df)} instances with score > {FLAGS.min_score}.")
+
+        if len(df) == 0:
+            continue
 
         df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
         df["is_tooth"] = df["category_name"].str.startswith("TOOTH")
@@ -233,7 +256,9 @@ def postprocess(
             df["is_tooth"], other=df["category_name"].str.split("_").str[-1]
         )
         df["mask"] = df["segmentation"].apply(
-            lambda segmentation: pycocotools.mask.decode(segmentation)
+            lambda segmentation: Mask.from_obj(
+                segmentation, width=data.width, height=data.height
+            ).bitmask
         )
         num_instances: int = len(df)
 
@@ -256,15 +281,11 @@ def postprocess(
                 if i >= j:
                     continue
 
-                iom_bbox = utils.calculate_iom_bbox(
-                    df.iloc[i]["bbox"], df.iloc[j]["bbox"]
-                )
+                iom_bbox = calculate_iom_bbox(df.iloc[i]["bbox"], df.iloc[j]["bbox"])
                 if iom_bbox == 0:
                     continue
 
-                iom_mask = utils.calculate_iom_mask(
-                    df.iloc[i]["mask"], df.iloc[j]["mask"]
-                )
+                iom_mask = calculate_iom_mask(df.iloc[i]["mask"], df.iloc[j]["mask"])
                 logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
 
                 iom[i, j] = iom[j, i] = iom_mask
@@ -440,7 +461,10 @@ def postprocess(
                         row_tooth = df_full_tooth.loc[idx]
 
             # for `PERIAPICAL_RADIOLUCENT`
-            elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
+            # elif row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
+
+            # for other findings
+            else:
                 distance_to_non_tooth_instance = cast(
                     np.ndarray,
                     scipy.ndimage.distance_transform_cdt(
@@ -460,30 +484,30 @@ def postprocess(
                 if num_tooth:
                     row_tooth = df_tooth.iloc[np.argmin(dist)]
 
-            # for other findings
-            else:
-                correlation: np.ndarray = np.zeros((num_tooth,), dtype=np.float_)
-
-                for i in range(num_tooth):
-                    row_tooth = df_tooth.iloc[i]
-
-                    iom_bbox = utils.calculate_iom_bbox(
-                        row_tooth["bbox"], row_nontooth["bbox"]
-                    )
-                    if iom_bbox == 0:
-                        continue
-
-                    iom_mask = utils.calculate_iom_mask(
-                        row_tooth["mask"][all_instances_slice],
-                        row_nontooth["mask"][all_instances_slice],
-                    )
-                    logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
-
-                    correlation[i] = iom_mask
-
-                # overlap needs to be at least 50% for a match
-                if num_tooth and np.max(correlation) > 0.5:
-                    row_tooth = df_tooth.iloc[np.argmax(correlation)]
+            # # for other findings
+            # else:
+            #     correlation: np.ndarray = np.zeros((num_tooth,), dtype=np.float_)
+            #
+            #     for i in range(num_tooth):
+            #         row_tooth = df_tooth.iloc[i]
+            #
+            #         iom_bbox = utils.calculate_iom_bbox(
+            #             row_tooth["bbox"], row_nontooth["bbox"]
+            #         )
+            #         if iom_bbox == 0:
+            #             continue
+            #
+            #         iom_mask = utils.calculate_iom_mask(
+            #             row_tooth["mask"][all_instances_slice],
+            #             row_nontooth["mask"][all_instances_slice],
+            #         )
+            #         logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
+            #
+            #         correlation[i] = iom_mask
+            #
+            #     # overlap needs to be at least 50% for a match
+            #     if num_tooth and np.max(correlation) > 0.5:
+            #         row_tooth = df_tooth.iloc[np.argmax(correlation)]
 
             if row_tooth is None:
                 continue
@@ -509,13 +533,13 @@ def postprocess(
                     "file_name": file_name,
                     "fdi": int(category.split("_")[1]),
                     "finding": "MISSING",
-                    "score": missingness.get(category_id, 0.0),  # type: ignore
+                    "score": missingness.get(category_id, 1.0),  # type: ignore
                 }
             )
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
-    utils.save_predictions(
+    save_predictions(
         predictions=output_predictions,
         prediction_path=Path(FLAGS.result_dir, FLAGS.output_prediction_name),
     )
@@ -543,11 +567,11 @@ def visualize(
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
-            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            instance_detection_data_to_prediction(instance_detection_data=data)
             for data in dataset
         ]
     else:
-        predictions = utils.load_predictions(
+        predictions = load_predictions(
             prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
         )
 
@@ -589,9 +613,10 @@ def visualize(
                 if re.match(re_pattern, category)
             ]
 
-            instances: Instances = utils.prediction_to_detectron2_instances(
+            instances: Instances = prediction_to_detectron2_instances(
                 prediction,
-                image_size=(data.height, data.width),
+                height=data.height,
+                width=data.width,
                 category_ids=category_ids,
             )
 
@@ -652,11 +677,11 @@ def coco(
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
-            utils.instance_detection_data_to_prediction(instance_detection_data=data)
+            instance_detection_data_to_prediction(instance_detection_data=data)
             for data in dataset
         ]
     else:
-        predictions = utils.load_predictions(
+        predictions = load_predictions(
             prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
         )
 
@@ -670,7 +695,7 @@ def coco(
     for prediction in rich.progress.track(
         predictions, total=len(predictions), description="Converting predictions..."
     ):
-        _coco_annotations: list[CocoAnnotation] = utils.prediction_to_coco_annotations(
+        _coco_annotations: list[CocoAnnotation] = prediction_to_coco_annotations(
             prediction=prediction,
             coco_categories=coco_categories,
             start_id=len(coco_annotations),
