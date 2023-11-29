@@ -90,16 +90,13 @@ class Mask(object):
         width: int | None = None,
     ) -> "Mask":
         if isinstance(obj, CocoRLE):
-            return cls(_rle=obj)
+            return cls(_rle=obj, _height=height, _width=width)
 
         elif isinstance(obj, list):
-            if (height is None) or (width is None):
-                raise ValueError("Height and width must be provided")
-
             return cls(_polygons=obj, _height=height, _width=width)
 
         elif isinstance(obj, np.ndarray):
-            return cls(_bitmask=obj)
+            return cls(_bitmask=obj, _height=height, _width=width)
 
         else:
             raise NotImplementedError
@@ -145,19 +142,8 @@ class Mask(object):
         if self._rle is not None:
             return self._rle
 
-        bitmask: npt.NDArray[np.uint8]
-        if self._bitmask is not None:
-            bitmask = self._bitmask
-
-        else:
-            assert self._polygons is not None
-            assert self._height is not None
-            assert self._width is not None
-
-            bitmask = self.convert_polygons_to_bitmask(
-                self._polygons, height=self._height, width=self._width
-            )
-
+        # note this calls self.bitmask()
+        bitmask: npt.NDArray[np.uint8] = self.bitmask
         return self.convert_bitmask_to_rle(bitmask)
 
     @property
@@ -191,8 +177,9 @@ class Mask(object):
 
         return self.convert_bitmask_to_polygons(bitmask)
 
-    @property
-    def bitmask(self) -> npt.NDArray[np.uint8]:
+    def calculate_bitmask(
+        self, allow_unspecified_shape: bool = False
+    ) -> npt.NDArray[np.uint8]:
         if self._bitmask is not None:
             return self._bitmask
 
@@ -200,16 +187,35 @@ class Mask(object):
             return self.convert_rle_to_bitmask(self._rle)
 
         assert self._polygons is not None
-        assert self._height is not None
-        assert self._width is not None
+
+        height: int
+        width: int
+        if (self._height is None) or (self._width is None):
+            if allow_unspecified_shape:
+                height = np.array(self._polygons).reshape(-1, 2)[:, 1].max()
+                width = np.array(self._polygons).reshape(-1, 2)[:, 0].max()
+
+            else:
+                raise ValueError("Height and width must be provided")
+        else:
+            height = self._height
+            width = self._width
 
         return self.convert_polygons_to_bitmask(
-            self._polygons, height=self._height, width=self._width
+            self._polygons, height=height, width=width
         )
 
     @property
+    def bitmask(self) -> npt.NDArray[np.uint8]:
+        return self.calculate_bitmask(allow_unspecified_shape=False)
+
+    @property
     def area(self) -> int:
-        return np.sum(self.bitmask)
+        # we don't actually need the extra padding suppose height and width are not provided
+        bitmask: npt.NDArray[np.uint8] = self.calculate_bitmask(
+            allow_unspecified_shape=True
+        )
+        return np.sum(bitmask)
 
     @property
     def bbox_xywh(self) -> list[int]:
