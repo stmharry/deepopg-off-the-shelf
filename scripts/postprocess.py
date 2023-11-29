@@ -29,7 +29,7 @@ flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string(
-    "prediction_name", "instances_predictions.pth", "Input prediction file name."
+    "input_prediction_name", "instances_predictions.pth", "Input prediction file name."
 )
 flags.DEFINE_bool(
     "use_gt_as_prediction",
@@ -42,7 +42,7 @@ flags.DEFINE_string(
     "instances_predictions.postprocessed.pth",
     "Output prediction file name.",
 )
-flags.DEFINE_string("output_csv_name", "result.csv", "Output result file name.")
+flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_integer(
     "tooth_distance",
@@ -177,7 +177,7 @@ def main(_):
 
     else:
         predictions = load_predictions(
-            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+            prediction_path=Path(FLAGS.result_dir, FLAGS.input_prediction_name)
         )
 
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
@@ -499,7 +499,7 @@ def main(_):
     df_result = df_result.drop_duplicates(
         subset=["file_name", "fdi", "finding"], keep="first"
     )
-    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv_name), index=False)
+    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.csv_name), index=False)
 
 
 if __name__ == "__main__":

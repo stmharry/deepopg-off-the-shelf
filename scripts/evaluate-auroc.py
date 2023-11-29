@@ -12,7 +12,7 @@ from app.instance_detection.types import (
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("pred_csv_name", "result.csv", "Output result file name.")
+flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
 
 FLAGS = flags.FLAGS
@@ -36,7 +36,7 @@ def main(_):
     logging.set_verbosity(logging.INFO)
 
     df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
-    df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.pred_csv_name))
+    df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.csv_name))
 
     golden_file_names = set(df_golden["file_name"])
     pred_file_names = set(df_pred["file_name"])

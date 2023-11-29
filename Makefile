@@ -201,9 +201,9 @@ coco-annotator:
 postprocess: check-DATASET_NAME check-RESULT_NAME
 postprocess:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--prediction_name instances_predictions.pth \
+		--input_prediction_name instances_predictions.pth \
 		--output_prediction_name instances_predictions.postprocessed.pth \
-		--output_csv_name result.csv \
+		--csv_name result.csv \
 		--min_score 0.0001
 
 postprocess-gt: check-DATASET_NAME check-RESULT_NAME
@@ -211,7 +211,7 @@ postprocess-gt:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--use_gt_as_prediction \
 		--output_prediction_name instances_predictions.pth \
-		--output_csv_name result.csv
+		--csv_name result.csv
 
 visualize: check-DATASET_NAME check-RESULT_NAME
 visualize:
@@ -235,5 +235,5 @@ evaluate: check-RESULT_NAME
 evaluate:
 	$(PY) scripts/evaluate-auroc.py \
 		--result_dir $(RESULT_DIR) \
-		--pred_csv_name result.csv \
+		--csv_name result.csv \
 		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
