@@ -59,6 +59,18 @@ def main(_):
                 if segmentation.size == 0:
                     raise ValueError("Empty segmentation")
 
+                bbox: list[int] = [
+                    segmentation[:, 0].min(),
+                    segmentation[:, 1].min(),
+                    segmentation[:, 0].max() - segmentation[:, 0].min(),
+                    segmentation[:, 1].max() - segmentation[:, 1].min(),
+                ]
+                if bbox[0] >= data.width or bbox[1] >= data.height:
+                    raise ValueError("bbox out of bound")
+
+                if bbox[2] <= 0 or bbox[3] <= 0:
+                    raise ValueError("bbox has zero or negative size")
+
             except ValueError as e:
                 logging.warning(
                     f"Error when parsing line from {label_file_path!s}: {line.strip()} due to '{e}', skipping..."
@@ -68,12 +80,7 @@ def main(_):
             instance: InstanceDetectionPredictionInstance = (
                 InstanceDetectionPredictionInstance(
                     image_id=data.image_id,
-                    bbox=[
-                        segmentation[:, 0].min(),
-                        segmentation[:, 1].min(),
-                        segmentation[:, 0].max() - segmentation[:, 0].min(),
-                        segmentation[:, 1].max() - segmentation[:, 1].min(),
-                    ],
+                    bbox=bbox,
                     category_id=category_id,
                     segmentation=[list(segmentation.flatten().tolist())],
                     score=score,
