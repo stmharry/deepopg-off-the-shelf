@@ -1,12 +1,16 @@
-model: "yolov8n-seg.pt"
+model: yolov8n-seg.pt
 epochs: 25
-batch: 16
-imgsz: 640
+batch: 2
+imgsz: 1280
 workers: 12
 
-cos_lr: true
+cos_lr: false
 pretrained: true
 
-scale: 0.25
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.9
+scale: 0.5
 flipud: 0.0
 fliplr: 0.0
+mosaic: 1.0

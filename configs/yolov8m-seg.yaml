@@ -1,4 +1,4 @@
-model: "yolov8m-seg.pt"
+model: yolov8m-seg.pt
 epochs: 50
 batch: 1
 imgsz: 1024
@@ -11,7 +11,11 @@ pretrained: true
 hsv_h: 0.0
 hsv_s: 0.0
 hsv_v: 0.9
+degrees: 15.0
 scale: 0.5
+shear: 5.0
+perspective: 0.001
 flipud: 0.0
 fliplr: 0.0
 mosaic: 1.0
+mixup: 0.5
