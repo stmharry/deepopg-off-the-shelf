@@ -219,31 +219,35 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
-postprocess: USE_GT ?= false
-postprocess: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
-postprocess: --check-COMMON
-postprocess:
-	$(PY) scripts/$@.py $(COMMON_ARGS) \
+--postprocess: --check-COMMON
+--postprocess:
+	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--use_gt_as_prediction $(USE_GT) \
 		--input_prediction_name $(PREDICTION_NAME) \
 		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
 		--csv_name $(CSV_NAME) \
 		--min_score $(MIN_SCORE)
 
+postprocess: USE_GT = false
+postprocess: OUTPUT_PREDICTION_NAME = $(PREDICTION_NAME:.pth=.postprocessed.pth)
+postprocess: --postprocess
+
 postprocess-gt: USE_GT = true
 postprocess-gt: OUTPUT_PREDICTION_NAME = instances_predictions.pth
-postprocess-gt: postprocess
+postprocess-gt: --postprocess
 
-visualize: USE_GT ?= false
-visualize: --check-COMMON
-visualize:
-	$(PY) scripts/$@.py $(COMMON_ARGS) \
+--visualize: --check-COMMON
+--visualize:
+	$(PY) scripts/visualize.py $(COMMON_ARGS) \
 		--use_gt_as_prediction $(USE_GT) \
 		--prediction_name $(PREDICTION_NAME) \
 		--visualize_dir $(VISUALIZE_DIR)
 
+visualize: USE_GT = false
+visualize: --visualize
+
 visualize-gt: USE_GT = true
-visualize-gt: visualize
+visualize-gt: --visualize
 
 visualize-coco: --check-COMMON --check-COCO
 visualize-coco:
