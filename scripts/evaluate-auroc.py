@@ -12,8 +12,9 @@ from app.instance_detection.types import (
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
+flags.DEFINE_string("csv_name", "result.csv", "Result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
+flags.DEFINE_string("false_negative_csv_name", None, "Output false negative csv name.")
 
 FLAGS = flags.FLAGS
 
@@ -81,6 +82,7 @@ def main(_):
         .apply(process_per_tooth)
     )
 
+    _df_fns: list[pd.DataFrame] = []
     for finding in Category:
         df_finding = df.loc[df["finding"].eq(finding.value)]
 
@@ -120,6 +122,16 @@ def main(_):
 
         fig.tight_layout()
         fig.savefig(Path(figure_dir, f"{finding.value}.pdf"))
+
+        _df_fns.append(
+            df_finding.loc[(df_finding.label == 1.0) & (df_finding.score == 0.0)]
+            .drop(columns=["label", "score"])
+            .sort_values(["file_name", "fdi"])
+        )
+
+    df_fn: pd.DataFrame = pd.concat(_df_fns, axis=0, ignore_index=True)
+    if FLAGS.false_negative_csv_name is not None:
+        df_fn.to_csv(Path(FLAGS.result_dir, FLAGS.false_negative_csv_name), index=False)
 
 
 if __name__ == "__main__":
