@@ -1,8 +1,5 @@
 ### variables
 
-RAW_DIR ?= /mnt/md0/data/PANO
-ROOT_DIR ?= /mnt/hdd/PANO
-
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
 MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
@@ -12,13 +9,12 @@ MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
 CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
 
-DATASET_NAME ?= pano_debug
 LATEST_MODEL ?= $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
 YOLO_LATEST_MODEL_CHECKPOINT ?= weights/best.pt
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
-# default variables
+# executables
 
 PYTHONPATH ?= .
 PYTHON ?= python
@@ -27,15 +23,6 @@ PY ?= \
 	PYTHONPATH=$(PYTHONPATH):. \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 \
 		$(PYTHON)
-MAIN ?= scripts/main.py \
-	--main-app $(MAIN_APP) \
-	--config-file $(CONFIG_FILE) \
-	--data-dir $(DATA_DIR)
-
-COMMON_ARGS ?= \
-	--data_dir $(DATA_DIR) \
-	--result_dir $(RESULT_DIR) \
-	--dataset_name $(DATASET_NAME)
 
 # we enter yolo with a script to patch `amp`
 YOLO_TRAIN ?= $(PY) scripts/main_yolo.py segment train
@@ -43,7 +30,26 @@ YOLO_PREDICT ?= \
 	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) \
 	$(shell which yolo) segment predict
 
-# functions
+# arguments
+
+MAIN = scripts/main.py \
+	--main-app $(MAIN_APP) \
+	--config-file $(CONFIG_FILE) \
+	--data-dir $(DATA_DIR)
+
+COMMON_ARGS = \
+	--data_dir $(DATA_DIR) \
+	--result_dir $(RESULT_DIR) \
+	--dataset_name $(DATASET_NAME)
+
+# variables
+
+MIN_SCORE ?= 0.0001
+MIN_IOU ?= 0.0
+MAX_OBJS ?= 500
+PREDICTION_NAME ?= instances_predictions.pth
+CSV_NAME ?= result.csv
+VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION_NAME)))
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
@@ -57,29 +63,38 @@ endif
 
 ### targets
 
-# utils
+default:
+
+# util targets
 
 check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
 
-# golden label processing
+--check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_NAME
+--check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
+--check-COCO: check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 
-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
-ntuh-coco-golden-label:
-	$(PY) scripts/convert-ntuh-coco-golden-label.py \
+# data preprocessing targets
+
+convert-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
+convert-ntuh-coco-golden-label: check-RAW_DIR
+convert-ntuh-coco-golden-label:
+	$(PY) scripts/$@.py \
 		--input $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/coco/instance-detection-v1-ntuh.json
 
-ntuh-finding-golden-label: ROOT_DIR = $(RAW_DIR)
-ntuh-finding-golden-label:
-	$(PY) scripts/convert-ntuh-finding-golden-label.py \
+convert-ntuh-finding-golden-label: ROOT_DIR = $(RAW_DIR)
+convert-ntuh-finding-golden-label: check-RAW_DIR
+convert-ntuh-finding-golden-label:
+	$(PY) scripts/$@.py \
 		--input "$(DATA_DIR)/raw/NTUH/golden_label/(WIP) NTUH Summary Golden Label - Per-study.csv" \
 		--input_coco $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
 		--output $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
 
-ntuh-finding-human-label: ROOT_DIR = $(RAW_DIR)
-ntuh-finding-human-label:
-	$(PY) scripts/convert-ntuh-finding-human-label.py \
+convert-ntuh-finding-human-label: ROOT_DIR = $(RAW_DIR)
+convert-ntuh-finding-human-label: check-RAW_DIR
+convert-ntuh-finding-human-label:
+	$(PY) scripts/$@.py \
 		--input_dir $(DATA_DIR)/raw/NTUH/human_label \
 		--output "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
 
@@ -90,13 +105,14 @@ install-maskdino:
 
 train-maskdino: MODEL_NAME ?= $(NEW_NAME)
 train-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
+train-maskdino: --check-MAIN
 train-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 
 test-maskdino: RESULT_NAME ?= $(NEW_NAME)
 test-maskdino: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
-test-maskdino: check-MODEL_NAME
+test-maskdino: --check-MAIN check-MODEL_NAME
 test-maskdino:
 	$(PY) $(MAIN) --eval-only \
 		MODEL.WEIGHTS $(LATEST_MODEL) \
@@ -104,13 +120,14 @@ test-maskdino:
 
 debug-maskdino: PYTHON = python -m pdb
 debug-maskdino: MODEL_DIR = /tmp/debug
+debug-maskdino: --check-MAIN
 debug-maskdino:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 		DATASETS.TEST "('pano_debug',)" \
 		TEST.EVAL_PERIOD 10
 
-# detectron2 target
+# detectron2 targets
 
 install-detectron2:
 	@pip install -e ./detectron2 && \
@@ -118,13 +135,14 @@ install-detectron2:
 
 train-detectron2: MODEL_NAME ?= $(NEW_NAME)
 train-detectron2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
+train-detectron2: --check-MAIN
 train-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
 
 test-detectron2: RESULT_NAME ?= $(NEW_NAME)
 test-detectron2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
-test-detectron2: check-MODEL_NAME
+test-detectron2: --check-MAIN check-MODEL_NAME
 test-detectron2:
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
@@ -132,35 +150,38 @@ test-detectron2:
 		dataloader.test.dataset.names=$(DATASET_NAME) \
 		dataloader.test.dataset.filter_empty=False \
 		dataloader.evaluator.output_dir=$(RESULT_DIR) \
-		model.roi_heads.box_predictor.test_score_thresh=0.0 \
-		model.roi_heads.box_predictor.test_nms_thresh=0.0 \
-		model.roi_heads.box_predictor.test_topk_per_image=500
+		model.roi_heads.box_predictor.test_score_thresh=$(MIN_SCORE) \
+		model.roi_heads.box_predictor.test_nms_thresh=$(MIN_IOU) \
+		model.roi_heads.box_predictor.test_topk_per_image=$(MAX_OBJS)
 
 debug-detectron2: PYTHON = python -m pdb
 debug-detectron2: MODEL_DIR = /tmp/debug
 debug-detectron2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
+debug-detectron2: --check-MAIN
 debug-detectron2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
-# yolo target
+# yolo targets
 
-convert-coco-to-yolo: check-DATASET_NAME
+convert-coco-to-yolo: check-ROOT_DIR check-DATASET_NAME
 convert-coco-to-yolo:
-	$(PY) scripts/convert-coco-to-yolo.py \
+	$(PY) scripts/$@.py \
 		--data_dir $(DATA_DIR) \
 		--dataset_name $(DATASET_NAME)
 
-convert-yolo-labels-to-detectron2-prediction-pt: check-DATASET_NAME check-RESULT_NAME
+convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION_NAME
 convert-yolo-labels-to-detectron2-prediction-pt:
-	$(PY) scripts/convert-yolo-labels-to-detectron2-prediction-pt.py $(COMMON_ARGS) \
-		--prediction_name instances_predictions.pth
+	$(PY) scripts/$@.py $(COMMON_ARGS) \
+		--prediction_name $(PREDICTION_NAME)
 
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
 train-yolo: MODEL_NAME = $(NEW_NAME)
+train-yolo: CONFIG_NAME ?= yolov8n-seg.yaml
 train-yolo: TMP_FILE := $(shell mktemp --suffix=.yaml)
+train-yolo: check-ROOT_DIR
 train-yolo:
 	cat $(CONFIG_FILE) > $(TMP_FILE) && \
 		echo "mode: train" >> $(TMP_FILE) && \
@@ -171,7 +192,7 @@ train-yolo:
 
 test-yolo: RESULT_NAME ?= $(NEW_NAME)
 test-yolo: MODEL_CHECKPOINT ?= $(YOLO_LATEST_MODEL_CHECKPOINT)
-test-yolo: check-DATASET_NAME
+test-yolo: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
 test-yolo:
 	$(YOLO_PREDICT) \
 		source="$(DATA_DIR)/yolo/$(DATASET_NAME).txt" \
@@ -179,9 +200,9 @@ test-yolo:
 		name="./$(RESULT_NAME)" \
 		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \
 		exist_ok=True \
-		conf=0.0001 \
-		iou=0.0 \
-		max_det=500 \
+		conf=$(MIN_SCORE) \
+		iou=$(MIN_IOU) \
+		max_det=$(MAX_OBJS) \
 		save=True \
 		save_txt=True \
 		save_conf=True \
@@ -198,42 +219,43 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
-postprocess: check-DATASET_NAME check-RESULT_NAME
+postprocess: --check-COMMON
 postprocess:
-	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--input_prediction_name instances_predictions.pth \
-		--output_prediction_name instances_predictions.postprocessed.pth \
-		--csv_name result.csv \
-		--min_score 0.0001
+	$(PY) scripts/$@.py $(COMMON_ARGS) \
+		--input_prediction_name $(PREDICTION_NAME) \
+		--output_prediction_name $(PREDICTION_NAME:.pth=.postprocessed.pth) \
+		--csv_name $(CSV_NAME) \
+		--min_score $(MIN_SCORE)
 
-postprocess-gt: check-DATASET_NAME check-RESULT_NAME
+postprocess-gt: --check-COMMON
 postprocess-gt:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--use_gt_as_prediction \
-		--output_prediction_name instances_predictions.pth \
-		--csv_name result.csv
+		--output_prediction_name $(PREDICTION_NAME) \
+		--csv_name $(CSV_NAME)
 
-visualize: check-DATASET_NAME check-RESULT_NAME
+visualize: --check-COMMON
 visualize:
-	$(PY) scripts/visualize.py $(COMMON_ARGS) \
-		--prediction_name instances_predictions.pth \
-		--visualizer_dir visualize
+	$(PY) scripts/$@.py $(COMMON_ARGS) \
+		--prediction_name $(PREDICTION_NAME) \
+		--visualize_dir $(VISUALIZE_DIR)
 
-visualize-gt: check-DATASET_NAME check-RESULT_NAME
+visualize-gt: --check-COMMON
 visualize-gt:
 	$(PY) scripts/visualize.py $(COMMON_ARGS) \
 		--use_gt_as_prediction \
-		--visualizer_dir visualize
+		--visualize_dir $(VISUALIZE_DIR)
 
-visualize-coco: check-DATASET_NAME check-RESULT_NAME check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+visualize-coco: --check-COMMON --check-COCO
 visualize-coco:
-	$(PY) scripts/visualize-coco.py $(COMMON_ARGS) \
-		--prediction_name instances_predictions.pth \
+	$(PY) scripts/$@.py $(COMMON_ARGS) \
+		--prediction_name $(PREDICTION_NAME) \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
 
-evaluate: check-RESULT_NAME
-evaluate:
-	$(PY) scripts/evaluate-auroc.py \
+evaluate-auroc: check-ROOT_DIR
+evaluate-auroc:
+	$(PY) scripts/$@.py \
 		--result_dir $(RESULT_DIR) \
-		--csv_name result.csv \
-		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
+		--csv_name $(CSV_NAME) \
+		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
+		--false_negative_csv_name false-negative.csv

@@ -24,7 +24,7 @@ from detectron2.utils.visualizer import VisImage, Visualizer
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
-flags.DEFINE_string("visualizer_dir", "visualize", "Visualizer directory.")
+flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
 flags.DEFINE_string(
     "prediction_name", "instances_predictions.pth", "Input prediction file name."
 )
@@ -34,14 +34,12 @@ flags.DEFINE_bool(
     "Set to true to perform command on ground truth. Useful when we do not have ground truth "
     "finding summary but only ground truth segmentation.",
 )
+flags.DEFINE_bool(
+    "visualize_subset",
+    False,
+    "Set to true to visualize tooth-only, m3-only, and findings-only objects.",
+)
 FLAGS = flags.FLAGS
-
-CATEGORY_RE_GROUPS: dict[str, str] = {
-    "all": ".*",
-    "tooth": r"TOOTH_\d+",
-    "m3": r"TOOTH_(18|28|38|48)",
-    "findings": r"(?!TOOTH_\d+)",
-}
 
 
 def main(_):
@@ -54,6 +52,17 @@ def main(_):
         list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
+
+    category_re_groups: dict[str, str]
+    if FLAGS.visualize_subset:
+        category_re_groups = {
+            "all": ".*",
+            "tooth": r"TOOTH_\d+",
+            "m3": r"TOOTH_(18|28|38|48)",
+            "findings": r"(?!TOOTH_\d+)",
+        }
+    else:
+        category_re_groups = {"all": ".*"}
 
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
@@ -70,7 +79,7 @@ def main(_):
         prediction.image_id: prediction for prediction in predictions
     }
 
-    visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualizer_dir)
+    visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     Path(visualize_dir).mkdir(parents=True, exist_ok=True)
 
     for data in dataset:
@@ -82,7 +91,7 @@ def main(_):
 
         prediction: InstanceDetectionPrediction = id_to_prediction[data.image_id]
 
-        for group_name, re_pattern in CATEGORY_RE_GROUPS.items():
+        for group_name, re_pattern in category_re_groups.items():
             image_path: Path
             if group_name == "all":
                 image_path = Path(

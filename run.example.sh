@@ -2,6 +2,9 @@
 
 ### env
 
+export RAW_DIR=
+export ROOT_DIR=
+
 export COCO_ANNOTATOR_USERNAME=
 export COCO_ANNOTATOR_PASSWORD=
 # export CUDA_VISIBLE_DEVICES=""
