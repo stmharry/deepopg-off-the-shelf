@@ -92,6 +92,9 @@ class Mask(object):
         if isinstance(obj, CocoRLE):
             return cls(_rle=obj, _height=height, _width=width)
 
+        elif isinstance(obj, dict):
+            return cls(_rle=CocoRLE.parse_obj(obj), _height=height, _width=width)
+
         elif isinstance(obj, list):
             return cls(_polygons=obj, _height=height, _width=width)
 
