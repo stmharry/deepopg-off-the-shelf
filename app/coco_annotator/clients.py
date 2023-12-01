@@ -12,7 +12,7 @@ from app.coco_annotator.schemas import (
     CocoAnnotatorDataset,
     CocoAnnotatorImage,
 )
-from app.instance_detection.schemas import Coco
+from app.schemas import Coco
 
 
 @dataclasses.dataclass

@@ -19,13 +19,8 @@ import tqdm
 from absl import logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.schemas import (
-    Coco,
-    CocoAnnotation,
-    CocoCategory,
-    CocoImage,
-    InstanceDetectionData,
-)
+from app.instance_detection.schemas import InstanceDetectionData
+from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import load_coco_json
 

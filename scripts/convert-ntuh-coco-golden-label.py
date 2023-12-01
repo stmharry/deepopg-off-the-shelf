@@ -3,8 +3,8 @@ from typing import Any
 
 from absl import app, flags
 
-from app.instance_detection.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 from app.instance_detection.types import InstanceDetectionV1Category as Category
+from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 
 flags.DEFINE_string("input", None, "Input COCO file.")
 flags.DEFINE_string("output", None, "Output COCO file.")

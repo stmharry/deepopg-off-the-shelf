@@ -11,13 +11,11 @@ import ultralytics.data.converter
 from pydantic import parse_obj_as
 
 from app.instance_detection.schemas import (
-    CocoAnnotation,
-    CocoCategory,
-    CocoRLE,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
 )
+from app.schemas import CocoAnnotation, CocoCategory
 from detectron2.structures import BoxMode, Instances, polygons_to_bitmask
 
 

@@ -4,8 +4,8 @@ from typing import Any
 
 import pandas as pd
 from absl import app, flags, logging
+from ID import Coco, CocoImage
 
-from app.instance_detection.schemas import Coco, CocoImage
 from app.instance_detection.types import (
     EVALUATE_WHEN_MISSING_FINDINGS,
     EVALUATE_WHEN_NONMISSING_FINDINGS,

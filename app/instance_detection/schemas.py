@@ -1,44 +1,10 @@
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel
 
 from app.instance_detection.types import InstanceDetectionV1Category
+from app.schemas import ID, CocoRLE
 from detectron2.structures import BoxMode
-
-
-class CocoRLE(BaseModel):
-    size: list[int]
-    counts: str
-
-
-class CocoCategory(BaseModel):
-    id: int | None = None
-    name: str
-
-
-class CocoImage(BaseModel):
-    id: int | str
-    file_name: str
-    width: int
-    height: int
-
-
-class CocoAnnotation(BaseModel):
-    id: int | str
-    image_id: int | str
-    category_id: int | str
-    bbox: list[int]
-    segmentation: CocoRLE | list[list[int]]
-    area: int
-    iscrowd: int = 0
-    metadata: dict[str, Any] | None = None
-
-
-class Coco(BaseModel):
-    categories: list[CocoCategory]
-    images: list[CocoImage]
-    annotations: list[CocoAnnotation]
 
 
 class InstanceDetectionAnnotation(BaseModel):
@@ -53,12 +19,12 @@ class InstanceDetectionData(BaseModel):
     file_name: Path
     height: int
     width: int
-    image_id: int | int
+    image_id: ID
     annotations: list[InstanceDetectionAnnotation]
 
 
 class InstanceDetectionPredictionInstance(BaseModel):
-    image_id: int | str
+    image_id: ID
     bbox: list[int]
     category_id: int
     segmentation: CocoRLE | list[list[int]]
@@ -66,7 +32,7 @@ class InstanceDetectionPredictionInstance(BaseModel):
 
 
 class InstanceDetectionPrediction(BaseModel):
-    image_id: int | str
+    image_id: ID
     instances: list[InstanceDetectionPredictionInstance]
 
 
