@@ -6,11 +6,7 @@ import yaml
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import (
-    InstanceDetection,
-    InstanceDetectionV1,
-    InstanceDetectionV1NTUH,
-)
+from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import InstanceDetectionData
 from app.utils import Mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
@@ -23,17 +19,17 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    data_driver: InstanceDetection
+    data_driver: InstanceDetection = InstanceDetection.register_by_name(
+        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
+    )
     directory_name: str
     splits: list[str]
 
     if FLAGS.dataset_name == "pano_all":
-        data_driver = InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
         directory_name = "PROMATON"
         splits = ["train", "eval"]
 
     elif FLAGS.dataset_name == "pano_ntuh":
-        data_driver = InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
         directory_name = "NTUH"
         splits = ["ntuh"]
 
