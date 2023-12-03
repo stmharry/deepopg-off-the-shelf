@@ -86,14 +86,15 @@ def main(_):
                 pad_width=[
                     (
                         all_instances_slice[0].start,
-                        data.height - all_instances_slice[0].stop,
+                        all_instances_mask.shape[0] - all_instances_slice[0].stop,
                     ),
                     (
                         all_instances_slice[1].start,
-                        data.width - all_instances_slice[1].stop,
+                        all_instances_mask.shape[1] - all_instances_slice[1].stop,
                     ),
                 ],
             )
+
             category_id_map = np.where(all_instances_mask, category_id_map, 0)
 
         category_color_map = (
