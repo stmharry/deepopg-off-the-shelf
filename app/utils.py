@@ -15,7 +15,7 @@ from app.instance_detection.schemas import (
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
 )
-from app.schemas import CocoAnnotation, CocoCategory
+from app.schemas import CocoAnnotation, CocoCategory, CocoRLE
 from detectron2.structures import BoxMode, Instances, polygons_to_bitmask
 
 
