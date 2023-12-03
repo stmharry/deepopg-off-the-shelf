@@ -98,6 +98,14 @@ convert-ntuh-finding-human-label:
 		--input_dir $(DATA_DIR)/raw/NTUH/human_label \
 		--output "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
 
+convert-coco-to-detectron2-sem-seg: ROOT_DIR = $(RAW_DIR)
+convert-coco-to-detectron2-sem-seg: check-RAW_DIR
+convert-coco-to-detectron2-sem-seg:
+	$(PY) scripts/$@.py \
+		--data_dir $(DATA_DIR) \
+		--dataset_name $(DATASET_NAME) \
+		--mask_dir "masks/segmentation-v4"
+
 # maskdino targets
 
 install-maskdino:
