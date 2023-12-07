@@ -52,11 +52,6 @@ class SemanticSegmentation(CocoDataset):
         stuff_classes: list[str] = [category.name for category in categories]
         stuff_colors: npt.NDArray[np.uint8] = cls.get_colors(len(stuff_classes))
 
-        # stuff_dataset_id_to_contiguous_id: dict[int, int] = {0: 0} | {
-        #     int(category.id): class_id  # type: ignore
-        #     for class_id, category in enumerate(categories, start=1)
-        # }
-
         for split in cls.SPLITS:
             name: str = f"{cls.PREFIX}_{split}"
 
@@ -66,7 +61,6 @@ class SemanticSegmentation(CocoDataset):
             MetadataCatalog.get(name).set(
                 stuff_classes=stuff_classes,
                 stuff_colors=stuff_colors,
-                # stuff_dataset_id_to_contiguous_id=stuff_dataset_id_to_contiguous_id,
                 json_file=self.coco_path,
                 evaluator_type="coco",
             )
