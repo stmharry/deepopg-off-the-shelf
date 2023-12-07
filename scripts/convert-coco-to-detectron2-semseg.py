@@ -56,13 +56,15 @@ CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
 }
 
 
-def _process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -> None:
+def _process(
+    data: InstanceDetectionData, metadata: Metadata, output_dir: Path
+) -> InstanceDetectionData | None:
     logging.info(f"Converting {data.file_name!s}...")
 
     mask_path: Path = Path(output_dir, f"{data.file_name.stem}.png")
     if mask_path.exists():
         logging.info(f"Skipping {mask_path!s} (already exists).")
-        return
+        return data
 
     category_ids: list[int] = []
     bitmasks: list[np.ndarray] = []
@@ -87,6 +89,13 @@ def _process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) 
 
     else:
         all_instances_mask: np.ndarray = np.logical_or.reduce(bitmasks, axis=0)
+        if all_instances_mask.shape != (data.height, data.width):
+            logging.error(
+                f"Mask shape {all_instances_mask.shape} does not match image shape "
+                f"{(data.height, data.width)}."
+            )
+            return None
+
         all_instances_slice: tuple[slice, slice] = scipy.ndimage.find_objects(
             all_instances_mask, max_label=1
         )[0]
@@ -130,14 +139,18 @@ def _process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) 
     logging.info(f"Saving to {mask_vis_path!s}.")
     iio.imwrite(mask_vis_path, category_color_map.astype(np.uint8))
 
+    return data
 
-def process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -> None:
+
+def process(
+    data: InstanceDetectionData, metadata: Metadata, output_dir: Path
+) -> InstanceDetectionData | None:
     try:
-        _process(data, metadata=metadata, output_dir=output_dir)
+        return _process(data, metadata=metadata, output_dir=output_dir)
 
     except ValueError as e:
         logging.error(e)
-        return
+        return None
 
 
 def main(_):
@@ -150,9 +163,12 @@ def main(_):
     else:
         raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
 
-    _: InstanceDetection = InstanceDetection.register_by_name(
+    driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
+    if driver is None:
+        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
+
     dataset: list[InstanceDetectionData] = parse_obj_as(
         list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )
@@ -162,13 +178,9 @@ def main(_):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with multiprocessing.Pool(FLAGS.num_processes) as pool:
-        pool.starmap(
+        _: list[InstanceDetectionData | None] = pool.starmap(
             process,
-            [
-                (data, metadata, output_dir)
-                for data in dataset
-                if not Path(output_dir, f"{data.file_name.stem}.png").exists()
-            ],
+            [(data, metadata, output_dir) for data in dataset],
         )
 
 
