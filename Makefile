@@ -1,4 +1,8 @@
-### variables
+#################
+### VARIABLES ###
+#################
+
+### paths
 
 CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
@@ -14,7 +18,7 @@ YOLO_LATEST_MODEL_CHECKPOINT ?= weights/best.pt
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
-# executables
+### executables
 
 PYTHONPATH ?= .
 PYTHON ?= python
@@ -30,7 +34,7 @@ YOLO_PREDICT ?= \
 	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) \
 	$(shell which yolo) segment predict
 
-# arguments
+### arguments
 
 MAIN = scripts/main.py \
 	--main-app $(MAIN_APP) \
@@ -42,7 +46,7 @@ COMMON_ARGS = \
 	--result_dir $(RESULT_DIR) \
 	--dataset_name $(DATASET_NAME)
 
-# variables
+### variables
 
 MIN_SCORE ?= 0.0001
 MIN_IOU ?= 0.0
@@ -50,22 +54,29 @@ MAX_OBJS ?= 500
 PREDICTION_NAME ?= instances_predictions.pth
 CSV_NAME ?= result.csv
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION_NAME)))
+CPUS ?= $(shell echo $$(( $(shell nproc --all) - 2 )))
 
 ifeq ($(ARCH),maskdino)
 	PYTHONPATH = ./MaskDINO
 	MAIN_APP = train_net:main
 
-else ifeq ($(ARCH),detectron2)
+else ifeq ($(ARCH),mvitv2)
 	PYTHONPATH = ./detectron2
 	MAIN_APP = tools.lazyconfig_train_net:main
 
+else ifeq ($(ARCH),deeplab)
+	PYTHONPATH = ./detectron2
+	MAIN_APP = projects.DeepLab.train_net:main
+
 endif
 
-### targets
+###############
+### TARGETS ###
+###############
 
 default:
 
-# util targets
+### util targets
 
 check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
@@ -74,7 +85,7 @@ check-%:
 --check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
 --check-COCO: check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 
-# data preprocessing targets
+### data preprocessing targets
 
 convert-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-coco-golden-label: check-RAW_DIR
@@ -98,15 +109,17 @@ convert-ntuh-finding-human-label:
 		--input_dir $(DATA_DIR)/raw/NTUH/human_label \
 		--output "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
 
-convert-coco-to-detectron2-sem-seg: ROOT_DIR = $(RAW_DIR)
-convert-coco-to-detectron2-sem-seg: check-RAW_DIR
-convert-coco-to-detectron2-sem-seg:
+convert-coco-to-detectron2-semseg: PYTHONPATH = ./detectron2
+convert-coco-to-detectron2-semseg: ROOT_DIR = $(RAW_DIR)
+convert-coco-to-detectron2-semseg: check-RAW_DIR
+convert-coco-to-detectron2-semseg:
 	$(PY) scripts/$@.py \
 		--data_dir $(DATA_DIR) \
 		--dataset_name $(DATASET_NAME) \
-		--mask_dir "masks/segmentation-v4"
+		--mask_dir "masks/segmentation-v4" \
+		--num_processes $(CPUS)
 
-# maskdino targets
+### maskdino targets
 
 install-maskdino:
 	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
@@ -135,23 +148,25 @@ debug-maskdino:
 		DATASETS.TEST "('pano_debug',)" \
 		TEST.EVAL_PERIOD 10
 
-# detectron2 targets
+### detectron2 targets
 
 install-detectron2:
 	@pip install -e ./detectron2 && \
 		ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
-train-detectron2: MODEL_NAME ?= $(NEW_NAME)
-train-detectron2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
-train-detectron2: --check-MAIN
-train-detectron2:
+# mvitv2 targets
+
+train-mvitv2: MODEL_NAME ?= $(NEW_NAME)
+train-mvitv2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
+train-mvitv2: --check-MAIN
+train-mvitv2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR)
 
-test-detectron2: RESULT_NAME ?= $(NEW_NAME)
-test-detectron2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
-test-detectron2: --check-MAIN check-MODEL_NAME
-test-detectron2:
+test-mvitv2: RESULT_NAME ?= $(NEW_NAME)
+test-mvitv2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
+test-mvitv2: --check-MAIN check-MODEL_NAME
+test-mvitv2:
 	$(PY) $(MAIN) --eval-only \
 		train.init_checkpoint=$(LATEST_MODEL) \
 		train.output_dir=$(RESULT_DIR) \
@@ -162,16 +177,24 @@ test-detectron2:
 		model.roi_heads.box_predictor.test_nms_thresh=$(MIN_IOU) \
 		model.roi_heads.box_predictor.test_topk_per_image=$(MAX_OBJS)
 
-debug-detectron2: PYTHON = python -m pdb
-debug-detectron2: MODEL_DIR = /tmp/debug
-debug-detectron2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
-debug-detectron2: --check-MAIN
-debug-detectron2:
+debug-mvitv2: PYTHON = python -m pdb
+debug-mvitv2: MODEL_DIR = /tmp/debug
+debug-mvitv2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
+debug-mvitv2: --check-MAIN
+debug-mvitv2:
 	$(PY) $(MAIN) \
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
-# yolo targets
+# debug-deeplab: PYTHON = python -m pdb
+debug-deeplab: MODEL_DIR = /tmp/debug
+debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
+debug-deeplab: --check-MAIN
+debug-deeplab:
+	$(PY) $(MAIN) \
+		OUTPUT_DIR $(MODEL_DIR)
+
+### yolo targets
 
 convert-coco-to-yolo: check-ROOT_DIR check-DATASET_NAME
 convert-coco-to-yolo:
@@ -216,7 +239,7 @@ test-yolo:
 		save_conf=True \
 		save_crop=True
 
-# overall targets
+### overall targets
 
 install: install-maskdino install-detectron2
 train: check-ARCH train-$(ARCH)

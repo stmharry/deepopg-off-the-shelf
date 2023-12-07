@@ -1,3 +1,4 @@
+import multiprocessing
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -15,11 +16,47 @@ from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string("mask_dir", "masks", "Mask directory (relative to `data_dir`).")
+flags.DEFINE_integer("num_processes", 1, "Number of processes to use.")
 
 FLAGS = flags.FLAGS
 
+CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
+    "TOOTH_11": 1,
+    "TOOTH_12": 2,
+    "TOOTH_13": 3,
+    "TOOTH_14": 4,
+    "TOOTH_15": 5,
+    "TOOTH_16": 6,
+    "TOOTH_17": 7,
+    "TOOTH_18": 8,
+    "TOOTH_21": 9,
+    "TOOTH_22": 10,
+    "TOOTH_23": 11,
+    "TOOTH_24": 12,
+    "TOOTH_25": 13,
+    "TOOTH_26": 14,
+    "TOOTH_27": 15,
+    "TOOTH_28": 16,
+    "TOOTH_31": 17,
+    "TOOTH_32": 18,
+    "TOOTH_33": 19,
+    "TOOTH_34": 20,
+    "TOOTH_35": 21,
+    "TOOTH_36": 22,
+    "TOOTH_37": 23,
+    "TOOTH_38": 24,
+    "TOOTH_41": 25,
+    "TOOTH_42": 26,
+    "TOOTH_43": 27,
+    "TOOTH_44": 28,
+    "TOOTH_45": 29,
+    "TOOTH_46": 30,
+    "TOOTH_47": 31,
+    "TOOTH_48": 32,
+}
 
-def process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -> None:
+
+def _process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -> None:
     logging.info(f"Converting {data.file_name!s}...")
 
     mask_path: Path = Path(output_dir, f"{data.file_name.stem}.png")
@@ -30,14 +67,19 @@ def process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -
     category_ids: list[int] = []
     bitmasks: list[np.ndarray] = []
     for annotation in data.annotations:
-        if not metadata.thing_classes[annotation.category_id].startswith("TOOTH"):
+        category_name: str = metadata.thing_classes[annotation.category_id]
+
+        semseg_class_id: int | None = CATEGORY_NAME_TO_SEMSEG_CLASS_ID.get(
+            category_name
+        )
+        if semseg_class_id is None:
             continue
 
         mask: Mask = Mask.from_obj(
             annotation.segmentation, height=data.height, width=data.width
         )
 
-        category_ids.append(annotation.category_id)
+        category_ids.append(semseg_class_id)
         bitmasks.append(mask.bitmask)
 
     if len(bitmasks) == 0:
@@ -89,6 +131,15 @@ def process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -
     iio.imwrite(mask_vis_path, category_color_map.astype(np.uint8))
 
 
+def process(data: InstanceDetectionData, metadata: Metadata, output_dir: Path) -> None:
+    try:
+        _process(data, metadata=metadata, output_dir=output_dir)
+
+    except ValueError as e:
+        logging.error(e)
+        return
+
+
 def main(_):
     if FLAGS.dataset_name == "pano_all":
         directory_name = "PROMATON"
@@ -110,13 +161,15 @@ def main(_):
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for data in dataset:
-        try:
-            process(data, metadata=metadata, output_dir=output_dir)
-
-        except ValueError as e:
-            logging.error(e)
-            continue
+    with multiprocessing.Pool(FLAGS.num_processes) as pool:
+        pool.starmap(
+            process,
+            [
+                (data, metadata, output_dir)
+                for data in dataset
+                if not Path(output_dir, f"{data.file_name.stem}.png").exists()
+            ],
+        )
 
 
 if __name__ == "__main__":
