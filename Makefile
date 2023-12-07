@@ -186,6 +186,13 @@ debug-mvitv2:
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
+train-deeplab: MODEL_NAME ?= $(NEW_NAME)
+train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
+train-deeplab: --check-MAIN
+train-deeplab:
+	$(PY) $(MAIN) \
+		OUTPUT_DIR $(MODEL_DIR)
+
 # debug-deeplab: PYTHON = python -m pdb
 debug-deeplab: MODEL_DIR = /tmp/debug
 debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
