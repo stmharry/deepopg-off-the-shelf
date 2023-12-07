@@ -1,4 +1,5 @@
 import dataclasses
+import functools
 import re
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -14,37 +15,84 @@ from absl import logging
 
 from app.datasets import CocoDataset
 from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
+from detectron2.data import DatasetCatalog, MetadataCatalog
 
 T = TypeVar("T", bound="InstanceDetection")
 
 
 @dataclasses.dataclass
 class InstanceDetection(CocoDataset):
+    PREFIX: ClassVar[str] = "pano"
+
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"
 
     category_mapping: dict[str, str] | None = None
 
     @classmethod
-    def register_by_name(cls, dataset_name: str, root_dir: Path) -> "InstanceDetection":
-        if dataset_name in ["pano_all", "pano_train", "pano_eval", "pano_debug"]:
+    def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
+        data_driver: InstanceDetection | None = None
+        if dataset_name in [
+            f"{cls.PREFIX}_all",
+            f"{cls.PREFIX}_train",
+            f"{cls.PREFIX}_eval",
+            f"{cls.PREFIX}_debug",
+        ]:
             data_driver = InstanceDetectionV1.register(root_dir=root_dir)
-        elif dataset_name in ["pano_ntuh", "pano_ntuh_debug"]:
-            data_driver = InstanceDetectionV1NTUH.register(root_dir=root_dir)
+
         elif dataset_name in [
-            "pano_odontoai_train",
-            "pano_odontoai_val",
-            "pano_odontoai_test",
+            f"{cls.PREFIX}_ntuh",
+            f"{cls.PREFIX}_ntuh_debug",
+        ]:
+            data_driver = InstanceDetectionV1NTUH.register(root_dir=root_dir)
+
+        elif dataset_name in [
+            f"{cls.PREFIX}_odontoai_train",
+            f"{cls.PREFIX}_odontoai_val",
+            f"{cls.PREFIX}_odontoai_test",
         ]:
             data_driver = InstanceDetectionOdontoAI.register(root_dir=root_dir)
-        else:
-            raise ValueError(f"Unknown dataset name {dataset_name}")
 
-        return data_driver
+        return data_driver  # type: ignore
 
-    @property
-    def image_dir(self) -> Path:
-        return Path(self.root_dir, "images")
+    @classmethod
+    def register(cls: type[T], root_dir: Path) -> T:
+        logging.info(f"Registering {cls.__name__!s} dataset...")
+
+        self = cls(root_dir=root_dir)
+
+        categories: list[CocoCategory] | None = None
+        for coco_path in self.coco_paths:
+            _categories = self.get_coco_categories(coco_path)
+
+            if categories is None:
+                categories = _categories
+
+            elif categories != _categories:
+                raise ValueError(
+                    f"Categories from {coco_path!s} do not match previous categories!"
+                )
+
+        if categories is None:
+            raise ValueError(f"No categories found in {self.coco_paths!s}!")
+
+        thing_classes: list[str] = [category.name for category in categories]
+        thing_colors: npt.NDArray[np.uint8] = cls.get_colors(len(thing_classes))
+
+        for split in cls.SPLITS:
+            name: str = f"{cls.PREFIX}_{split}"
+
+            DatasetCatalog.register(
+                name, functools.partial(self.get_split, split=split)
+            )
+            MetadataCatalog.get(name).set(
+                thing_classes=thing_classes,
+                thing_colors=thing_colors,
+                json_file=self.coco_path,
+                evaluator_type="coco",
+            )
+
+        return self
 
     @property
     def mask_dir(self) -> Path:
