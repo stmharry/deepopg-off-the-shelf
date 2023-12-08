@@ -33,23 +33,23 @@ class InstanceDetection(CocoDataset):
     def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
         data_driver: InstanceDetection | None = None
         if dataset_name in [
-            f"{cls.PREFIX}_all",
-            f"{cls.PREFIX}_train",
-            f"{cls.PREFIX}_eval",
-            f"{cls.PREFIX}_debug",
+            f"{InstanceDetectionV1.PREFIX}_all",
+            f"{InstanceDetectionV1.PREFIX}_train",
+            f"{InstanceDetectionV1.PREFIX}_eval",
+            f"{InstanceDetectionV1.PREFIX}_debug",
         ]:
             data_driver = InstanceDetectionV1.register(root_dir=root_dir)
 
         elif dataset_name in [
-            f"{cls.PREFIX}_ntuh",
-            f"{cls.PREFIX}_ntuh_debug",
+            f"{InstanceDetectionV1NTUH.PREFIX}",
+            f"{InstanceDetectionV1NTUH.PREFIX}_debug",
         ]:
             data_driver = InstanceDetectionV1NTUH.register(root_dir=root_dir)
 
         elif dataset_name in [
-            f"{cls.PREFIX}_odontoai_train",
-            f"{cls.PREFIX}_odontoai_val",
-            f"{cls.PREFIX}_odontoai_test",
+            f"{InstanceDetectionOdontoAI.PREFIX}_train",
+            f"{InstanceDetectionOdontoAI.PREFIX}_val",
+            f"{InstanceDetectionOdontoAI.PREFIX}_test",
         ]:
             data_driver = InstanceDetectionOdontoAI.register(root_dir=root_dir)
 

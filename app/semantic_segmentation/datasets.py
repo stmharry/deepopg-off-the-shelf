@@ -24,7 +24,10 @@ class SemanticSegmentation(CocoDataset):
     def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
         data_driver: SemanticSegmentation | None = None
         if dataset_name in [
-            f"{cls.PREFIX}_train",
+            f"{SemanticSegmentationV4.PREFIX}_all",
+            f"{SemanticSegmentationV4.PREFIX}_train",
+            f"{SemanticSegmentationV4.PREFIX}_eval",
+            f"{SemanticSegmentationV4.PREFIX}_debug",
         ]:
             data_driver = SemanticSegmentationV4.register(root_dir=root_dir)
 
