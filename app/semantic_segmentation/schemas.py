@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from app.schemas import ID
+from app.schemas import ID, CocoRLE
 
 
 class SemanticSegmentationData(BaseModel):
@@ -11,3 +11,16 @@ class SemanticSegmentationData(BaseModel):
     width: int
     image_id: ID
     sem_seg_file_name: Path
+
+
+class SemanticSegmentationPredictionInstance(BaseModel):
+    image_id: ID | None = None
+    file_name: Path
+    category_id: ID
+    segmentation: CocoRLE
+
+
+class SemanticSegmentationPrediction(BaseModel):
+    image_id: ID | None = None
+    file_name: Path
+    instances: list[SemanticSegmentationPredictionInstance]
