@@ -199,6 +199,7 @@ debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
 debug-deeplab: --check-MAIN
 debug-deeplab:
 	$(PY) $(MAIN) \
+		DATALOADER.NUM_WORKERS 0 \
 		OUTPUT_DIR $(MODEL_DIR)
 
 ### yolo targets

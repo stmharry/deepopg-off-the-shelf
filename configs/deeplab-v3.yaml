@@ -2,7 +2,7 @@ VERSION: 2
 
 DATASETS:
   TRAIN: ("pano_semseg_v4_train",)
-  TEST: ("pano_semseg_v4_val",)
+  TEST: ("pano_semseg_v4_eval",)
 
 MODEL:
   META_ARCHITECTURE: "SemanticSegmentor"
@@ -43,10 +43,9 @@ MODEL:
     LOSS_TYPE: "hard_pixel_mining"
 
 INPUT:
-  MIN_SIZE_TRAIN: (1024,)
+  MIN_SIZE_TRAIN: (768, 1024)
   MIN_SIZE_TRAIN_SAMPLING: "choice"
   MAX_SIZE_TRAIN: 2048
-
   MIN_SIZE_TEST: 1024
   MAX_SIZE_TEST: 2048
 
@@ -54,8 +53,8 @@ INPUT:
   CROP:
     ENABLED: true
     TYPE: "absolute"
-    SIZE: (384, 768)
-    SINGLE_CATEGORY_MAX_AREA: 1.0
+    SIZE: (512, 512)
+
   FORMAT: "RGB"
 
 DATALOADER:
@@ -63,10 +62,20 @@ DATALOADER:
 
 SOLVER:
   LR_SCHEDULER_NAME: "WarmupPolyLR"
-  MAX_ITER: 90000
-  BASE_LR: 0.01
-  STEPS: (60000, 80000)
+  MAX_ITER: 90_000
+  BASE_LR: 0.001
+  STEPS: (60_000, 80_000)
+  WARMUP_FACTOR: 0.001
+  WARMUP_ITERS: 1_000
+  WARMUP_METHOD: "linear"
+  CHECKPOINT_PERIOD: 5_000
   IMS_PER_BATCH: 2
 
   AMP:
     ENABLED: true
+
+TEST:
+  EVAL_PERIOD: 5_000
+  DETECTIONS_PER_IMAGE: 100
+
+VIS_PERIOD: 1_000
