@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import json
 from pathlib import Path
 from typing import Any, ClassVar, TypeVar
 
@@ -61,8 +62,9 @@ class SemanticSegmentation(CocoDataset):
             MetadataCatalog.get(name).set(
                 stuff_classes=stuff_classes,
                 stuff_colors=stuff_colors,
+                ignore_label=0,
                 json_file=self.coco_path,
-                evaluator_type="coco",
+                evaluator_type="sem_seg",
             )
 
         return self
@@ -90,7 +92,7 @@ class SemanticSegmentation(CocoDataset):
             for data in dataset
         ]
 
-        return [data_schema.dict() for data_schema in data_schemas]
+        return [json.loads(data_schema.json()) for data_schema in data_schemas]
 
 
 @dataclasses.dataclass

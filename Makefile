@@ -193,7 +193,17 @@ train-deeplab:
 	$(PY) $(MAIN) \
 		OUTPUT_DIR $(MODEL_DIR)
 
-# debug-deeplab: PYTHON = python -m pdb
+test-deeplab: RESULT_NAME ?= $(NEW_NAME)
+test-deeplab: CONFIG_FILE = $(MODEL_DIR)/config.yaml
+test-deeplab: check-ROOT_DIR check-MAIN_APP check-MODEL_NAME
+test-deeplab:
+	$(PY) $(MAIN) --eval-only \
+		OUTPUT_DIR $(RESULT_DIR) \
+		DATASETS.TEST "('pano_semseg_v4_eval',)" \
+		MODEL.WEIGHTS $(LATEST_MODEL) \
+		INPUT.CROP.ENABLED False
+
+debug-deeplab: PYTHON = python -m pdb
 debug-deeplab: MODEL_DIR = /tmp/debug
 debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
 debug-deeplab: --check-MAIN
