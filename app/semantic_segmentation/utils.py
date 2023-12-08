@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from pydantic import parse_file_as
 
 from app.schemas import ID
@@ -8,6 +10,8 @@ from app.semantic_segmentation.schemas import (
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionInstance,
 )
+from app.utils import Mask
+from detectron2.structures import BoxMode, Instances
 
 
 def parse_predictions_json(
@@ -46,3 +50,41 @@ def parse_predictions_json(
         )
 
     return predictions
+
+
+def prediction_to_detectron2_instances(
+    prediction: SemanticSegmentationPrediction,
+    height: int,
+    width: int,
+    category_ids: list[int] | None = None,
+) -> Instances:
+    scores: list[float] = []
+    pred_boxes: list[list[int]] = []
+    pred_classes: list[int] = []
+    pred_masks: list[npt.NDArray[np.uint8]] = []
+
+    for instance in prediction.instances:
+        if (category_ids is not None) and (instance.category_id not in category_ids):
+            continue
+
+        score: float = 1.0
+        mask: Mask = Mask.from_obj(
+            instance.segmentation,
+            height=height,
+            width=width,
+        )
+
+        scores.append(score)
+        pred_boxes.append(
+            BoxMode.convert(mask.bbox_xywh, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
+        )
+        pred_classes.append(int(instance.category_id))
+        pred_masks.append(mask.bitmask)
+
+    return Instances(
+        image_size=(height, width),
+        scores=np.array(scores),
+        pred_boxes=np.array(pred_boxes),
+        pred_classes=np.array(pred_classes),
+        pred_masks=np.array(pred_masks),
+    )
