@@ -45,9 +45,12 @@ FLAGS = flags.FLAGS
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    _: InstanceDetection = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
+    if data_driver is None:
+        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
+
     dataset: list[InstanceDetectionData] = parse_obj_as(
         list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )

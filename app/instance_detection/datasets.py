@@ -41,15 +41,15 @@ class InstanceDetection(CocoDataset):
             data_driver = InstanceDetectionV1.register(root_dir=root_dir)
 
         elif dataset_name in [
-            f"{InstanceDetectionV1NTUH.PREFIX}",
-            f"{InstanceDetectionV1NTUH.PREFIX}_debug",
+            f"{InstanceDetectionV1NTUH.PREFIX}_ntuh",
+            f"{InstanceDetectionV1NTUH.PREFIX}_ntuh_debug",
         ]:
             data_driver = InstanceDetectionV1NTUH.register(root_dir=root_dir)
 
         elif dataset_name in [
-            f"{InstanceDetectionOdontoAI.PREFIX}_train",
-            f"{InstanceDetectionOdontoAI.PREFIX}_val",
-            f"{InstanceDetectionOdontoAI.PREFIX}_test",
+            f"{InstanceDetectionOdontoAI.PREFIX}_odontoai_train",
+            f"{InstanceDetectionOdontoAI.PREFIX}_odontoai_val",
+            f"{InstanceDetectionOdontoAI.PREFIX}_odontoai_test",
         ]:
             data_driver = InstanceDetectionOdontoAI.register(root_dir=root_dir)
 
