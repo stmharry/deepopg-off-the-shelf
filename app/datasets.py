@@ -8,6 +8,7 @@ import ijson
 import matplotlib.cm as cm
 import numpy as np
 import pandas as pd
+from absl import logging
 from pydantic import parse_obj_as
 
 from app.schemas import CocoCategory, CocoImage
@@ -94,9 +95,10 @@ class CocoDataset(metaclass=abc.ABCMeta):
     @property
     def coco_paths(self) -> list[Path]:
         if self.coco_path is None:
-            raise ValueError(
+            logging.warning(
                 f"InstanceDetection {self.__class__.__name__} does not have a coco_path!"
             )
+            return []
 
         return [self.coco_path]
 
@@ -104,10 +106,7 @@ class CocoDataset(metaclass=abc.ABCMeta):
     def dataset(self) -> list[dict[str, Any]]:
         for coco_path in self.coco_paths:
             if not coco_path.exists():
-                raise ValueError(
-                    f"Coco dataset does not exist: {coco_path!s}, please run "
-                    f"`InstanceDetection.prepare_coco` first!"
-                )
+                raise ValueError(f"Coco dataset does not exist: {coco_path!s}!")
 
         if self._coco_dataset is None:
             self._coco_dataset = list(

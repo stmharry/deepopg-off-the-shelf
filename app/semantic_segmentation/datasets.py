@@ -31,6 +31,11 @@ class SemanticSegmentation(CocoDataset):
         ]:
             data_driver = SemanticSegmentationV4.register(root_dir=root_dir)
 
+        elif dataset_name in [
+            f"{SemanticSegmentationV4NTUH.PREFIX}_ntuh",
+        ]:
+            data_driver = SemanticSegmentationV4NTUH.register(root_dir=root_dir)
+
         return data_driver  # type: ignore
 
     @classmethod
@@ -76,32 +81,51 @@ class SemanticSegmentation(CocoDataset):
     def get_dataset(cls, self: "CocoDataset", coco_path: Path) -> list[dict[str, Any]]:
         dataset = super().get_dataset(self=self, coco_path=coco_path)
 
-        # ensure the data is consistent with the schema
-        data_schemas: list[SemanticSegmentationData] = [
-            SemanticSegmentationData(
-                file_name=data["file_name"],
-                height=data["height"],
-                width=data["width"],
-                image_id=data["image_id"],
-                sem_seg_file_name=Path(
-                    self.mask_dir,
-                    (
-                        Path(data["file_name"])
-                        .relative_to(self.image_dir)
-                        .with_suffix(".png")
-                    ),
+        # to ensure the data is consistent with the schema
+        data_schemas: list[SemanticSegmentationData] = []
+        for data in dataset:
+            sem_seg_file_name: Path = Path(
+                self.mask_dir,
+                (
+                    Path(data["file_name"])
+                    .relative_to(self.image_dir)
+                    .with_suffix(".png")
                 ),
             )
-            for data in dataset
-        ]
 
-        return [json.loads(data_schema.json()) for data_schema in data_schemas]
+            if sem_seg_file_name.exists():
+                data_schemas.append(
+                    SemanticSegmentationData(
+                        file_name=data["file_name"],
+                        height=data["height"],
+                        width=data["width"],
+                        image_id=data["image_id"],
+                        sem_seg_file_name=sem_seg_file_name,
+                    )
+                )
+            else:
+                logging.warning(
+                    f"Segmentation mask {sem_seg_file_name!s} does not exist!"
+                )
+                data_schemas.append(
+                    SemanticSegmentationData(
+                        file_name=data["file_name"],
+                        height=data["height"],
+                        width=data["width"],
+                        image_id=data["image_id"],
+                    )
+                )
+
+        return [
+            json.loads(data_schema.json(exclude_unset=True))
+            for data_schema in data_schemas
+        ]
 
 
 @dataclasses.dataclass
 class SemanticSegmentationV4(SemanticSegmentation):
     PREFIX: ClassVar[str] = "pano_semseg_v4"
-    SPLITS: ClassVar[list[str]] = ["train", "eval"]
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "debug"]
 
     @property
     def mask_dir(self) -> Path:
@@ -114,3 +138,12 @@ class SemanticSegmentationV4(SemanticSegmentation):
     @property
     def coco_path(self) -> Path:
         return Path(self.root_dir, "coco", "semantic-segmentation-v4.json")
+
+
+@dataclasses.dataclass
+class SemanticSegmentationV4NTUH(SemanticSegmentationV4):
+    SPLITS: ClassVar[list[str]] = ["ntuh"]
+
+    @property
+    def coco_path(self) -> Path:
+        return Path(self.root_dir, "coco", "semantic-segmentation-v4-ntuh.json")

@@ -10,7 +10,7 @@ class SemanticSegmentationData(BaseModel):
     height: int
     width: int
     image_id: ID
-    sem_seg_file_name: Path
+    sem_seg_file_name: Path | None = None
 
 
 class SemanticSegmentationPredictionInstance(BaseModel):

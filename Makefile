@@ -13,14 +13,14 @@ MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
 RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
 CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
 
-LATEST_MODEL ?= $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1)
+LATEST_MODEL_CHECKPOINT ?= $(shell realpath --relative-to=$(MODEL_DIR) $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1))
 YOLO_LATEST_MODEL_CHECKPOINT ?= weights/best.pt
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
 ### executables
 
-PYTHONPATH ?= .
+PYTHONPATH ?= ./detectron2:./MaskDINO
 PYTHON ?= python
 PY ?= \
 	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) \
@@ -56,18 +56,18 @@ CSV_NAME ?= result.csv
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION_NAME)))
 CPUS ?= $(shell echo $$(( $(shell nproc --all) - 2 )))
 
+ifeq ($(CUDA_VISIBLE_DEVICES),)
+	DEVICE = cpu
+else
+	DEVICE = cuda
+endif
+
 ifeq ($(ARCH),maskdino)
-	PYTHONPATH = ./MaskDINO
 	MAIN_APP = train_net:main
-
 else ifeq ($(ARCH),mvitv2)
-	PYTHONPATH = ./detectron2
 	MAIN_APP = tools.lazyconfig_train_net:main
-
 else ifeq ($(ARCH),deeplab)
-	PYTHONPATH = ./detectron2
 	MAIN_APP = projects.DeepLab.train_net:main
-
 endif
 
 ###############
@@ -75,6 +75,7 @@ endif
 ###############
 
 default:
+	echo $(LATEST_MODEL)
 
 ### util targets
 
@@ -133,10 +134,11 @@ train-maskdino:
 
 test-maskdino: RESULT_NAME ?= $(NEW_NAME)
 test-maskdino: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
+test-maskdino: MODEL_CHECKPOINT ?= $(LATEST_MODEL_CHECKPOINT)
 test-maskdino: --check-MAIN check-MODEL_NAME
 test-maskdino:
 	$(PY) $(MAIN) --eval-only \
-		MODEL.WEIGHTS $(LATEST_MODEL) \
+		MODEL.WEIGHTS $(MODEL_DIR)/$(MODEL_CHECKPOINT) \
 		DATASETS.TEST "('pano_eval',)"
 
 debug-maskdino: PYTHON = python -m pdb
@@ -165,10 +167,11 @@ train-mvitv2:
 
 test-mvitv2: RESULT_NAME ?= $(NEW_NAME)
 test-mvitv2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
+test-mvitv2: MODEL_CHECKPOINT ?= $(LATEST_MODEL_CHECKPOINT)
 test-mvitv2: --check-MAIN check-MODEL_NAME
 test-mvitv2:
 	$(PY) $(MAIN) --eval-only \
-		train.init_checkpoint=$(LATEST_MODEL) \
+		train.init_checkpoint=$(MODEL_DIR)/$(MODEL_CHECKPOINT) \
 		train.output_dir=$(RESULT_DIR) \
 		dataloader.test.dataset.names=$(DATASET_NAME) \
 		dataloader.test.dataset.filter_empty=False \
@@ -195,12 +198,14 @@ train-deeplab:
 
 test-deeplab: RESULT_NAME ?= $(NEW_NAME)
 test-deeplab: CONFIG_FILE = $(MODEL_DIR)/config.yaml
+test-deeplab: MODEL_CHECKPOINT ?= $(LATEST_MODEL_CHECKPOINT)
 test-deeplab: check-ROOT_DIR check-MAIN_APP check-MODEL_NAME
 test-deeplab:
 	$(PY) $(MAIN) --eval-only \
 		OUTPUT_DIR $(RESULT_DIR) \
-		DATASETS.TEST "('pano_semseg_v4_eval',)" \
-		MODEL.WEIGHTS $(LATEST_MODEL) \
+		MODEL.DEVICE $(DEVICE) \
+		DATASETS.TEST "('$(DATASET_NAME)',)" \
+		MODEL.WEIGHTS $(MODEL_DIR)/$(MODEL_CHECKPOINT) \
 		INPUT.CROP.ENABLED False
 
 debug-deeplab: PYTHON = python -m pdb
@@ -209,7 +214,7 @@ debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
 debug-deeplab: --check-MAIN
 debug-deeplab:
 	$(PY) $(MAIN) \
-		DATALOADER.NUM_WORKERS 0 \
+		DATALOADER.NUM_WORKERS \
 		OUTPUT_DIR $(MODEL_DIR)
 
 ### yolo targets
