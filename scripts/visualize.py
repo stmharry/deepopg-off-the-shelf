@@ -1,8 +1,6 @@
 import re
 from pathlib import Path
 
-import cv2
-import imageio.v3 as iio
 import numpy as np
 from absl import app, flags, logging
 from pydantic import parse_obj_as
@@ -13,6 +11,7 @@ from app.instance_detection.schemas import (
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
 )
+from app.utils import read_image
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
@@ -79,7 +78,7 @@ def main(_):
     }
 
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
-    Path(visualize_dir).mkdir(parents=True, exist_ok=True)
+    visualize_dir.mkdir(parents=True, exist_ok=True)
 
     for data in dataset:
         if data.image_id not in id_to_prediction:
@@ -118,18 +117,7 @@ def main(_):
                 category_ids=category_ids,
             )
 
-            image: np.ndarray = iio.imread(data.file_name)
-            if image.ndim == 2:
-                image = np.expand_dims(image, axis=2)
-
-            image_rgb: np.ndarray
-            if image.shape[2] == 1:
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            elif image.shape[2] == 3:
-                image_rgb = image
-            else:
-                raise NotImplementedError
-
+            image_rgb: np.ndarray = read_image(data.file_name)
             visualizer = Visualizer(image_rgb, metadata=metadata, scale=1.0)
             image_vis: VisImage = visualizer.draw_instance_predictions(instances)
 

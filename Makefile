@@ -295,13 +295,24 @@ postprocess-gt: --postprocess
 	$(PY) scripts/visualize.py $(COMMON_ARGS) \
 		--use_gt_as_prediction $(USE_GT) \
 		--prediction_name $(PREDICTION_NAME) \
-		--visualize_dir $(VISUALIZE_DIR)
+		--visualize_dir $(VISUALIZE_DIR) \
+		--visualize_subset
 
 visualize: USE_GT = false
 visualize: --visualize
 
 visualize-gt: USE_GT = true
 visualize-gt: --visualize
+
+--visualize-semseg: --check-COMMON
+--visualize-semseg: PREDICTION_NAME = inference/sem_seg_predictions.json
+--visualize-semseg: VISUALIZE_DIR = visualize
+--visualize-semseg:
+	$(PY) scripts/visualize-semseg.py $(COMMON_ARGS) \
+		--prediction_name $(PREDICTION_NAME) \
+		--visualize_dir $(VISUALIZE_DIR)
+
+visualize-semseg: --visualize-semseg
 
 visualize-coco: --check-COMMON --check-COCO
 visualize-coco:

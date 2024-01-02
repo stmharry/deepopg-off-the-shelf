@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import cv2
+import imageio.v3 as iio
 import numpy as np
 
 
@@ -41,3 +45,19 @@ def calculate_iom_mask(
     intersection: np.ndarray = np.logical_and(mask1, mask2)
 
     return (np.sum(intersection) + epsilon2) / (min(area_1, area_2) + epsilon1)
+
+
+def read_image(image_path: Path) -> np.ndarray:
+    image: np.ndarray = iio.imread(image_path)
+    if image.ndim == 2:
+        image = np.expand_dims(image, axis=2)
+
+    image_rgb: np.ndarray
+    if image.shape[2] == 1:
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    elif image.shape[2] == 3:
+        image_rgb = image
+    else:
+        raise NotImplementedError
+
+    return image_rgb
