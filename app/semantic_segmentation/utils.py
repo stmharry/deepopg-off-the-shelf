@@ -57,6 +57,7 @@ def prediction_to_detectron2_instances(
     height: int,
     width: int,
     category_ids: list[int] | None = None,
+    background_id: int = 0,
 ) -> Instances:
     scores: list[float] = []
     pred_boxes: list[list[int]] = []
@@ -64,7 +65,12 @@ def prediction_to_detectron2_instances(
     pred_masks: list[npt.NDArray[np.uint8]] = []
 
     for instance in prediction.instances:
-        if (category_ids is not None) and (instance.category_id not in category_ids):
+        category_id: int = int(instance.category_id)
+
+        if (category_ids is not None) and (category_id not in category_ids):
+            continue
+
+        if category_id == background_id:
             continue
 
         score: float = 1.0
@@ -78,7 +84,7 @@ def prediction_to_detectron2_instances(
         pred_boxes.append(
             BoxMode.convert(mask.bbox_xywh, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
         )
-        pred_classes.append(int(instance.category_id))
+        pred_classes.append(category_id)
         pred_masks.append(mask.bitmask)
 
     return Instances(
