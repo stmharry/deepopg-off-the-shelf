@@ -12,13 +12,9 @@ from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import (
     InstanceDetectionData,
     InstanceDetectionPrediction,
+    InstanceDetectionPredictionList,
 )
 from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
-from app.utils import (
-    instance_detection_data_to_prediction,
-    load_predictions,
-    prediction_to_coco_annotations,
-)
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -40,9 +36,12 @@ FLAGS = flags.FLAGS
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    data_driver: InstanceDetection = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
+    if data_driver is None:
+        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
+
     dataset: list[InstanceDetectionData] = parse_obj_as(
         list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )
@@ -81,12 +80,12 @@ def main(_):
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
-            instance_detection_data_to_prediction(instance_detection_data=data)
+            InstanceDetectionPrediction.from_instance_detection_data(data)
             for data in dataset
         ]
     else:
-        predictions = load_predictions(
-            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
+            Path(FLAGS.result_dir, FLAGS.prediction_name)
         )
 
     predictions = [
@@ -99,8 +98,7 @@ def main(_):
     for prediction in rich.progress.track(
         predictions, total=len(predictions), description="Converting predictions..."
     ):
-        _coco_annotations: list[CocoAnnotation] = prediction_to_coco_annotations(
-            prediction=prediction,
+        _coco_annotations: list[CocoAnnotation] = prediction.to_coco_annotations(
             coco_categories=coco_categories,
             start_id=len(coco_annotations),
         )

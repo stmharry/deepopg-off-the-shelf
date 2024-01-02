@@ -9,8 +9,9 @@ from app.instance_detection.schemas import (
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
+    InstanceDetectionPredictionList,
 )
-from app.utils import Mask, save_predictions
+from app.masks import Mask
 from detectron2.data import DatasetCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory")
@@ -98,9 +99,8 @@ def main(_):
     predictions_path: Path = Path(FLAGS.result_dir, FLAGS.prediction_name)
     logging.info(f"Saving predictions to {predictions_path}")
 
-    save_predictions(
-        predictions=predictions,
-        prediction_path=predictions_path,
+    InstanceDetectionPredictionList.to_detectron2_detection_pth(
+        predictions, path=predictions_path
     )
 
 

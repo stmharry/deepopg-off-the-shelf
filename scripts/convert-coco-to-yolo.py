@@ -8,7 +8,7 @@ from pydantic import parse_obj_as
 
 from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import InstanceDetectionData
-from app.utils import Mask
+from app.masks import Mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -19,9 +19,12 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    data_driver: InstanceDetection = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
+    if data_driver is None:
+        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
+
     directory_name: str
     splits: list[str]
 

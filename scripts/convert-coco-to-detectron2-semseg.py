@@ -10,7 +10,7 @@ from pydantic import parse_obj_as
 
 from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import InstanceDetectionData
-from app.utils import Mask
+from app.masks import Mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")

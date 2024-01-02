@@ -14,15 +14,10 @@ from app.instance_detection.schemas import (
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
+    InstanceDetectionPredictionList,
 )
-from app.utils import (
-    Mask,
-    calculate_iom_bbox,
-    calculate_iom_mask,
-    instance_detection_data_to_prediction,
-    load_predictions,
-    save_predictions,
-)
+from app.masks import Mask
+from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -160,9 +155,12 @@ def do_assignment(
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    data_driver: InstanceDetection = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
+    if data_driver is None:
+        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
+
     dataset: list[InstanceDetectionData] = parse_obj_as(
         list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
     )
@@ -171,13 +169,13 @@ def main(_):
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
-            instance_detection_data_to_prediction(instance_detection_data=data)
+            InstanceDetectionPrediction.from_instance_detection_data(data)
             for data in dataset
         ]
 
     else:
-        predictions = load_predictions(
-            prediction_path=Path(FLAGS.result_dir, FLAGS.input_prediction_name)
+        predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
+            Path(FLAGS.result_dir, FLAGS.input_prediction_name)
         )
 
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
@@ -488,9 +486,8 @@ def main(_):
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
-    save_predictions(
-        predictions=output_predictions,
-        prediction_path=Path(FLAGS.result_dir, FLAGS.output_prediction_name),
+    InstanceDetectionPredictionList.to_detectron2_detection_pth(
+        output_predictions, path=Path(FLAGS.result_dir, FLAGS.output_prediction_name)
     )
 
     df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(

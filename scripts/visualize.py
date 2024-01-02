@@ -11,11 +11,7 @@ from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import (
     InstanceDetectionData,
     InstanceDetectionPrediction,
-)
-from app.utils import (
-    instance_detection_data_to_prediction,
-    load_predictions,
-    prediction_to_detectron2_instances,
+    InstanceDetectionPredictionList,
 )
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -70,12 +66,12 @@ def main(_):
     predictions: list[InstanceDetectionPrediction]
     if FLAGS.use_gt_as_prediction:
         predictions = [
-            instance_detection_data_to_prediction(instance_detection_data=data)
+            InstanceDetectionPrediction.from_instance_detection_data(data)
             for data in dataset
         ]
     else:
-        predictions = load_predictions(
-            prediction_path=Path(FLAGS.result_dir, FLAGS.prediction_name)
+        predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
+            Path(FLAGS.result_dir, FLAGS.prediction_name)
         )
 
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
@@ -116,8 +112,7 @@ def main(_):
                 if re.match(re_pattern, category)
             ]
 
-            instances: Instances = prediction_to_detectron2_instances(
-                prediction,
+            instances: Instances = prediction.to_detectron2_instances(
                 height=data.height,
                 width=data.width,
                 category_ids=category_ids,
