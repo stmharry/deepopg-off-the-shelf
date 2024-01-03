@@ -22,38 +22,18 @@ T = TypeVar("T", bound="InstanceDetection")
 
 @dataclasses.dataclass
 class InstanceDetection(CocoDataset):
-    PREFIX: ClassVar[str] = "pano"
-
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
     IMAGE_GLOB: ClassVar[str] = "PROMATON/*.jpg"
 
     category_mapping: dict[str, str] | None = None
 
     @classmethod
-    def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
-        data_driver: InstanceDetection | None = None
-        if dataset_name in [
-            f"{InstanceDetectionV1.PREFIX}_all",
-            f"{InstanceDetectionV1.PREFIX}_train",
-            f"{InstanceDetectionV1.PREFIX}_eval",
-            f"{InstanceDetectionV1.PREFIX}_debug",
-        ]:
-            data_driver = InstanceDetectionV1.register(root_dir=root_dir)
-
-        elif dataset_name in [
-            f"{InstanceDetectionV1NTUH.PREFIX}_ntuh",
-            f"{InstanceDetectionV1NTUH.PREFIX}_ntuh_debug",
-        ]:
-            data_driver = InstanceDetectionV1NTUH.register(root_dir=root_dir)
-
-        elif dataset_name in [
-            f"{InstanceDetectionOdontoAI.PREFIX}_odontoai_train",
-            f"{InstanceDetectionOdontoAI.PREFIX}_odontoai_val",
-            f"{InstanceDetectionOdontoAI.PREFIX}_odontoai_test",
-        ]:
-            data_driver = InstanceDetectionOdontoAI.register(root_dir=root_dir)
-
-        return data_driver  # type: ignore
+    def get_subclasses(cls) -> list[type["InstanceDetection"]]:
+        return [
+            InstanceDetectionV1,
+            InstanceDetectionV1NTUH,
+            InstanceDetectionOdontoAI,
+        ]
 
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
@@ -309,6 +289,7 @@ class InstanceDetection(CocoDataset):
 
 
 class InstanceDetectionV1(InstanceDetection):
+    PREFIX: ClassVar[str] = "pano"
     SPLITS: ClassVar[list[str]] = ["all", "train", "eval", "debug"]
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
         r"TOOTH_(\d+)": r"TOOTH_\1",
@@ -334,7 +315,8 @@ class InstanceDetectionV1(InstanceDetection):
 
 @dataclasses.dataclass
 class InstanceDetectionV1NTUH(InstanceDetectionV1):
-    SPLITS: ClassVar[list[str]] = ["ntuh", "ntuh_debug"]
+    PREFIX: ClassVar[str] = "pano_ntuh"
+    SPLITS: ClassVar[list[str]] = ["test", "debug"]
 
     @property
     def coco_path(self) -> Path:
@@ -343,7 +325,8 @@ class InstanceDetectionV1NTUH(InstanceDetectionV1):
 
 @dataclasses.dataclass
 class InstanceDetectionOdontoAI(InstanceDetection):
-    SPLITS: ClassVar[list[str]] = ["odontoai_train", "odontoao_val", "odontoai_test"]
+    PREFIX: ClassVar[str] = "pano_odontoai"
+    SPLITS: ClassVar[list[str]] = ["train", "val", "test"]
 
     @property
     def split_dir(self) -> Path:

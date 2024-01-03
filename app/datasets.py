@@ -12,6 +12,7 @@ from absl import logging
 from pydantic import parse_obj_as
 
 from app.schemas import CocoCategory, CocoImage
+from detectron2.data import DatasetCatalog
 from detectron2.data.datasets import load_coco_json
 
 T = TypeVar("T", bound="CocoDataset")
@@ -27,14 +28,35 @@ class CocoDataset(metaclass=abc.ABCMeta):
     _coco_dataset: list[dict[str, Any]] | None = dataclasses.field(default=None)
 
     @classmethod
-    @abc.abstractmethod
     def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
-        ...
+        data_driver: T | None = None
+
+        subclass: type[T]
+        for subclass in cls.get_subclasses():  # type: ignore
+            if dataset_name not in subclass.get_dataset_names():
+                continue
+
+            if dataset_name in DatasetCatalog.list():
+                logging.info(f"Dataset {dataset_name!s} already registered!")
+                continue
+
+            data_driver = subclass.register(root_dir=root_dir)
+
+        return data_driver
 
     @classmethod
     @abc.abstractmethod
     def register(cls: type[T], root_dir: Path) -> T:
         ...
+
+    @classmethod
+    @abc.abstractmethod
+    def get_subclasses(cls) -> list[type]:
+        ...
+
+    @classmethod
+    def get_dataset_names(cls) -> list[str]:
+        return [f"{cls.PREFIX}_{split}" for split in cls.SPLITS]
 
     @classmethod
     def get_coco_categories(cls, coco_path: str | Path) -> list[CocoCategory]:

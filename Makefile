@@ -39,7 +39,8 @@ YOLO_PREDICT ?= \
 MAIN = scripts/main.py \
 	--main-app $(MAIN_APP) \
 	--config-file $(CONFIG_FILE) \
-	--data-dir $(DATA_DIR)
+	--data-dir $(DATA_DIR) \
+	--dataset_name $(DATASET_NAME)
 
 COMMON_ARGS = \
 	--data_dir $(DATA_DIR) \
@@ -127,6 +128,7 @@ install-maskdino:
 
 train-maskdino: MODEL_NAME ?= $(NEW_NAME)
 train-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
+train-maskdino: DATASET_NAME = pano_train,pano_eval
 train-maskdino: --check-MAIN
 train-maskdino:
 	$(PY) $(MAIN) \
@@ -143,6 +145,7 @@ test-maskdino:
 
 debug-maskdino: PYTHON = python -m pdb
 debug-maskdino: MODEL_DIR = /tmp/debug
+debug-maskdino: DATASET_NAME = pano_train,pano_eval
 debug-maskdino: --check-MAIN
 debug-maskdino:
 	$(PY) $(MAIN) \
@@ -160,6 +163,7 @@ install-detectron2:
 
 train-mvitv2: MODEL_NAME ?= $(NEW_NAME)
 train-mvitv2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
+train-mvitv2: DATASET_NAME = pano_train,pano_eval
 train-mvitv2: --check-MAIN
 train-mvitv2:
 	$(PY) $(MAIN) \
@@ -183,6 +187,7 @@ test-mvitv2:
 debug-mvitv2: PYTHON = python -m pdb
 debug-mvitv2: MODEL_DIR = /tmp/debug
 debug-mvitv2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
+debug-mvitv2: DATASET_NAME = pano_train,pano_eval
 debug-mvitv2: --check-MAIN
 debug-mvitv2:
 	$(PY) $(MAIN) \
@@ -191,6 +196,7 @@ debug-mvitv2:
 
 train-deeplab: MODEL_NAME ?= $(NEW_NAME)
 train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
+train-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
 train-deeplab: --check-MAIN
 train-deeplab:
 	$(PY) $(MAIN) \
@@ -211,10 +217,12 @@ test-deeplab:
 debug-deeplab: PYTHON = python -m pdb
 debug-deeplab: MODEL_DIR = /tmp/debug
 debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
+debug-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
 debug-deeplab: --check-MAIN
 debug-deeplab:
 	$(PY) $(MAIN) \
-		DATALOADER.NUM_WORKERS \
+		DATALOADER.NUM_WORKERS 0 \
+		SOLVER.MAX_ITER 10 \
 		OUTPUT_DIR $(MODEL_DIR)
 
 ### yolo targets

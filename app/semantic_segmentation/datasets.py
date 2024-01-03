@@ -18,25 +18,12 @@ T = TypeVar("T", bound="SemanticSegmentation")
 
 @dataclasses.dataclass
 class SemanticSegmentation(CocoDataset):
-    PREFIX: ClassVar[str] = "pano_semseg"
-
     @classmethod
-    def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
-        data_driver: SemanticSegmentation | None = None
-        if dataset_name in [
-            f"{SemanticSegmentationV4.PREFIX}_all",
-            f"{SemanticSegmentationV4.PREFIX}_train",
-            f"{SemanticSegmentationV4.PREFIX}_eval",
-            f"{SemanticSegmentationV4.PREFIX}_debug",
-        ]:
-            data_driver = SemanticSegmentationV4.register(root_dir=root_dir)
-
-        elif dataset_name in [
-            f"{SemanticSegmentationV4NTUH.PREFIX}_ntuh",
-        ]:
-            data_driver = SemanticSegmentationV4NTUH.register(root_dir=root_dir)
-
-        return data_driver  # type: ignore
+    def get_subclasses(cls) -> list[type["SemanticSegmentation"]]:
+        return [
+            SemanticSegmentationV4,
+            SemanticSegmentationV4NTUH,
+        ]
 
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
@@ -142,7 +129,8 @@ class SemanticSegmentationV4(SemanticSegmentation):
 
 @dataclasses.dataclass
 class SemanticSegmentationV4NTUH(SemanticSegmentationV4):
-    SPLITS: ClassVar[list[str]] = ["ntuh"]
+    PREFIX: ClassVar[str] = "pano_semseg_v4_ntuh"
+    SPLITS: ClassVar[list[str]] = ["test"]
 
     @property
     def coco_path(self) -> Path:
