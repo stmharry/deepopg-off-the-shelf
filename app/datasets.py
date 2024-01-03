@@ -140,18 +140,15 @@ class CocoDataset(metaclass=abc.ABCMeta):
 
         return self._coco_dataset
 
-    def get_split_file_names(self, split: str | None = None) -> list[str]:
-        if split is None:
-            split = "all"
-
-        split_path: Path = Path(self.split_dir, f"{split}.txt")
+    def get_split_file_names(self, split: str) -> list[str]:
+        split_path: Path = Path(self.split_dir, f"{self.PREFIX}_{split}.txt")
         file_names: list[str] = (
             pd.read_csv(split_path, header=None).squeeze().tolist()  # type: ignore
         )
 
         return file_names
 
-    def get_split(self, split: str | None = None) -> list[dict[str, Any]]:
+    def get_split(self, split: str) -> list[dict[str, Any]]:
         file_names: list[str] = self.get_split_file_names(split=split)
         file_paths: set[Path] = set(
             Path(self.image_dir, f"{file_name}.jpg") for file_name in file_names
