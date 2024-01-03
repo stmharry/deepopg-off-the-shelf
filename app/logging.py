@@ -14,3 +14,7 @@ logging.basicConfig(
     level=logging.NOTSET, format="%(message)s", datefmt="[%X]", handlers=[RichHandler()]
 )
 app.call_after_init(patch_logging)
+
+#
+
+logging.getLogger("PIL").setLevel(logging.WARNING)
