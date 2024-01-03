@@ -212,7 +212,8 @@ test-deeplab:
 		MODEL.DEVICE $(DEVICE) \
 		DATASETS.TEST "('$(DATASET_NAME)',)" \
 		MODEL.WEIGHTS $(MODEL_DIR)/$(MODEL_CHECKPOINT) \
-		INPUT.CROP.ENABLED False
+		INPUT.CROP.ENABLED False \
+		TEST.SAVE_PROB True
 
 debug-deeplab: PYTHON = python -m pdb
 debug-deeplab: MODEL_DIR = /tmp/debug
