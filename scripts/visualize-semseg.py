@@ -59,7 +59,21 @@ def main(_):
         detectron2_instances: Instances = prediction.to_detectron2_instances(
             height=data["height"], width=data["width"]
         )
-        image_vis: VisImage = visualizer.draw_instance_predictions(detectron2_instances)
+
+        semseg_mask: np.ndarray
+        if len(detectron2_instances.pred_masks) == 0:
+            semseg_mask = np.zeros((data["height"], data["width"]), dtype=np.uint8)
+        else:
+            pred_masks: np.ndarray = np.r_[
+                "0, 3",
+                np.zeros((data["height"], data["width"]), dtype=np.uint8),
+                detectron2_instances.pred_masks,
+            ]
+            pred_classes: np.ndarray = np.r_[0, detectron2_instances.pred_classes]
+
+            semseg_mask = pred_classes[np.argmax(pred_masks, axis=0)]
+
+        image_vis: VisImage = visualizer.draw_sem_seg(semseg_mask, alpha=0.5)
 
         image_path: Path = Path(visualize_dir, f"{file_name.stem}.png")
 

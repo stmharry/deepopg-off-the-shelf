@@ -45,7 +45,9 @@ class SemanticSegmentation(CocoDataset):
         if categories is None:
             raise ValueError(f"No categories found in {self.coco_paths!s}!")
 
-        stuff_classes: list[str] = [category.name for category in categories]
+        stuff_classes: list[str] = ["BACKGROUND"] + [
+            category.name for category in categories
+        ]
         stuff_colors: npt.NDArray[np.uint8] = cls.get_colors(len(stuff_classes))
 
         for split in cls.SPLITS:
