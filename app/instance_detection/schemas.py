@@ -6,11 +6,6 @@ import numpy.typing as npt
 import torch
 from pydantic import BaseModel, parse_obj_as
 
-from app.instance_detection.schemas import (
-    InstanceDetectionData,
-    InstanceDetectionPrediction,
-    InstanceDetectionPredictionInstance,
-)
 from app.masks import Mask
 from app.schemas import ID, CocoAnnotation, CocoCategory, CocoRLE
 from detectron2.structures import BoxMode, Instances
