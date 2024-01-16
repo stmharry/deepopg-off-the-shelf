@@ -17,15 +17,31 @@ from app.instance_detection.schemas import (
     InstanceDetectionPredictionList,
 )
 from app.masks import Mask
+from app.semantic_segmentation.datasets import SemanticSegmentation
+from app.semantic_segmentation.schemas import (
+    SemanticSegmentationData,
+    SemanticSegmentationPrediction,
+    SemanticSegmentationPredictionList,
+)
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("dataset_name", None, "Dataset name.")
+flags.DEFINE_string("dataset_name", None, "Detection Dataset name.")
 flags.DEFINE_string(
     "input_prediction_name", "instances_predictions.pth", "Input prediction file name."
 )
+flags.DEFINE_string(
+    "semseg_result_dir", None, "Semantic segmentation result directory."
+)
+flags.DEFINE_string("semseg_dataset_name", None, "Semantic segmentation dataset name.")
+flags.DEFINE_string(
+    "semseg_prediction_name",
+    "inference/sem_seg_predictions.json",
+    "Input prediction file name.",
+)
+
 flags.DEFINE_bool(
     "use_gt_as_prediction",
     False,
@@ -155,6 +171,8 @@ def do_assignment(
 def main(_):
     logging.set_verbosity(logging.INFO)
 
+    # instance detection
+
     data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
@@ -181,6 +199,41 @@ def main(_):
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
+
+    # semantic segmentation, if specified
+
+    semseg_data_driver: SemanticSegmentation | None = None
+    semseg_dataset: list[SemanticSegmentationData] = []
+    semseg_metadata: Metadata | None = None
+    semseg_predictions: list[SemanticSegmentationPrediction] = []
+    semseg_id_to_prediction: dict[str | int | None, SemanticSegmentationPrediction] = {}
+    if FLAGS.semseg_dataset_name is not None:
+        semseg_data_driver = SemanticSegmentation.register_by_name(
+            dataset_name=FLAGS.semseg_dataset_name, root_dir=FLAGS.data_dir
+        )
+        if semseg_data_driver is None:
+            raise ValueError(f"Unknown dataset name: {FLAGS.semseg_dataset_name}")
+
+        semseg_dataset = parse_obj_as(
+            list[SemanticSegmentationData],
+            DatasetCatalog.get(FLAGS.semseg_dataset_name),
+        )
+
+        semseg_metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
+
+        semseg_predictions = (
+            SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
+                Path(FLAGS.semseg_result_dir, FLAGS.semseg_prediction_name),
+                file_name_to_image_id={
+                    Path(data["file_name"]): data["image_id"]
+                    for data in data_driver.dataset
+                },
+            )
+        )
+
+        semseg_id_to_prediction = {
+            prediction.image_id: prediction for prediction in semseg_predictions
+        }
 
     output_predictions: list[InstanceDetectionPrediction] = []
     row_results: list[dict[str, Any]] = []
@@ -213,27 +266,72 @@ def main(_):
         if len(df) == 0:
             continue
 
-        # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
-        # detection score in the original instance list and subtract it from one
-        missingness: pd.Series = np.maximum(  # type: ignore
-            0, 1 - df.groupby("category_id").score.max()
-        )
-
         df = df.loc[df.score > FLAGS.min_score]
         logging.info(f"Found {len(df)} instances with score > {FLAGS.min_score}.")
 
         if len(df) == 0:
             continue
 
-        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
-        df["is_tooth"] = df["category_name"].str.startswith("TOOTH")
-        df["fdi"] = pd.Series([None] * len(df), index=df.index).mask(
-            df["is_tooth"], other=df["category_name"].str.split("_").str[-1]
-        )
         df["mask"] = df["segmentation"].apply(
             lambda segmentation: Mask.from_obj(
                 segmentation, width=data.width, height=data.height
             ).bitmask
+        )
+        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
+
+        if FLAGS.semseg_dataset_name is not None:
+            # when semseg dataset is passed, we replace the score for teeth with the overlap
+            # between the instance and each tooth class from semseg, instead of using the
+            # class score from instance detection
+
+            semseg_prediction: SemanticSegmentationPrediction = semseg_id_to_prediction[
+                data.image_id
+            ]
+            semseg_mask: np.ndarray = semseg_prediction.to_semseg_mask(
+                height=data.height, width=data.width
+            )
+            for index, row in df.iterrows():
+                category_name: str = row["category_name"]
+                if not row["category_name"].startswith("TOOTH"):
+                    continue
+
+                assert semseg_metadata is not None
+
+                s_overlap: pd.Series = pd.Series(
+                    (
+                        np.bincount(
+                            semseg_mask[row["mask"]],
+                            minlength=len(semseg_metadata.stuff_classes),
+                        )
+                        / np.sum(row["mask"])
+                    ),
+                    index=semseg_metadata.stuff_classes,
+                )
+                category_name: str = s_overlap.loc[
+                    s_overlap.index != "BACKGROUND"
+                ].idxmax()
+                category_id: int = metadata.thing_classes.index(category_name)
+                score: float = s_overlap.loc[category_name]
+
+                if category_id != row["category_id"]:
+                    logging.info(
+                        f"Category id {row['category_id']} ({row['category_name']}) with score {row['score']:.3f} "
+                        f"changed to {category_id} ({category_name}) with score {score:.3f}."
+                    )
+
+                df.loc[index, "category_id"] = category_id
+                df.loc[index, "score"] = score
+
+        # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
+        # detection score in the original instance list and subtract it from one
+        missingness: pd.Series = np.maximum(  # type: ignore
+            0, 1 - df.groupby("category_id").score.max()
+        )
+
+        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
+        df["is_tooth"] = df["category_name"].str.startswith("TOOTH")
+        df["fdi"] = pd.Series([None] * len(df), index=df.index).mask(
+            df["is_tooth"], other=df["category_name"].str.split("_").str[-1]
         )
         num_instances: int = len(df)
 

@@ -73,6 +73,38 @@ class SemanticSegmentationPrediction(BaseModel):
             pred_masks=np.array(pred_masks),
         )
 
+    def to_semseg_mask(
+        self,
+        height: int,
+        width: int,
+        background_id: int = 0,
+    ) -> np.ndarray:
+        bitmasks: list[np.ndarray] = []
+        category_ids: list[int] = []
+        for instance in self.instances:
+            category_id: int = int(instance.category_id)
+
+            bitmask: np.ndarray
+            if category_id == background_id:
+                bitmask = np.zeros((height, width), dtype=np.uint8)
+
+            else:
+                mask: Mask = Mask.from_obj(
+                    instance.segmentation,
+                    height=height,
+                    width=width,
+                )
+                bitmask = mask.bitmask
+
+            bitmasks.append(bitmask)
+            category_ids.append(category_id)
+
+        semseg_mask: np.ndarray = np.asarray(category_ids, dtype=np.int32)[
+            np.argmax(bitmasks, axis=0)
+        ]
+
+        return semseg_mask
+
 
 class SemanticSegmentationPredictionList(object):
     @classmethod
@@ -90,7 +122,7 @@ class SemanticSegmentationPredictionList(object):
         predictions: list[SemanticSegmentationPrediction] = []
         for instance in instances:
             if instance.file_name != file_name:
-                image_id = file_name_to_image_id.get(instance.file_name, None)
+                image_id = file_name_to_image_id.get(file_name, None)
 
                 if file_name is not None:
                     predictions.append(

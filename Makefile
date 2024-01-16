@@ -194,6 +194,8 @@ debug-mvitv2:
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
+# deeplab targets
+
 train-deeplab: MODEL_NAME ?= $(NEW_NAME)
 train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
 train-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
@@ -209,10 +211,11 @@ test-deeplab: check-ROOT_DIR check-MAIN_APP check-MODEL_NAME
 test-deeplab:
 	$(PY) $(MAIN) --eval-only \
 		OUTPUT_DIR $(RESULT_DIR) \
-		MODEL.DEVICE $(DEVICE) \
 		DATASETS.TEST "('$(DATASET_NAME)',)" \
+		MODEL.DEVICE $(DEVICE) \
 		MODEL.WEIGHTS $(MODEL_DIR)/$(MODEL_CHECKPOINT) \
 		INPUT.CROP.ENABLED False \
+		SOLVER.IMS_PER_BATCH 1 \
 		TEST.SAVE_PROB True
 
 debug-deeplab: PYTHON = python -m pdb
@@ -282,22 +285,31 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
---postprocess: --check-COMMON
---postprocess:
+postprocess: --check-COMMON
+postprocess: USE_GT = false
+postprocess: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
+postprocess: SEMSEG_PREDICTION_NAME ?= inference/sem_seg_predictions.json
+postprocess:
+	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
+		--use_gt_as_prediction $(USE_GT) \
+		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
+		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
+		--semseg_prediction_name $(SEMSEG_PREDICTION_NAME) \
+		--input_prediction_name $(PREDICTION_NAME) \
+		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
+		--csv_name $(CSV_NAME) \
+		--min_score $(MIN_SCORE)
+
+postprocess-gt: --check-COMMON
+postprocess-gt: USE_GT = true
+postprocess-gt: OUTPUT_PREDICTION_NAME ?= instances_predictions.pth
+postprocess-gt:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--use_gt_as_prediction $(USE_GT) \
 		--input_prediction_name $(PREDICTION_NAME) \
 		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
 		--csv_name $(CSV_NAME) \
 		--min_score $(MIN_SCORE)
-
-postprocess: USE_GT = false
-postprocess: OUTPUT_PREDICTION_NAME = $(PREDICTION_NAME:.pth=.postprocessed.pth)
-postprocess: --postprocess
-
-postprocess-gt: USE_GT = true
-postprocess-gt: OUTPUT_PREDICTION_NAME = instances_predictions.pth
-postprocess-gt: --postprocess
 
 --visualize: --check-COMMON
 --visualize:
