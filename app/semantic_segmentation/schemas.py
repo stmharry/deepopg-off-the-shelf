@@ -136,6 +136,7 @@ class SemanticSegmentationPredictionList(object):
 
             _instances.append(instance.copy(update={"image_id": image_id}))
 
+        image_id = file_name_to_image_id.get(file_name, None)
         if file_name is not None:
             predictions.append(
                 SemanticSegmentationPrediction(
