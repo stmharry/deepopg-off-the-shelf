@@ -19,7 +19,6 @@ from app.instance_detection.schemas import (
 from app.masks import Mask
 from app.semantic_segmentation.datasets import SemanticSegmentation
 from app.semantic_segmentation.schemas import (
-    SemanticSegmentationData,
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
 )
@@ -203,7 +202,6 @@ def main(_):
     # semantic segmentation, if specified
 
     semseg_data_driver: SemanticSegmentation | None = None
-    semseg_dataset: list[SemanticSegmentationData] = []
     semseg_metadata: Metadata | None = None
     semseg_predictions: list[SemanticSegmentationPrediction] = []
     semseg_id_to_prediction: dict[str | int | None, SemanticSegmentationPrediction] = {}
@@ -213,11 +211,6 @@ def main(_):
         )
         if semseg_data_driver is None:
             raise ValueError(f"Unknown dataset name: {FLAGS.semseg_dataset_name}")
-
-        semseg_dataset = parse_obj_as(
-            list[SemanticSegmentationData],
-            DatasetCatalog.get(FLAGS.semseg_dataset_name),
-        )
 
         semseg_metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
 
@@ -290,6 +283,7 @@ def main(_):
             semseg_mask: np.ndarray = semseg_prediction.to_semseg_mask(
                 height=data.height, width=data.width
             )
+
             for index, row in df.iterrows():
                 category_name: str = row["category_name"]
                 if not row["category_name"].startswith("TOOTH"):
