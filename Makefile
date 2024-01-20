@@ -287,12 +287,11 @@ coco-annotator:
 		docker compose up --build --detach
 
 postprocess: --check-COMMON
-postprocess: USE_GT = false
 postprocess: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
 postprocess: SEMSEG_PREDICTION_NAME ?= inference/sem_seg_predictions.json
 postprocess:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--use_gt_as_prediction $(USE_GT) \
+		--nouse_gt_as_prediction \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
 		--semseg_prediction_name $(SEMSEG_PREDICTION_NAME) \
@@ -302,11 +301,10 @@ postprocess:
 		--min_score $(MIN_SCORE)
 
 postprocess-gt: --check-COMMON
-postprocess-gt: USE_GT = true
 postprocess-gt: OUTPUT_PREDICTION_NAME ?= instances_predictions.pth
 postprocess-gt:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--use_gt_as_prediction $(USE_GT) \
+		--use_gt_as_prediction \
 		--input_prediction_name $(PREDICTION_NAME) \
 		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
 		--csv_name $(CSV_NAME) \
