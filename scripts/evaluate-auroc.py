@@ -14,7 +14,7 @@ from app.instance_detection.types import InstanceDetectionV1Category as Category
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("csv_name", "result.csv", "Result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
-flags.DEFINE_string("false_negative_csv_name", None, "Output false negative csv name.")
+flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
 
 FLAGS = flags.FLAGS
 
@@ -82,6 +82,9 @@ def main(_):
         .apply(process_per_tooth)
     )
 
+    evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    evaluation_dir.mkdir(parents=True, exist_ok=True)
+
     _df_fns: list[pd.DataFrame] = []
     for finding in Category:
         df_finding = df.loc[df["finding"].eq(finding.value)]
@@ -117,11 +120,8 @@ def main(_):
         ax.set_ylabel("True Positive Rate")
         ax.set_title(f"ROC curve for finding {finding.value}")
 
-        figure_dir: Path = Path(FLAGS.result_dir, "figures")
-        figure_dir.mkdir(parents=True, exist_ok=True)
-
         fig.tight_layout()
-        fig.savefig(Path(figure_dir, f"{finding.value}.pdf"))
+        fig.savefig(Path(evaluation_dir, f"{finding.value}.pdf"))
 
         _df_fns.append(
             df_finding.loc[(df_finding.label == 1.0) & (df_finding.score == 0.0)]
@@ -130,8 +130,7 @@ def main(_):
         )
 
     df_fn: pd.DataFrame = pd.concat(_df_fns, axis=0, ignore_index=True)
-    if FLAGS.false_negative_csv_name is not None:
-        df_fn.to_csv(Path(FLAGS.result_dir, FLAGS.false_negative_csv_name), index=False)
+    df_fn.to_csv(Path(evaluation_dir, "false-negative.csv"), index=False)
 
 
 if __name__ == "__main__":

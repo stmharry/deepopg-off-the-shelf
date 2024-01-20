@@ -55,6 +55,7 @@ MAX_OBJS ?= 500
 PREDICTION_NAME ?= instances_predictions.pth
 CSV_NAME ?= result.csv
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION_NAME)))
+EVALUATION_DIR ?= evaluation
 CPUS ?= $(shell echo $$(( $(shell nproc --all) - 2 )))
 
 ifeq ($(CUDA_VISIBLE_DEVICES),)
@@ -347,4 +348,4 @@ evaluate-auroc:
 		--result_dir $(RESULT_DIR) \
 		--csv_name $(CSV_NAME) \
 		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
-		--false_negative_csv_name false-negative.csv
+		--evaluation_dir $(EVALUATION_DIR)
