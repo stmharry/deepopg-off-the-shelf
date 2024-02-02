@@ -313,15 +313,15 @@ postprocess-gt:
 --visualize: --check-COMMON
 --visualize:
 	$(PY) scripts/visualize.py $(COMMON_ARGS) \
-		--use_gt_as_prediction $(USE_GT) \
+		$(USE_GT) \
 		--prediction_name $(PREDICTION_NAME) \
 		--visualize_dir $(VISUALIZE_DIR) \
 		--visualize_subset
 
-visualize: USE_GT = false
+visualize: USE_GT = --nouse_gt_as_prediction
 visualize: --visualize
 
-visualize-gt: USE_GT = true
+visualize-gt: USE_GT = --use_gt_as_prediction
 visualize-gt: --visualize
 
 --visualize-semseg: --check-COMMON
