@@ -22,7 +22,7 @@ from app.semantic_segmentation.schemas import (
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
 )
-from app.utils import calculate_iom_bbox, calculate_iom_mask
+from app.utils import calculate_iom_bbox, calculate_iom_mask, calculate_iou_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -291,21 +291,19 @@ def main(_):
 
                 assert semseg_metadata is not None
 
-                s_overlap: pd.Series = pd.Series(
-                    (
-                        np.bincount(
-                            semseg_mask[row["mask"]],
-                            minlength=len(semseg_metadata.stuff_classes),
-                        )
-                        / np.sum(row["mask"])
-                    ),
-                    index=semseg_metadata.stuff_classes,
-                )
-                category_name: str = s_overlap.loc[
-                    s_overlap.index != "BACKGROUND"
-                ].idxmax()
+                iou_by_class: dict[str, float] = {}
+                for num, stuff_class in enumerate(semseg_metadata.stuff_classes):
+                    iou: float = calculate_iou_mask(
+                        row["mask"],
+                        semseg_mask == num,
+                    )
+                    iou_by_class[stuff_class] = iou
+
+                s_iou: pd.Series = pd.Series(iou_by_class)
+
+                category_name: str = s_iou.loc[s_iou.index != "BACKGROUND"].idxmax()
                 category_id: int = metadata.thing_classes.index(category_name)
-                score: float = s_overlap.loc[category_name]
+                score: float = s_iou.loc[category_name]
 
                 if category_id != row["category_id"]:
                     logging.info(
@@ -313,8 +311,8 @@ def main(_):
                         f"changed to {category_id} ({category_name}) with score {score:.3f}."
                     )
 
-                df.loc[index, "category_id"] = category_id
-                df.loc[index, "score"] = score
+                df.at[index, "category_id"] = category_id
+                df.at[index, "score"] = score
 
         # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
         # detection score in the original instance list and subtract it from one
@@ -365,6 +363,8 @@ def main(_):
             assignment_penalty=FLAGS.min_score / 2,
         )
         df = df.loc[assignment]
+        iom = iom[assignment][:, assignment]
+
         logging.info(f"Found {len(df)} instances after quadratic assignment.")
 
         instances = parse_obj_as(
@@ -527,8 +527,19 @@ def main(_):
                     if dist[idx] < FLAGS.tooth_distance:
                         row_tooth = df_full_tooth.loc[idx]
 
-            # for other findings
-            else:
+            elif row_nontooth["category_name"] in [
+                "ROOT_REMNANTS",
+                "CROWN_BRIDGE",
+                "FILLING",
+                "ENDO",
+                "CARIES",
+            ]:
+                _iom = iom[df.index.get_loc(row_nontooth.name), df["is_tooth"]]
+
+                if num_tooth and _iom.max() > 0.001:
+                    row_tooth = df_tooth.iloc[np.argmax(_iom)]
+
+            if row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
                 distance_to_non_tooth_instance = cast(
                     np.ndarray,
                     scipy.ndimage.distance_transform_cdt(

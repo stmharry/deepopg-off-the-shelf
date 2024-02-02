@@ -47,6 +47,15 @@ def calculate_iom_mask(
     return (np.sum(intersection) + epsilon2) / (min(area_1, area_2) + epsilon1)
 
 
+def calculate_iou_mask(
+    mask1: np.ndarray, mask2: np.ndarray, epsilon1: float = 1e-3, epsilon2: float = 1e-6
+) -> float:
+    intersection: np.ndarray = np.logical_and(mask1, mask2)
+    union: np.ndarray = np.logical_or(mask1, mask2)
+
+    return (np.sum(intersection) + epsilon2) / (np.sum(union) + epsilon1)
+
+
 def read_image(image_path: Path) -> np.ndarray:
     image: np.ndarray = iio.imread(image_path)
     if image.ndim == 2:
