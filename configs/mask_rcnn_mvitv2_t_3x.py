@@ -6,7 +6,6 @@ from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import constants  # noqa
 from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import model  # noqa
 from projects.MViTv2.configs.mask_rcnn_mvitv2_t_3x import optimizer, train
 
-from detectron2 import model_zoo  # type: ignore
 from detectron2.config import LazyCall as L
 from detectron2.data import get_detection_dataset_dicts
 from detectron2.data import transforms as T
@@ -18,25 +17,13 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functio
 
 dataloader.train.dataset = L(get_detection_dataset_dicts)(names="pano_train")
 dataloader.train.mapper.augmentations = [
-    L(T.RandomApply)(
-        tfm_or_aug=L(T.AugmentationList)(
-            augs=[
-                L(T.ResizeShortestEdge)(
-                    short_edge_length=[400, 500, 600], sample_style="choice"
-                ),
-                L(T.RandomCrop)(crop_type="absolute_range", crop_size=(384, 600)),
-            ]
-        ),
-        prob=0.5,
-    ),
-    L(T.ResizeShortestEdge)(
-        short_edge_length=(480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800),
-        sample_style="choice",
-        max_size=1333,
-    ),
+    L(T.RandomContrast)(intensity_min=0.7, intensity_max=1.3),
+    L(T.RandomBrightness)(intensity_min=0.7, intensity_max=1.3),
+    L(T.ResizeShortestEdge)(short_edge_length=(768, 1280), sample_style="range"),
+    L(T.RandomCrop)(crop_size=(384, 640), crop_type="absolute_range"),
 ]
 dataloader.train.mapper.instance_mask_format = "bitmask"
-dataloader.train.total_batch_size = 1
+dataloader.train.total_batch_size = 4
 dataloader.train.num_workers = 12
 
 dataloader.test.dataset = L(get_detection_dataset_dicts)(names="pano_eval")
@@ -44,33 +31,24 @@ dataloader.test.mapper.instance_mask_format = "${...train.mapper.instance_mask_f
 
 # train
 
-train.max_iter = 67500
-train.eval_period = 1000
+train.max_iter = 100_000
+train.eval_period = 10_000
 train.log_period = 20
 
 train.checkpointer.max_to_keep = 100
-train.checkpointer.period = 1000
+train.checkpointer.period = 10_000
 
 # optimizer
 
-optimizer = model_zoo.get_config("common/optim.py").AdamW
-optimizer.params.overrides = {
-    "pos_embed": {"weight_decay": 0.0},
-    "rel_pos_h": {"weight_decay": 0.0},
-    "rel_pos_w": {"weight_decay": 0.0},
-}
-optimizer.lr = 1.6e-4
+optimizer.lr = 1e-3
 
 # lr_multiplier
 
 lr_multiplier = L(WarmupParamScheduler)(
     scheduler=L(MultiStepParamScheduler)(
         values=[1.0, 0.1, 0.01],
-        milestones=[52500, 62500, 67500],
+        milestones=[70_000, 80_000, 90_000],
     ),
     warmup_length=250 / train.max_iter,
     warmup_factor=0.001,
 )
-
-# from omegaconf import OmegaConf; d = OmegaConf.to_container(cfg)
-# pp d
