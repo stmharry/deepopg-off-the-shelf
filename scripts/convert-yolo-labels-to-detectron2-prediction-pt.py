@@ -4,7 +4,7 @@ import numpy as np
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import InstanceDetectionV1, InstanceDetectionV1NTUH
+from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import (
     InstanceDetectionData,
     InstanceDetectionPrediction,
@@ -24,11 +24,12 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    if FLAGS.dataset_name == "pano_all":
-        InstanceDetectionV1.register(root_dir=FLAGS.data_dir)
-    elif FLAGS.dataset_name == "pano_ntuh":
-        InstanceDetectionV1NTUH.register(root_dir=FLAGS.data_dir)
-    else:
+    logging.set_verbosity(logging.INFO)
+
+    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
+    )
+    if data_driver is None:
         raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
 
     dataset: list[InstanceDetectionData] = parse_obj_as(
