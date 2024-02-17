@@ -273,7 +273,7 @@ test-yolo:
 		save=True \
 		save_txt=True \
 		save_conf=True \
-		save_crop=True
+		save_crop=False
 
 ### overall targets
 
@@ -290,6 +290,17 @@ postprocess: --check-COMMON
 postprocess: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
 postprocess: SEMSEG_PREDICTION_NAME ?= inference/sem_seg_predictions.json
 postprocess:
+	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
+		--nouse_gt_as_prediction \
+		--input_prediction_name $(PREDICTION_NAME) \
+		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
+		--csv_name $(CSV_NAME) \
+		--min_score $(MIN_SCORE)
+
+postprocess-with-semseg: --check-COMMON
+postprocess-with-semseg: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
+postprocess-with-semseg: SEMSEG_PREDICTION_NAME ?= inference/sem_seg_predictions.json
+postprocess-with-semseg:
 	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
 		--nouse_gt_as_prediction \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
