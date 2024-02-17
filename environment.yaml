@@ -314,4 +314,3 @@ dependencies:
   - zipp=3.17.0=pyhd8ed1ab_0
   - zlib=1.2.13=hd590300_5
   - zstd=1.5.5=hc292b87_0
-prefix: /home/chia/anaconda3/envs/deepopg
