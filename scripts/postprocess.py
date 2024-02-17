@@ -435,11 +435,6 @@ def main(_):
                 "ENDO",
                 "CARIES",
             ]:
-                # _iom = iom[df.index.get_loc(row_nontooth.name), df["is_tooth"]]
-                #
-                # if num_tooth and _iom.max() > 0.001:
-                #     row_tooth = df_tooth.iloc[np.argmax(_iom)]
-
                 iom: np.ndarray = np.zeros((num_tooth,), dtype=np.float_)
                 for i in range(num_tooth):
                     _row_tooth = df_tooth.iloc[i]
