@@ -3,7 +3,6 @@ from typing import Any, cast
 
 import numpy as np
 import pandas as pd
-import pyomo.environ as pyo
 import scipy.interpolate
 import scipy.ndimage
 from absl import app, flags, logging
@@ -18,11 +17,7 @@ from app.instance_detection.schemas import (
 )
 from app.masks import Mask
 from app.semantic_segmentation.datasets import SemanticSegmentation
-from app.semantic_segmentation.schemas import (
-    SemanticSegmentationPrediction,
-    SemanticSegmentationPredictionList,
-)
-from app.utils import calculate_iom_bbox, calculate_iom_mask, calculate_iou_mask
+from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -63,108 +58,213 @@ flags.DEFINE_integer(
 FLAGS = flags.FLAGS
 
 
-def do_assignment(
-    reward: np.ndarray,
-    quadratic_penalty: np.ndarray,
-    penalty_group_ids: list[int | None] | None = None,
-    unique_group_ids: list[int | None] | None = None,
-    assignment_penalty: float = 0.01,
-    epsilon: float = 1e-3,
-) -> np.ndarray:
-    assignment: np.ndarray
+def filter_by_area_and_score(
+    df: pd.DataFrame,
+    min_score: float,
+    min_area: float,
+) -> pd.DataFrame:
+    _df = df.loc[(df["area"] > min_area) & (df["score"] > min_score)]
 
-    num: int = len(reward)
-    if num == 0:
-        assignment = np.zeros(0, dtype=np.bool_)
-        return assignment
+    logging.info(
+        f"Filtering by area and score, reducing instances from {len(df)} -> {len(_df)}"
+    )
+    return _df
 
-    if penalty_group_ids is None:
-        penalty_group_ids = [None] * num
 
-    if unique_group_ids is None:
-        unique_group_ids = [None] * num
+def non_maximum_suppression(
+    df: pd.DataFrame,
+    iom_threshold: float,
+) -> pd.DataFrame:
+    df = df.sort_values("score", ascending=False)
+    df["nms_keep"] = True
+    num_instances: int = len(df)
 
-    assert quadratic_penalty.shape == (num, num)
-    assert penalty_group_ids is not None
-    assert unique_group_ids is not None
+    for i in range(num_instances):
+        row_i = df.iloc[i]
 
-    p: dict[int, float] = {n: reward[n] for n in range(num)}
-    q: dict[tuple[int, int], float] = {
-        (n1, n2): quadratic_penalty[n1, n2] for n1 in range(num) for n2 in range(num)
-    }
+        if not row_i["nms_keep"]:
+            continue
 
-    model: pyo.ConcreteModel = pyo.ConcreteModel("QuadraticAssignment")
-    model.N = pyo.RangeSet(0, num - 1)
-    model.P = pyo.Param(model.N, initialize=p)
-    model.Q = pyo.Param(model.N, model.N, initialize=q)
+        for j in range(i + 1, num_instances):
+            row_j = df.iloc[j]
 
-    model.x = pyo.Var(model.N, domain=pyo.Binary)
-
-    objectives: list[pyo.Expression] = []
-    for n1 in model.N:
-        objectives.append(model.P[n1] * model.x[n1])
-
-        for n2 in model.N:
-            # only deal with upper triangular matrix
-            if n1 > n2:
+            iom_bbox: float = calculate_iom_bbox(row_i["bbox"], row_j["bbox"])
+            if iom_bbox == 0:
                 continue
 
-            penalty_coefficient: float = 0.0
-            if n1 == n2:
-                penalty_coefficient = assignment_penalty
-            elif (
-                penalty_group_ids[n1] is not None
-                and penalty_group_ids[n2] is not None
-                and penalty_group_ids[n1] == penalty_group_ids[n2]
-            ):
-                penalty_coefficient = model.Q[n1, n2]
+            iom_mask: float = calculate_iom_mask(row_i["mask"], row_j["mask"])
+            if iom_mask > iom_threshold:
+                df.at[row_j.name, "nms_keep"] = False
 
-            if penalty_coefficient == 0.0:
-                continue
+    _df = df.loc[df["nms_keep"]].drop(columns=["nms_keep"])
+    logging.info(
+        f"Non-maximum suppression, reducing instances from {len(df)} -> {len(_df)}"
+    )
+    return _df
 
-            objectives.append(-penalty_coefficient * model.x[n1] * model.x[n2])
 
-    constraints: list[pyo.Expression] = []
-    if unique_group_ids is not None:
-        for unique_group_id in list(set(unique_group_ids)):
-            if unique_group_id is None:
-                continue
+def reassign_category_and_score_with_semseg(
+    df: pd.DataFrame,
+    npz_path: Path,
+    metadata: Metadata,
+    semseg_metadata: Metadata,
+) -> pd.DataFrame:
+    # when semseg dataset is passed, we replace the score for teeth with the overlap
+    # between the instance and each tooth class from semseg, instead of using the
+    # class score from instance detection
 
-            constraints.append(
-                sum(
-                    model.x[n]
-                    for n in model.N
-                    if unique_group_ids[n] == unique_group_id
-                )
-                <= 1
+    with np.load(npz_path) as data:
+        # prob.shape == (num_classes, height, width)
+        prob: np.ndarray = data["prob"]
+
+    prob = prob.transpose(1, 2, 0)
+    prob = prob.astype(np.float32) / 65535
+
+    df["prob"] = None
+    for index, row in df.iterrows():
+        row_prob = np.r_["-1,1,0", 0, prob[row["mask"]].mean(axis=0)[1:]]
+        # renormalize, discarding the background class
+        row_prob = row_prob / row_prob.sum()
+
+        df.at[index, "prob"] = row_prob
+
+        semseg_category_id: int = np.argmax(row_prob)
+        score: float = row_prob[semseg_category_id]
+
+        category_name = semseg_metadata.stuff_classes[semseg_category_id]
+        category_id = metadata.thing_classes.index(category_name)
+
+        if category_id == row["category_id"]:
+            logging.info(
+                f"Rescoring instance of category {row['category_name']} with score {row['score']:.4f} "
+                f"to score {score:.4f}."
+            )
+        else:
+            logging.info(
+                f"Relabeling instance of category {row['category_name']} with score {row['score']:.4f} "
+                f"to category {category_name} with score {score:.4f}."
             )
 
-    model.obj = pyo.Objective(expr=sum(objectives), sense=pyo.maximize)
-    if len(constraints) > 0:
-        model.constraints = pyo.ConstraintList()
-        for constraint in constraints:
-            model.constraints.add(constraint)
+        df.at[index, "score"] = score
+        df.at[index, "category_id"] = category_id
 
-    solver = pyo.SolverFactory("ipopt")
-    solver.solve(model)
+    df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
 
-    assignment = np.zeros(num, dtype=np.bool_)
-    has_invalid_value: bool = False
-    for n in model.N:
-        value: float = model.x[n].value
+    return df
 
-        if abs(value - 1.0) < epsilon:
-            assignment[n] = True
-        elif abs(value - 0.0) < epsilon:
-            assignment[n] = False
-        else:
-            has_invalid_value = True
-            assignment[n] = False
 
-    if has_invalid_value:
-        logging.warning("Invalid value detected in assignment.")
+def select_top_instance(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    _df = df.sort_values("score", ascending=False).groupby("category_name").head(1)
+    logging.info(
+        f"Selecting top instance, reducing instances from {len(df)} -> {len(_df)}"
+    )
+    return _df
 
-    return assignment
+
+# def do_assignment(
+#     reward: np.ndarray,
+#     quadratic_penalty: np.ndarray,
+#     penalty_group_ids: list[int | None] | None = None,
+#     unique_group_ids: list[int | None] | None = None,
+#     assignment_penalty: float = 0.01,
+#     epsilon: float = 1e-3,
+# ) -> np.ndarray:
+#     assignment: np.ndarray
+#
+#     num: int = len(reward)
+#     if num == 0:
+#         assignment = np.zeros(0, dtype=np.bool_)
+#         return assignment
+#
+#     if penalty_group_ids is None:
+#         penalty_group_ids = [None] * num
+#
+#     if unique_group_ids is None:
+#         unique_group_ids = [None] * num
+#
+#     assert quadratic_penalty.shape == (num, num)
+#     assert penalty_group_ids is not None
+#     assert unique_group_ids is not None
+#
+#     p: dict[int, float] = {n: reward[n] for n in range(num)}
+#     q: dict[tuple[int, int], float] = {
+#         (n1, n2): quadratic_penalty[n1, n2] for n1 in range(num) for n2 in range(num)
+#     }
+#
+#     model: pyo.ConcreteModel = pyo.ConcreteModel("QuadraticAssignment")
+#     model.N = pyo.RangeSet(0, num - 1)
+#     model.P = pyo.Param(model.N, initialize=p)
+#     model.Q = pyo.Param(model.N, model.N, initialize=q)
+#
+#     model.x = pyo.Var(model.N, domain=pyo.Binary)
+#
+#     objectives: list[pyo.Expression] = []
+#     for n1 in model.N:
+#         objectives.append(model.P[n1] * model.x[n1])
+#
+#         for n2 in model.N:
+#             # only deal with upper triangular matrix
+#             if n1 > n2:
+#                 continue
+#
+#             penalty_coefficient: float = 0.0
+#             if n1 == n2:
+#                 penalty_coefficient = assignment_penalty
+#             elif (
+#                 penalty_group_ids[n1] is not None
+#                 and penalty_group_ids[n2] is not None
+#                 and penalty_group_ids[n1] == penalty_group_ids[n2]
+#             ):
+#                 penalty_coefficient = model.Q[n1, n2]
+#
+#             if penalty_coefficient == 0.0:
+#                 continue
+#
+#             objectives.append(-penalty_coefficient * model.x[n1] * model.x[n2])
+#
+#     constraints: list[pyo.Expression] = []
+#     if unique_group_ids is not None:
+#         for unique_group_id in list(set(unique_group_ids)):
+#             if unique_group_id is None:
+#                 continue
+#
+#             constraints.append(
+#                 sum(
+#                     model.x[n]
+#                     for n in model.N
+#                     if unique_group_ids[n] == unique_group_id
+#                 )
+#                 <= 1
+#             )
+#
+#     model.obj = pyo.Objective(expr=sum(objectives), sense=pyo.maximize)
+#     if len(constraints) > 0:
+#         model.constraints = pyo.ConstraintList()
+#         for constraint in constraints:
+#             model.constraints.add(constraint)
+#
+#     solver = pyo.SolverFactory("ipopt")
+#     solver.solve(model)
+#
+#     assignment = np.zeros(num, dtype=np.bool_)
+#     has_invalid_value: bool = False
+#     for n in model.N:
+#         value: float = model.x[n].value
+#
+#         if abs(value - 1.0) < epsilon:
+#             assignment[n] = True
+#         elif abs(value - 0.0) < epsilon:
+#             assignment[n] = False
+#         else:
+#             has_invalid_value = True
+#             assignment[n] = False
+#
+#     if has_invalid_value:
+#         logging.warning("Invalid value detected in assignment.")
+#
+#     return assignment
 
 
 def main(_):
@@ -203,8 +303,7 @@ def main(_):
 
     semseg_data_driver: SemanticSegmentation | None = None
     semseg_metadata: Metadata | None = None
-    semseg_predictions: list[SemanticSegmentationPrediction] = []
-    semseg_id_to_prediction: dict[str | int | None, SemanticSegmentationPrediction] = {}
+    # semseg_predictions: list[SemanticSegmentationPrediction] = []
     if FLAGS.semseg_dataset_name is not None:
         semseg_data_driver = SemanticSegmentation.register_by_name(
             dataset_name=FLAGS.semseg_dataset_name, root_dir=FLAGS.data_dir
@@ -214,19 +313,19 @@ def main(_):
 
         semseg_metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
 
-        semseg_predictions = (
-            SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
-                Path(FLAGS.semseg_result_dir, FLAGS.semseg_prediction_name),
-                file_name_to_image_id={
-                    Path(data["file_name"]): data["image_id"]
-                    for data in data_driver.dataset
-                },
-            )
-        )
+        # semseg_predictions = (
+        #     SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
+        #         Path(FLAGS.semseg_result_dir, FLAGS.semseg_prediction_name),
+        #         file_name_to_image_id={
+        #             Path(data["file_name"]): data["image_id"]
+        #             for data in data_driver.dataset
+        #         },
+        #     )
+        # )
 
-        semseg_id_to_prediction = {
-            prediction.image_id: prediction for prediction in semseg_predictions
-        }
+        # semseg_id_to_prediction = {
+        #     prediction.image_id: prediction for prediction in semseg_predictions
+        # }
 
     output_predictions: list[InstanceDetectionPrediction] = []
     row_results: list[dict[str, Any]] = []
@@ -244,128 +343,91 @@ def main(_):
         df: pd.DataFrame = pd.DataFrame.from_records(
             [instance.dict() for instance in instances]
         )
-
         if len(df) == 0:
             continue
 
-        df["area"] = df["segmentation"].apply(
-            lambda segmentation: Mask.from_obj(
-                segmentation, width=data.width, height=data.height
-            ).area
-        )
-        df = df.loc[df.area > 0]
-        logging.info(f"Found {len(df)} instances.")
+        logging.info(f"Original instance count: {len(df)}.")
 
-        if len(df) == 0:
-            continue
+        # basic filtering
 
-        df = df.loc[df.score > FLAGS.min_score]
-        logging.info(f"Found {len(df)} instances with score > {FLAGS.min_score}.")
-
-        if len(df) == 0:
-            continue
-
-        df["mask"] = df["segmentation"].apply(
+        df["mask"] = df["segmentation"].map(
             lambda segmentation: Mask.from_obj(
                 segmentation, width=data.width, height=data.height
             ).bitmask
         )
-        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
+        df["area"] = df["mask"].map(np.sum)
 
-        if FLAGS.semseg_dataset_name is not None:
-            # when semseg dataset is passed, we replace the score for teeth with the overlap
-            # between the instance and each tooth class from semseg, instead of using the
-            # class score from instance detection
+        df = filter_by_area_and_score(df, min_score=FLAGS.min_score, min_area=0.0)
 
-            semseg_prediction: SemanticSegmentationPrediction = semseg_id_to_prediction[
-                data.image_id
-            ]
-            semseg_mask: np.ndarray = semseg_prediction.to_semseg_mask(
-                height=data.height, width=data.width
-            )
-
-            for index, row in df.iterrows():
-                category_name: str = row["category_name"]
-                if not row["category_name"].startswith("TOOTH"):
-                    continue
-
-                assert semseg_metadata is not None
-
-                iou_by_class: dict[str, float] = {}
-                for num, stuff_class in enumerate(semseg_metadata.stuff_classes):
-                    iou: float = calculate_iou_mask(
-                        row["mask"],
-                        semseg_mask == num,
-                    )
-                    iou_by_class[stuff_class] = iou
-
-                s_iou: pd.Series = pd.Series(iou_by_class)
-
-                category_name: str = s_iou.loc[s_iou.index != "BACKGROUND"].idxmax()
-                category_id: int = metadata.thing_classes.index(category_name)
-                score: float = s_iou.loc[category_name]
-
-                if category_id != row["category_id"]:
-                    logging.info(
-                        f"Category id {row['category_id']} ({row['category_name']}) with score {row['score']:.3f} "
-                        f"changed to {category_id} ({category_name}) with score {score:.3f}."
-                    )
-
-                df.at[index, "category_id"] = category_id
-                df.at[index, "score"] = score
-
-        # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
-        # detection score in the original instance list and subtract it from one
-        missingness: pd.Series = np.maximum(  # type: ignore
-            0, 1 - df.groupby("category_id").score.max()
-        )
+        if len(df) == 0:
+            continue
 
         df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
         df["is_tooth"] = df["category_name"].str.startswith("TOOTH")
+
+        if FLAGS.semseg_dataset_name is not None:
+            df_tooth = df.loc[df["is_tooth"]]
+            df_nontooth = df.loc[~df["is_tooth"]]
+
+            # non-maximum supression for tooth classes
+            df_tooth = non_maximum_suppression(df_tooth, iom_threshold=0.7)
+            df_tooth = reassign_category_and_score_with_semseg(
+                df_tooth,
+                npz_path=Path(
+                    FLAGS.semseg_result_dir, "inference", f"{data.file_name.stem}.npz"
+                ),
+                metadata=metadata,
+                semseg_metadata=semseg_metadata,
+            )
+            df_tooth = select_top_instance(df_tooth)
+
+            df = pd.concat([df_tooth, df_nontooth], axis=0)
+
         df["fdi"] = pd.Series([None] * len(df), index=df.index).mask(
             df["is_tooth"], other=df["category_name"].str.split("_").str[-1]
         )
-        num_instances: int = len(df)
+
+        # num_instances: int = len(df)
 
         # instance filtering
 
-        df["penalty_group_id"] = (
-            pd.Series(0, index=df.index, dtype=int)
-            .mask(df["is_tooth"], other=1)
-            .mask(df["category_name"] == "ROOT_REMNANTS", other=2)
-        )
-        df["unique_group_id"] = pd.Series(
-            [None] * len(df), index=df.index, dtype=object
-        ).mask(df["is_tooth"], other=df["category_id"])
+        # df["penalty_group_id"] = (
+        #     pd.Series(0, index=df.index, dtype=int)
+        #     .mask(df["is_tooth"], other=1)
+        #     .mask(df["category_name"] == "ROOT_REMNANTS", other=2)
+        # )
+        # df["unique_group_id"] = pd.Series(
+        #     [None] * len(df), index=df.index, dtype=object
+        # ).mask(df["is_tooth"], other=df["category_id"])
 
-        iom: np.ndarray = np.eye(num_instances)
-        iom_bbox: float
-        iom_mask: float
-        for i in range(num_instances):
-            for j in range(num_instances):
-                if i >= j:
-                    continue
+        # iom: np.ndarray = np.eye(num_instances)
+        # iom_bbox: float
+        # iom_mask: float
+        # for i in range(num_instances):
+        #     for j in range(num_instances):
+        #         if i >= j:
+        #             continue
+        #
+        #         iom_bbox = calculate_iom_bbox(df.iloc[i]["bbox"], df.iloc[j]["bbox"])
+        #         if iom_bbox == 0:
+        #             continue
+        #
+        #         iom_mask = calculate_iom_mask(df.iloc[i]["mask"], df.iloc[j]["mask"])
+        #         logging.info(f"iom_mask of instances {i} and {j} is {iom_mask}.")
+        #
+        #         iom[i, j] = iom[j, i] = iom_mask
 
-                iom_bbox = calculate_iom_bbox(df.iloc[i]["bbox"], df.iloc[j]["bbox"])
-                if iom_bbox == 0:
-                    continue
-
-                iom_mask = calculate_iom_mask(df.iloc[i]["mask"], df.iloc[j]["mask"])
-                logging.debug(f"IoM of instances {i} and {j} is {iom_mask}.")
-
-                iom[i, j] = iom[j, i] = iom_mask
-
-        assignment: np.ndarray = do_assignment(
-            reward=df["score"].to_numpy(),
-            quadratic_penalty=iom,
-            penalty_group_ids=df["penalty_group_id"].tolist(),
-            unique_group_ids=df["unique_group_id"].tolist(),
-            assignment_penalty=FLAGS.min_score / 2,
-        )
-        df = df.loc[assignment]
-        iom = iom[assignment][:, assignment]
-
-        logging.info(f"Found {len(df)} instances after quadratic assignment.")
+        # assignment: np.ndarray = do_assignment(
+        #     reward=df["score"].to_numpy(),
+        #     quadratic_penalty=iom,
+        #     penalty_group_ids=df["penalty_group_id"].tolist(),
+        #     unique_group_ids=df["unique_group_id"].tolist(),
+        #     assignment_penalty=FLAGS.min_score / 2,
+        # )
+        # df = df.loc[assignment]
+        # iom = iom[assignment][:, assignment]
+        #
+        # logging.info(f"Found {len(df)} instances after quadratic assignment.")
 
         instances = parse_obj_as(
             list[InstanceDetectionPredictionInstance], df.to_dict(orient="records")
@@ -534,10 +596,33 @@ def main(_):
                 "ENDO",
                 "CARIES",
             ]:
-                _iom = iom[df.index.get_loc(row_nontooth.name), df["is_tooth"]]
+                # _iom = iom[df.index.get_loc(row_nontooth.name), df["is_tooth"]]
+                #
+                # if num_tooth and _iom.max() > 0.001:
+                #     row_tooth = df_tooth.iloc[np.argmax(_iom)]
 
-                if num_tooth and _iom.max() > 0.001:
-                    row_tooth = df_tooth.iloc[np.argmax(_iom)]
+                iom: np.ndarray = np.zeros((num_tooth,), dtype=np.float_)
+                for i in range(num_tooth):
+                    _row_tooth = df_tooth.iloc[i]
+
+                    iom_bbox = calculate_iom_bbox(
+                        row_nontooth["bbox"], _row_tooth["bbox"]
+                    )
+                    if iom_bbox == 0:
+                        continue
+
+                    iom_mask = calculate_iom_mask(
+                        row_nontooth["mask"],
+                        _row_tooth["mask"],
+                        bbox1=row_nontooth["bbox"],
+                        bbox2=_row_tooth["bbox"],
+                    )
+                    logging.debug(f"iom_mask between {i} and {j} is {iom_mask}")
+
+                    iom[i] = iom_mask
+
+                if num_tooth:
+                    row_tooth = df_tooth.iloc[np.argmax(iom)]
 
             if row_nontooth["category_name"] == "PERIAPICAL_RADIOLUCENT":
                 distance_to_non_tooth_instance = cast(
@@ -549,11 +634,11 @@ def main(_):
 
                 dist = np.zeros((num_tooth,), dtype=np.float_)
                 for i in range(num_tooth):
-                    row_tooth = df_tooth.iloc[i]
+                    _row_tooth = df_tooth.iloc[i]
 
                     dist[i] = scipy.ndimage.minimum(
                         distance_to_non_tooth_instance,
-                        labels=row_tooth["mask"][all_instances_slice],
+                        labels=_row_tooth["mask"][all_instances_slice],
                     )
 
                 if num_tooth:
@@ -572,6 +657,12 @@ def main(_):
                     "score": row_nontooth["score"],
                 }
             )
+
+        # we have to find a way to "assign" a score for `MISSING`, so we find the max raw
+        # detection score in the original instance list and subtract it from one
+        missingness: pd.Series = np.maximum(  # type: ignore
+            0, 1 - df.groupby("category_id").score.max()
+        )
 
         # for missing
         for category_id, category in enumerate(metadata.thing_classes):

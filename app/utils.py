@@ -13,7 +13,7 @@ def uns_to_fdi(uns: int) -> int:
 
 
 def calculate_iom_bbox(
-    bbox1: list[int], bbox2: list[int], epsilon1: float = 1e-3, epsilon2: float = 1e-6
+    bbox1: list[int], bbox2: list[int], epsilon: float = 1e-3
 ) -> float:
     x1_1, y1_1, w1, h1 = bbox1
     x1_2, y1_2, w2, h2 = bbox2
@@ -33,27 +33,42 @@ def calculate_iom_bbox(
 
     intersection_area: int = max(0, xB - xA + 1) * max(0, yB - yA + 1)
 
-    return (intersection_area + epsilon2) / (min(area_1, area_2) + epsilon1)
+    return intersection_area / (min(area_1, area_2) + epsilon)
 
 
 def calculate_iom_mask(
-    mask1: np.ndarray, mask2: np.ndarray, epsilon1: float = 1e-3, epsilon2: float = 1e-6
+    mask1: np.ndarray,
+    mask2: np.ndarray,
+    epsilon: float = 1e-3,
+    bbox1: list[int] | None = None,
+    bbox2: list[int] | None = None,
 ) -> float:
+    if (bbox1 is not None) and (bbox2 is not None):
+        x1_1, y1_1, w1, h1 = bbox1
+        x1_2, y1_2, w2, h2 = bbox2
+
+        slices: tuple[slice, slice] = (
+            slice(min(y1_1, y1_2), max(y1_1 + h1, y1_2 + h2) + 1),
+            slice(min(x1_1, x1_2), max(x1_1 + w1, x1_2 + w2) + 1),
+        )
+        mask1 = mask1[slices]
+        mask2 = mask2[slices]
+
     area_1: int = np.sum(mask1)
     area_2: int = np.sum(mask2)
 
     intersection: np.ndarray = np.logical_and(mask1, mask2)
 
-    return (np.sum(intersection) + epsilon2) / (min(area_1, area_2) + epsilon1)
+    return np.sum(intersection) / (min(area_1, area_2) + epsilon)
 
 
 def calculate_iou_mask(
-    mask1: np.ndarray, mask2: np.ndarray, epsilon1: float = 1e-3, epsilon2: float = 1e-6
+    mask1: np.ndarray, mask2: np.ndarray, epsilon: float = 1e-3
 ) -> float:
     intersection: np.ndarray = np.logical_and(mask1, mask2)
     union: np.ndarray = np.logical_or(mask1, mask2)
 
-    return (np.sum(intersection) + epsilon2) / (np.sum(union) + epsilon1)
+    return np.sum(intersection) / (np.sum(union) + epsilon)
 
 
 def read_image(image_path: Path) -> np.ndarray:
