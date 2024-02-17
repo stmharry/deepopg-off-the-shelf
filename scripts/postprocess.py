@@ -163,110 +163,6 @@ def select_top_instance(
     return _df
 
 
-# def do_assignment(
-#     reward: np.ndarray,
-#     quadratic_penalty: np.ndarray,
-#     penalty_group_ids: list[int | None] | None = None,
-#     unique_group_ids: list[int | None] | None = None,
-#     assignment_penalty: float = 0.01,
-#     epsilon: float = 1e-3,
-# ) -> np.ndarray:
-#     assignment: np.ndarray
-#
-#     num: int = len(reward)
-#     if num == 0:
-#         assignment = np.zeros(0, dtype=np.bool_)
-#         return assignment
-#
-#     if penalty_group_ids is None:
-#         penalty_group_ids = [None] * num
-#
-#     if unique_group_ids is None:
-#         unique_group_ids = [None] * num
-#
-#     assert quadratic_penalty.shape == (num, num)
-#     assert penalty_group_ids is not None
-#     assert unique_group_ids is not None
-#
-#     p: dict[int, float] = {n: reward[n] for n in range(num)}
-#     q: dict[tuple[int, int], float] = {
-#         (n1, n2): quadratic_penalty[n1, n2] for n1 in range(num) for n2 in range(num)
-#     }
-#
-#     model: pyo.ConcreteModel = pyo.ConcreteModel("QuadraticAssignment")
-#     model.N = pyo.RangeSet(0, num - 1)
-#     model.P = pyo.Param(model.N, initialize=p)
-#     model.Q = pyo.Param(model.N, model.N, initialize=q)
-#
-#     model.x = pyo.Var(model.N, domain=pyo.Binary)
-#
-#     objectives: list[pyo.Expression] = []
-#     for n1 in model.N:
-#         objectives.append(model.P[n1] * model.x[n1])
-#
-#         for n2 in model.N:
-#             # only deal with upper triangular matrix
-#             if n1 > n2:
-#                 continue
-#
-#             penalty_coefficient: float = 0.0
-#             if n1 == n2:
-#                 penalty_coefficient = assignment_penalty
-#             elif (
-#                 penalty_group_ids[n1] is not None
-#                 and penalty_group_ids[n2] is not None
-#                 and penalty_group_ids[n1] == penalty_group_ids[n2]
-#             ):
-#                 penalty_coefficient = model.Q[n1, n2]
-#
-#             if penalty_coefficient == 0.0:
-#                 continue
-#
-#             objectives.append(-penalty_coefficient * model.x[n1] * model.x[n2])
-#
-#     constraints: list[pyo.Expression] = []
-#     if unique_group_ids is not None:
-#         for unique_group_id in list(set(unique_group_ids)):
-#             if unique_group_id is None:
-#                 continue
-#
-#             constraints.append(
-#                 sum(
-#                     model.x[n]
-#                     for n in model.N
-#                     if unique_group_ids[n] == unique_group_id
-#                 )
-#                 <= 1
-#             )
-#
-#     model.obj = pyo.Objective(expr=sum(objectives), sense=pyo.maximize)
-#     if len(constraints) > 0:
-#         model.constraints = pyo.ConstraintList()
-#         for constraint in constraints:
-#             model.constraints.add(constraint)
-#
-#     solver = pyo.SolverFactory("ipopt")
-#     solver.solve(model)
-#
-#     assignment = np.zeros(num, dtype=np.bool_)
-#     has_invalid_value: bool = False
-#     for n in model.N:
-#         value: float = model.x[n].value
-#
-#         if abs(value - 1.0) < epsilon:
-#             assignment[n] = True
-#         elif abs(value - 0.0) < epsilon:
-#             assignment[n] = False
-#         else:
-#             has_invalid_value = True
-#             assignment[n] = False
-#
-#     if has_invalid_value:
-#         logging.warning("Invalid value detected in assignment.")
-#
-#     return assignment
-
-
 def main(_):
     logging.set_verbosity(logging.INFO)
 
@@ -312,20 +208,6 @@ def main(_):
             raise ValueError(f"Unknown dataset name: {FLAGS.semseg_dataset_name}")
 
         semseg_metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
-
-        # semseg_predictions = (
-        #     SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
-        #         Path(FLAGS.semseg_result_dir, FLAGS.semseg_prediction_name),
-        #         file_name_to_image_id={
-        #             Path(data["file_name"]): data["image_id"]
-        #             for data in data_driver.dataset
-        #         },
-        #     )
-        # )
-
-        # semseg_id_to_prediction = {
-        #     prediction.image_id: prediction for prediction in semseg_predictions
-        # }
 
     output_predictions: list[InstanceDetectionPrediction] = []
     row_results: list[dict[str, Any]] = []
@@ -386,48 +268,6 @@ def main(_):
         df["fdi"] = pd.Series([None] * len(df), index=df.index).mask(
             df["is_tooth"], other=df["category_name"].str.split("_").str[-1]
         )
-
-        # num_instances: int = len(df)
-
-        # instance filtering
-
-        # df["penalty_group_id"] = (
-        #     pd.Series(0, index=df.index, dtype=int)
-        #     .mask(df["is_tooth"], other=1)
-        #     .mask(df["category_name"] == "ROOT_REMNANTS", other=2)
-        # )
-        # df["unique_group_id"] = pd.Series(
-        #     [None] * len(df), index=df.index, dtype=object
-        # ).mask(df["is_tooth"], other=df["category_id"])
-
-        # iom: np.ndarray = np.eye(num_instances)
-        # iom_bbox: float
-        # iom_mask: float
-        # for i in range(num_instances):
-        #     for j in range(num_instances):
-        #         if i >= j:
-        #             continue
-        #
-        #         iom_bbox = calculate_iom_bbox(df.iloc[i]["bbox"], df.iloc[j]["bbox"])
-        #         if iom_bbox == 0:
-        #             continue
-        #
-        #         iom_mask = calculate_iom_mask(df.iloc[i]["mask"], df.iloc[j]["mask"])
-        #         logging.info(f"iom_mask of instances {i} and {j} is {iom_mask}.")
-        #
-        #         iom[i, j] = iom[j, i] = iom_mask
-
-        # assignment: np.ndarray = do_assignment(
-        #     reward=df["score"].to_numpy(),
-        #     quadratic_penalty=iom,
-        #     penalty_group_ids=df["penalty_group_id"].tolist(),
-        #     unique_group_ids=df["unique_group_id"].tolist(),
-        #     assignment_penalty=FLAGS.min_score / 2,
-        # )
-        # df = df.loc[assignment]
-        # iom = iom[assignment][:, assignment]
-        #
-        # logging.info(f"Found {len(df)} instances after quadratic assignment.")
 
         instances = parse_obj_as(
             list[InstanceDetectionPredictionInstance], df.to_dict(orient="records")
