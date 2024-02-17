@@ -199,7 +199,6 @@ def main(_):
 
     semseg_data_driver: SemanticSegmentation | None = None
     semseg_metadata: Metadata | None = None
-    # semseg_predictions: list[SemanticSegmentationPrediction] = []
     if FLAGS.semseg_dataset_name is not None:
         semseg_data_driver = SemanticSegmentation.register_by_name(
             dataset_name=FLAGS.semseg_dataset_name, root_dir=FLAGS.data_dir
