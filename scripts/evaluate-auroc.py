@@ -1,6 +1,7 @@
 import math
 from pathlib import Path
 
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -91,6 +92,11 @@ def main(_):
     evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
+    #
+
+    cmap = cm.get_cmap("tab10")
+    color_mapping = [0, 2, 6, 3, 4, 5, 7, 8]
+
     num_columns: int = FLAGS.plots_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
     fig, axes = plt.subplots(
@@ -104,6 +110,9 @@ def main(_):
     for num, finding in enumerate(Category):
         df_finding = df.loc[df["finding"].eq(finding.value)]
 
+        P = df_finding["label"].eq(1).sum()
+        N = df_finding["label"].eq(0).sum()
+
         logging.info(
             f"For finding {finding.value}, there are {len(df_finding)} samples."
         )
@@ -112,24 +121,45 @@ def main(_):
             y_score=df_finding["score"],
             drop_intermediate=False,
         )
-        roc_auc = sklearn.metrics.roc_auc_score(
+        tpr_std_err: np.ndarray = np.sqrt(tpr * (1 - tpr) / (P + N))
+        tpr_ci_lower: np.ndarray = np.maximum(0, tpr - 1.96 * tpr_std_err)
+        tpr_ci_upper: np.ndarray = np.minimum(1, tpr + 1.96 * tpr_std_err)
+
+        # https://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_the_Area_Under_an_ROC_Curve.pdf
+
+        roc_auc: float = sklearn.metrics.roc_auc_score(
             y_true=df_finding["label"],
             y_score=df_finding["score"],
         )
 
-        #
+        Q1: float = roc_auc / (2 - roc_auc)
+        Q2: float = 2 * roc_auc**2 / (1 + roc_auc)
 
+        auc_std_err: float = np.sqrt(
+            (
+                roc_auc * (1 - roc_auc)
+                + (P - 1) * (Q1 - roc_auc**2)
+                + (N - 1) * (Q2 - roc_auc**2)
+            )
+            / (P * N)
+        )
+        roc_auc_ci_lower: float = np.maximum(0, roc_auc - 1.96 * auc_std_err)
+        roc_auc_ci_upper: float = np.minimum(1, roc_auc + 1.96 * auc_std_err)
+
+        # plotting
+
+        color = cmap(color_mapping[num])
         ax = axes.flatten()[num]
 
-        ax.plot(fpr, tpr)
-        ax.plot([0, 1], [0, 1], linestyle="--", color="k")
-
         ax.grid(visible=True, which="major", linestyle="--", linewidth=0.5)
+        ax.fill_between(fpr, tpr_ci_lower, tpr_ci_upper, color=color, alpha=0.2)
+        ax.plot([0, 1], [0, 1], color="k", linestyle="--", linewidth=1.0)
+        ax.plot(fpr, tpr, color=color)
 
         ax.text(
             1,
             0,
-            f"AUC = {roc_auc:.2%}",
+            f"AUC = {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})",
             verticalalignment="bottom",
             horizontalalignment="right",
             fontsize=10,
