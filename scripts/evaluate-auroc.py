@@ -1,4 +1,5 @@
 import math
+import warnings
 from pathlib import Path
 
 import matplotlib.cm as cm
@@ -42,6 +43,7 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
 
 def main(_):
     logging.set_verbosity(logging.INFO)
+    warnings.simplefilter(action="ignore", category=FutureWarning)
 
     df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
     df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.csv_name))
@@ -113,9 +115,6 @@ def main(_):
         P = df_finding["label"].eq(1).sum()
         N = df_finding["label"].eq(0).sum()
 
-        logging.info(
-            f"For finding {finding.value}, there are {len(df_finding)} samples."
-        )
         fpr, tpr, _ = sklearn.metrics.roc_curve(
             y_true=df_finding["label"],
             y_score=df_finding["score"],
@@ -153,18 +152,8 @@ def main(_):
 
         ax.grid(visible=True, which="major", linestyle="--", linewidth=0.5)
         ax.fill_between(fpr, tpr_ci_lower, tpr_ci_upper, color=color, alpha=0.2)
-        ax.plot([0, 1], [0, 1], color="k", linestyle="--", linewidth=1.0)
-        ax.plot(fpr, tpr, color=color)
-
-        ax.text(
-            1,
-            0,
-            f"AUC = {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})",
-            verticalalignment="bottom",
-            horizontalalignment="right",
-            fontsize=10,
-            bbox=dict(boxstyle="round", facecolor="1.0"),
-        )
+        ax.plot([0, 1], [0, 1], color="k", linestyle="--", linewidth=0.75)
+        ax.plot(fpr, tpr, color=color, linewidth=0.75)
 
         xticks: np.ndarray = np.linspace(0, 1, 6)
         ax.set_xticks(xticks)
@@ -188,12 +177,18 @@ def main(_):
             Category.CARIES: "Caries",
             Category.PERIAPICAL_RADIOLUCENT: "Periapical Radiolucencies",
         }[finding]
-        ax.set_title(title)
+        ax.set_title(f"{title} (AUC = {roc_auc:.1%})")
 
         _df_fns.append(
             df_finding.loc[(df_finding.label == 1.0) & (df_finding.score == 0.0)]
             .drop(columns=["label", "score"])
             .sort_values(["file_name", "fdi"])
+        )
+
+        logging.info(
+            f"Finding {finding.value}\n"
+            f"  - Sample Count: {len(df_finding)}\n"
+            f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})"
         )
 
     fig.tight_layout()
