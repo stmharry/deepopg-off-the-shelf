@@ -1,6 +1,8 @@
+import math
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import sklearn.metrics
 from absl import app, flags, logging
@@ -15,8 +17,12 @@ flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("csv_name", "result.csv", "Result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
+flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
+flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
 
 FLAGS = flags.FLAGS
+
+plt.rcParams["font.family"] = "Arial"
 
 
 def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
@@ -85,14 +91,23 @@ def main(_):
     evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
+    num_columns: int = FLAGS.plots_per_row
+    num_rows: int = math.ceil(len(Category) / num_columns)
+    fig, axes = plt.subplots(
+        nrows=num_rows,
+        ncols=num_columns,
+        sharey=True,
+        figsize=(FLAGS.plot_size * num_columns, FLAGS.plot_size * num_rows),
+    )
+
     _df_fns: list[pd.DataFrame] = []
-    for finding in Category:
+    for num, finding in enumerate(Category):
         df_finding = df.loc[df["finding"].eq(finding.value)]
 
         logging.info(
             f"For finding {finding.value}, there are {len(df_finding)} samples."
         )
-        fpr, tpr, thresholds = sklearn.metrics.roc_curve(
+        fpr, tpr, _ = sklearn.metrics.roc_curve(
             y_true=df_finding["label"],
             y_score=df_finding["score"],
             drop_intermediate=False,
@@ -102,9 +117,14 @@ def main(_):
             y_score=df_finding["score"],
         )
 
-        fig, ax = plt.subplots(figsize=(4, 4))
+        #
+
+        ax = axes.flatten()[num]
+
         ax.plot(fpr, tpr)
         ax.plot([0, 1], [0, 1], linestyle="--", color="k")
+
+        ax.grid(visible=True, which="major", linestyle="--", linewidth=0.5)
 
         ax.text(
             1,
@@ -116,18 +136,38 @@ def main(_):
             bbox=dict(boxstyle="round", facecolor="1.0"),
         )
 
-        ax.set_xlabel("False Positive Rate")
-        ax.set_ylabel("True Positive Rate")
-        ax.set_title(f"ROC curve for finding {finding.value}")
+        xticks: np.ndarray = np.linspace(0, 1, 6)
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(["{:,.0%}".format(v) for v in xticks])
 
-        fig.tight_layout()
-        fig.savefig(Path(evaluation_dir, f"{finding.value}.pdf"))
+        yticks: np.ndarray = np.linspace(0, 1, 6)
+        ax.set_yticks(yticks)
+        ax.set_yticklabels(["{:,.0%}".format(v) for v in yticks])
+
+        ax.set_xlabel("1 - Specificity")
+        if num % num_columns == 0:
+            ax.set_ylabel("Senstivity")
+
+        title: str = {
+            Category.MISSING: "Missing Teeth",
+            Category.IMPLANT: "Implants",
+            Category.ROOT_REMNANTS: "Root Remnants",
+            Category.CROWN_BRIDGE: "Crowns & Bridges",
+            Category.FILLING: "Restorations",
+            Category.ENDO: "Root Fillings",
+            Category.CARIES: "Caries",
+            Category.PERIAPICAL_RADIOLUCENT: "Periapical Radiolucencies",
+        }[finding]
+        ax.set_title(title)
 
         _df_fns.append(
             df_finding.loc[(df_finding.label == 1.0) & (df_finding.score == 0.0)]
             .drop(columns=["label", "score"])
             .sort_values(["file_name", "fdi"])
         )
+
+    fig.tight_layout()
+    fig.savefig(Path(evaluation_dir, f"roc-curve.pdf"))
 
     df_fn: pd.DataFrame = pd.concat(_df_fns, axis=0, ignore_index=True).sort_values(
         ["file_name", "fdi", "finding"]
