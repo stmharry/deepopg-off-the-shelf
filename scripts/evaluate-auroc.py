@@ -129,7 +129,9 @@ def main(_):
             .sort_values(["file_name", "fdi"])
         )
 
-    df_fn: pd.DataFrame = pd.concat(_df_fns, axis=0, ignore_index=True)
+    df_fn: pd.DataFrame = pd.concat(_df_fns, axis=0, ignore_index=True).sort_values(
+        ["file_name", "fdi", "finding"]
+    )
     df_fn.to_csv(Path(evaluation_dir, "false-negative.csv"), index=False)
 
 
