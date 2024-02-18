@@ -47,11 +47,6 @@ flags.DEFINE_string(
 flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_float("min_area", 0, "Object area threshold.")
-flags.DEFINE_integer(
-    "tooth_distance",
-    150,
-    "Implant has to be within this distance to be considered valid.",
-)
 
 FLAGS = flags.FLAGS
 
@@ -187,7 +182,7 @@ def main(_):
         prob = prob.astype(np.float32) / 65535
 
         # if there are overlaps, the probability of each pixel should be weakened becauses there is no non-maximum suppression
-        mask_sum: np.array = np.sum(
+        mask_sum: np.ndarray = np.sum(
             np.stack(df_tooth["mask"], axis=-1), axis=-1, keepdims=True
         )
         prob_modified: np.ndarray = 1 - np.power(1 - prob, 1 / mask_sum)
@@ -204,19 +199,6 @@ def main(_):
                 ignore_background=False,
             )
             df_tooth.at[index, "score_per_tooth"] = share_per_tooth
-
-            # purely for debugging
-            # semseg_category_id: int = np.argmax(share_per_tooth)
-            # category_name = semseg_metadata.stuff_classes[semseg_category_id]
-            # score: float = share_per_tooth[semseg_category_id]
-            #
-            # logging.debug(
-            #     f"Reassigning instance of category {row['category_name']} with score {row['score']:.4f} "
-            #     f"to category {category_name} with score {score:.4f}."
-            # )
-            #
-            # df_tooth.at[index, "score_1"] = score
-            # df_tooth.at[index, "category_name_1"] = category_name
 
         p_tooth: np.ndarray = np.stack(df_tooth["score_per_tooth"], axis=0)
         existence_score: np.ndarray = 1 - np.prod(1 - p_tooth, axis=0)
