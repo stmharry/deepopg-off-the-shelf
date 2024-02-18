@@ -116,7 +116,7 @@ def main(_):
         prediction.image_id: prediction for prediction in predictions
     }
 
-    #
+    # semantic segmentation
 
     semseg_data_driver: SemanticSegmentation | None = (
         SemanticSegmentation.register_by_name(
@@ -126,15 +126,13 @@ def main(_):
     if semseg_data_driver is None:
         raise ValueError(f"Unknown dataset name: {FLAGS.semseg_dataset_name}")
 
-    semseg_metadata: Metadata | None = MetadataCatalog.get(FLAGS.semseg_dataset_name)
-    assert semseg_metadata is not None
+    semseg_metadata: Metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
+
+    #
 
     output_predictions: list[InstanceDetectionPrediction] = []
     row_results: list[dict[str, Any]] = []
     for data in dataset:
-        # if data.file_name.stem != "cate4_0754932_20210719_PX_1_1":
-        #     continue
-
         if data.image_id not in id_to_prediction:
             logging.warning(f"Image id {data.image_id} not found in predictions.")
             continue
