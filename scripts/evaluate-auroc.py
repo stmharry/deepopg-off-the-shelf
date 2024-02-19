@@ -2,7 +2,7 @@ import math
 import warnings
 from pathlib import Path
 
-import matplotlib.cm as cm
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -15,16 +15,41 @@ from app.instance_detection.types import (
 )
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 
+plt.rcParams["font.family"] = "Arial"
+
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("csv_name", "result.csv", "Result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
+flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
 flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
 flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
 
 FLAGS = flags.FLAGS
 
-plt.rcParams["font.family"] = "Arial"
+
+HUMAN_METADATA: dict[str, dict] = {
+    "A": {"color": "blue", "marker": "D", "title": "Expert 1"},
+    "C": {"color": "green", "marker": "s", "title": "Expert 2"},
+    "D": {"color": "red", "marker": "^", "title": "Expert 3"},
+    "E": {"color": "purple", "marker": "v", "title": "Expert 4"},
+}
+
+CMAP = mpl.colormaps.get_cmap("tab10")
+
+CATEGORY_METADATA: dict[Category, dict] = {
+    Category.MISSING: {"color": CMAP(0), "title": "Missing Teeth"},
+    Category.IMPLANT: {"color": CMAP(2), "title": "Implants"},
+    Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Root Remnants"},
+    Category.CROWN_BRIDGE: {"color": CMAP(3), "title": "Crowns & Bridges"},
+    Category.FILLING: {"color": CMAP(4), "title": "Restorations"},
+    Category.ENDO: {"color": CMAP(5), "title": "Root Fillings"},
+    Category.CARIES: {"color": CMAP(7), "title": "Caries"},
+    Category.PERIAPICAL_RADIOLUCENT: {
+        "color": CMAP(8),
+        "title": "Periapical Radiolucencies",
+    },
+}
 
 
 def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
@@ -45,48 +70,71 @@ def main(_):
     logging.set_verbosity(logging.INFO)
     warnings.simplefilter(action="ignore", category=FutureWarning)
 
-    df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
+    # reading the data
+
     df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.csv_name))
+    df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
 
     golden_file_names = set(df_golden["file_name"])
     pred_file_names = set(df_pred["file_name"])
+
+    df_human_by_tag: dict[str, pd.DataFrame] = {}
+    if FLAGS.human_csv_path:
+        for tag in HUMAN_METADATA.keys():
+            df_human: pd.DataFrame = pd.read_csv(Path(FLAGS.human_csv_path.format(tag)))
+            df_human_by_tag[tag] = df_human
+
+            logging.info(
+                f"Human prediction file {tag} has {df_human['file_name'].nunique()} file names."
+            )
+            pred_file_names = pred_file_names.intersection(df_human["file_name"])
 
     if not pred_file_names.issubset(golden_file_names):
         common_file_names: set[str] = pred_file_names.intersection(golden_file_names)
 
         logging.warning(
             f"Only {len(common_file_names)} file names from the prediction file are in the golden file, "
-            f"while there are {len(pred_file_names)} file names in the prediction file."
+            f"while there are {len(pred_file_names)} file names in the prediction files. "
+            f"Setting the prediction file names to the intersection of both."
         )
         pred_file_names = common_file_names
 
     if pred_file_names != golden_file_names:
         logging.warning(
-            f"We only have {len(pred_file_names)} file names in the prediction file, "
+            f"We only have {len(pred_file_names)} file names in the prediction files, "
             f"but {len(golden_file_names)} file names in the golden file."
         )
 
+    # assemble the resulting data
+
     fdis = [quadrant * 10 + tooth for quadrant in range(1, 5) for tooth in range(1, 9)]
     findings = [category.value for category in Category]
+
+    index_names = ["file_name", "fdi", "finding"]
     s_index = pd.MultiIndex.from_product(
-        [pred_file_names, fdis, findings], names=["file_name", "fdi", "finding"]
+        [pred_file_names, fdis, findings], names=index_names
     )
 
     df = (
-        pd.merge(
-            # label-based -> category-based
-            df_golden.assign(label=1),
-            df_pred,
-            on=["file_name", "fdi", "finding"],
-            how="outer",
+        pd.DataFrame(index=s_index)
+        .join(
+            df_golden.set_index(index_names)
+            .assign(label=1)
+            .reindex(index=s_index, fill_value=0)
         )
-        .set_index(["file_name", "fdi", "finding"])
-        # ensure all teeth are present
-        .reindex(index=s_index)
-        # non-labeled scores are 0.0
-        .fillna(0)
-        .reset_index()
-        # now each tooth will be categorized into 2 groups: missing and non-missing, for evaluation
+        .join(df_pred.set_index(index_names).reindex(index=s_index, fill_value=0.0))
+    )
+    for tag, df_human in df_human_by_tag.items():
+        df = df.join(
+            df_human.set_index(index_names)
+            .assign(score=1.0)
+            .reindex(index=s_index, fill_value=0.0),
+            rsuffix=f"_human_{tag}",
+        )
+
+    # now each tooth will be categorized into 2 groups: missing and non-missing, for evaluation
+    df = (
+        df.reset_index()
         .groupby(["file_name", "fdi"], group_keys=False)
         .apply(process_per_tooth)
     )
@@ -95,9 +143,6 @@ def main(_):
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
     #
-
-    cmap = cm.get_cmap("tab10")
-    color_mapping = [0, 2, 6, 3, 4, 5, 7, 8]
 
     num_columns: int = FLAGS.plots_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
@@ -110,6 +155,7 @@ def main(_):
 
     _df_fns: list[pd.DataFrame] = []
     for num, finding in enumerate(Category):
+        metadata = CATEGORY_METADATA[finding]
         df_finding = df.loc[df["finding"].eq(finding.value)]
 
         P = df_finding["label"].eq(1).sum()
@@ -120,13 +166,13 @@ def main(_):
             y_score=df_finding["score"],
             drop_intermediate=False,
         )
-        tpr_std_err: np.ndarray = np.sqrt(tpr * (1 - tpr) / (P + N))
+        tpr_std_err: np.ndarray = np.sqrt(tpr * (1 - tpr) / P)
         tpr_ci_lower: np.ndarray = np.maximum(0, tpr - 1.96 * tpr_std_err)
         tpr_ci_upper: np.ndarray = np.minimum(1, tpr + 1.96 * tpr_std_err)
 
         # https://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_the_Area_Under_an_ROC_Curve.pdf
 
-        roc_auc: float = sklearn.metrics.roc_auc_score(
+        roc_auc: float = sklearn.metrics.roc_auc_score(  # type: ignore
             y_true=df_finding["label"],
             y_score=df_finding["score"],
         )
@@ -145,15 +191,66 @@ def main(_):
         roc_auc_ci_lower: float = np.maximum(0, roc_auc - 1.96 * auc_std_err)
         roc_auc_ci_upper: float = np.minimum(1, roc_auc + 1.96 * auc_std_err)
 
+        report_by_tag: dict[str, dict] = {}
+        for tag, df_human in df_human_by_tag.items():
+            report: dict = sklearn.metrics.classification_report(  # type: ignore
+                y_true=df_finding["label"],
+                y_pred=df_finding[f"score_human_{tag}"],
+                output_dict=True,
+            )
+
+            report_by_tag[tag] = report
+
         # plotting
 
-        color = cmap(color_mapping[num])
         ax = axes.flatten()[num]
 
-        ax.grid(visible=True, which="major", linestyle="--", linewidth=0.5)
-        ax.fill_between(fpr, tpr_ci_lower, tpr_ci_upper, color=color, alpha=0.2)
-        ax.plot([0, 1], [0, 1], color="k", linestyle="--", linewidth=0.75)
-        ax.plot(fpr, tpr, color=color, linewidth=0.75)
+        ax.grid(
+            visible=True,
+            which="major",
+            linestyle="--",
+            linewidth=0.5,
+        )
+        ax.fill_between(
+            fpr,
+            tpr_ci_lower,
+            tpr_ci_upper,
+            color=metadata["color"],
+            alpha=0.2,
+            linewidth=0.0,
+        )
+        ax.plot(
+            [0, 1],
+            [0, 1],
+            color="k",
+            linestyle="--",
+            linewidth=0.75,
+        )
+        ax.plot(
+            fpr,
+            tpr,
+            color=metadata["color"],
+            linewidth=0.75,
+            label="AI System",
+        )
+
+        for tag, report in report_by_tag.items():
+            human_metadata = HUMAN_METADATA[tag]
+
+            ax.plot(
+                1 - report["0"]["recall"],
+                report["1"]["recall"],
+                color=human_metadata["color"],
+                marker=human_metadata["marker"],
+                markersize=2,
+                linewidth=0.0,
+                label=human_metadata["title"],
+            )
+
+        ax.legend(
+            loc="lower right",
+            fontsize="x-small",
+        )
 
         xticks: np.ndarray = np.linspace(0, 1, 6)
         ax.set_xticks(xticks)
@@ -167,17 +264,7 @@ def main(_):
         if num % num_columns == 0:
             ax.set_ylabel("Senstivity")
 
-        title: str = {
-            Category.MISSING: "Missing Teeth",
-            Category.IMPLANT: "Implants",
-            Category.ROOT_REMNANTS: "Root Remnants",
-            Category.CROWN_BRIDGE: "Crowns & Bridges",
-            Category.FILLING: "Restorations",
-            Category.ENDO: "Root Fillings",
-            Category.CARIES: "Caries",
-            Category.PERIAPICAL_RADIOLUCENT: "Periapical Radiolucencies",
-        }[finding]
-        ax.set_title(f"{title} (AUC = {roc_auc:.1%})")
+        ax.set_title(f"{metadata['title']} (AUC = {roc_auc:.1%})")
 
         _df_fns.append(
             df_finding.loc[(df_finding.label == 1.0) & (df_finding.score == 0.0)]
@@ -188,6 +275,8 @@ def main(_):
         logging.info(
             f"Finding {finding.value}\n"
             f"  - Sample Count: {len(df_finding)}\n"
+            f"  - Positive Count: {P}\n"
+            f"  - Negative Count: {N}\n"
             f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})"
         )
 
