@@ -33,7 +33,7 @@ CSV_INDICES: list[str] = ["1", "2", "3", "4"]
 
 HUMAN_TAGS: list[str] = ["A", "C", "D", "E"]
 
-FDI_PATTERN: re.Pattern = re.compile(r"\[(\d+)\]")
+FDI_PATTERN: re.Pattern = re.compile(r"^(\d+)-(\d+)( +)\[(?P<fdi>\d+)\]$")
 
 
 def main(_):
@@ -49,17 +49,17 @@ def main(_):
             logging.info(f"Reading '{finding_filename}' and '{image_filename}'...")
 
             df_finding: pd.DataFrame = pd.read_csv(finding_filename)
-            df_image: pd.DataFrame = pd.read_csv(
-                image_filename, index_col=0, header=None
+            df_image: pd.DataFrame = pd.read_csv(image_filename, header=None)
+            df_image = df_image.set_axis(["prefix", "file_name"], axis=1).set_axis(
+                pd.RangeIndex(start=1, stop=len(df_image) + 1, step=1), axis=0
             )
 
-            if len(df_image.columns) != 1:
+            if len(df_image.columns) != 2:
                 raise ValueError(
-                    f"Multiple columns found in {image_filename}. Expected 1."
+                    f"Wrong number of columns found in {image_filename}. Expected 2."
                 )
 
-            s_image: pd.Series = df_image.squeeze()
-            for index, file_name in enumerate(s_image):
+            for index, row in df_image.iterrows():
                 _df_finding: pd.DataFrame = df_finding.loc[
                     df_finding["Your Number"].eq(tag),
                     df_finding.columns.str.startswith(f"{index}-"),
@@ -75,7 +75,7 @@ def main(_):
                     if pd.isna(findings):
                         continue
 
-                    fdi: int = int(FDI_PATTERN.search(column_name).group(1))  # type: ignore
+                    fdi: int = int(FDI_PATTERN.match(column_name).group("fdi"))  # type: ignore
 
                     for finding in findings.split(","):
                         finding = finding.strip()
@@ -87,11 +87,15 @@ def main(_):
 
                         output_rows.append(
                             {
-                                "file_name": Path(file_name).stem,
+                                "file_name": Path(row["file_name"]).stem,
                                 "fdi": fdi,
                                 "finding": FINDING_MAPPING[finding],
                             }
                         )
+
+                    logging.debug(
+                        f"Processing {row['file_name']} (image #{row['prefix']}) with FDI {fdi} and findings {findings.split(',')}."
+                    )
 
         df_output: pd.DataFrame = pd.DataFrame(output_rows).sort_values(
             ["file_name", "fdi", "finding"]
