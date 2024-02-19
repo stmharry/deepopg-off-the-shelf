@@ -303,8 +303,12 @@ def main(_):
     #
 
     fig: Figure
-    fig = plot_roc_curve(df, human_tags=list(HUMAN_METADATA.keys()))
+    fig = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
     fig.savefig(Path(evaluation_dir, f"roc-curve.pdf"))
+
+    df.sort_values(["finding", "score"], ascending=True).to_csv(
+        Path(evaluation_dir, "evaluation.csv"), index=False
+    )
 
     df_fn: pd.DataFrame = extract_false_negatives(df)
     df_fn.to_csv(Path(evaluation_dir, "false-negative.csv"), index=False)

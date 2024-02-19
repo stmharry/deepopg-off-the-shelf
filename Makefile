@@ -358,3 +358,12 @@ evaluate-auroc:
 		--csv_name $(CSV_NAME) \
 		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
 		--evaluation_dir $(EVALUATION_DIR)
+
+evaluate-auroc-with-human: check-ROOT_DIR
+evaluate-auroc-with-human:
+	$(PY) scripts/evaluate-auroc.py \
+		--result_dir $(RESULT_DIR) \
+		--csv_name $(CSV_NAME) \
+		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
+		--human_csv_path "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
+		--evaluation_dir $(EVALUATION_DIR)
