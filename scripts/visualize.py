@@ -4,7 +4,7 @@ import warnings
 from pathlib import Path
 
 import numpy as np
-import tqdm
+import rich.progress
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -95,6 +95,7 @@ def _visualize_data(
 ) -> None:
     warnings.simplefilter("ignore")
     logging.set_verbosity(logging.WARNING)
+
     return visualize_data(*args)
 
 
@@ -156,7 +157,7 @@ def main(_):
             if data.image_id in id_to_prediction
         ]
         results = pool.imap_unordered(_visualize_data, tasks)
-        for _ in tqdm.tqdm(results, total=len(tasks)):
+        for _ in rich.progress.track(results, total=len(tasks)):
             ...
 
 
