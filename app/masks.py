@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pycocotools.mask
 import ultralytics.data.converter
+from absl import logging
 
 from app.schemas import CocoRLE
 from detectron2.structures import polygons_to_bitmask
@@ -74,7 +75,15 @@ class Mask(object):
     def convert_polygons_to_bitmask(
         cls, polygons: list[list[int]], height: int, width: int
     ) -> npt.NDArray[np.uint8]:
-        bitmask: npt.NDArray[np.uint8] = polygons_to_bitmask(polygons, height, width)
+        bitmask: npt.NDArray[np.uint8]
+        try:
+            bitmask = polygons_to_bitmask(polygons, height, width)
+        except TypeError:
+            logging.warning(
+                "Failed to convert polygons to bitmask. Returning an empty bitmask."
+            )
+            bitmask = np.zeros((height, width), dtype=np.uint8)
+
         return bitmask
 
     @classmethod
