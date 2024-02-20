@@ -114,7 +114,7 @@ class SemanticSegmentation(CocoDataset):
 @dataclasses.dataclass
 class SemanticSegmentationV4(SemanticSegmentation):
     PREFIX: ClassVar[str] = "pano_semseg_v4"
-    SPLITS: ClassVar[list[str]] = ["train", "eval", "debug"]
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "debug"]
 
     @property
     def mask_dir(self) -> Path:

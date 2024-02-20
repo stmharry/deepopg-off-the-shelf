@@ -52,6 +52,7 @@ flags.DEFINE_string(
 flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_float("min_area", 0, "Object area threshold.")
+flags.DEFINE_float("min_iom", 0.3, "Intersection over minimum threshold.")
 flags.DEFINE_boolean("save_predictions", False, "Save predictions.")
 flags.DEFINE_integer("num_workers", 4, "Number of workers.")
 
@@ -179,7 +180,7 @@ def process_data(
 
                 is_tooth: pd.Series = df["category_name"].str.startswith("TOOTH")
                 keep: pd.Series = non_maximum_suppress(
-                    df.loc[is_tooth], iom_threshold=0.3
+                    df.loc[is_tooth], iom_threshold=FLAGS.min_iom
                 )
                 is_finding = is_tooth & keep
 
@@ -193,19 +194,24 @@ def process_data(
             prob_discounted: np.ndarray = 1 - np.power(1 - prob, 1 / discount_factor)
 
             for index, row in df.loc[is_finding].iterrows():
-                share_per_tooth = calculate_mean_prob(
-                    row["mask"],
-                    bbox=row["bbox"],
-                    prob=prob_discounted,
-                    ignore_background=True,
-                )
-
                 match finding:
                     case Category.MISSING:
                         # we do not use objectiveness score for teeth
+                        share_per_tooth = calculate_mean_prob(
+                            row["mask"],
+                            bbox=row["bbox"],
+                            prob=prob_discounted,
+                            ignore_background=False,
+                        )
                         score_per_tooth = share_per_tooth
 
                     case _:
+                        share_per_tooth = calculate_mean_prob(
+                            row["mask"],
+                            bbox=row["bbox"],
+                            prob=prob_discounted,
+                            ignore_background=True,
+                        )
                         score_per_tooth = 1 - np.power(
                             1 - row["score"], share_per_tooth
                         )
@@ -213,7 +219,6 @@ def process_data(
                 df.at[index, "score_per_tooth"] = score_per_tooth
 
             score_per_tooth = np.stack(df.loc[is_finding, "score_per_tooth"], axis=0)
-            # soft or
             finding_score = 1 - np.prod(1 - score_per_tooth, axis=0)
 
         else:
