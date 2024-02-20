@@ -4,6 +4,7 @@ import warnings
 from pathlib import Path
 
 import numpy as np
+import tqdm
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -140,6 +141,8 @@ def main(_):
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
+    #
+
     with mp.Pool(processes=FLAGS.num_workers) as pool:
         tasks = [
             (
@@ -153,8 +156,8 @@ def main(_):
             if data.image_id in id_to_prediction
         ]
         results = pool.imap_unordered(_visualize_data, tasks)
-        for _ in results:
-            pass
+        for _ in tqdm.tqdm(results, total=len(tasks)):
+            ...
 
 
 if __name__ == "__main__":
