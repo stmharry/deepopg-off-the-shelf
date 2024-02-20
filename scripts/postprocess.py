@@ -13,8 +13,10 @@ from app.instance_detection.schemas import (
     InstanceDetectionPredictionInstance,
     InstanceDetectionPredictionList,
 )
+from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.masks import Mask
 from app.semantic_segmentation.datasets import SemanticSegmentation
+from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
@@ -55,13 +57,44 @@ def basic_filter(
     df: pd.DataFrame,
     min_score: float,
     min_area: float,
-) -> pd.DataFrame:
-    _df = df.loc[(df["area"] > min_area) & (df["score"] > min_score)]
+) -> pd.Series:
+    keep: pd.Series = (df["area"] > min_area) & (df["score"] > min_score)
 
     logging.info(
-        f"Filtering by area and score, reducing instances from {len(df)} -> {len(_df)}"
+        f"Filtering by area and score, reducing instances from {len(df)} -> {keep.sum()}"
     )
-    return _df
+    return keep
+
+
+def non_maximum_suppress(
+    df: pd.DataFrame,
+    iom_threshold: float,
+) -> pd.Series:
+    df = df.sort_values("score", ascending=False)
+    num_instances: int = len(df)
+
+    keep: pd.Series = pd.Series(True, index=df.index)
+    for i in range(num_instances):
+        row_i = df.iloc[i]
+
+        if not keep.iloc[i]:
+            continue
+
+        for j in range(i + 1, num_instances):
+            row_j = df.iloc[j]
+
+            iom_bbox: float = calculate_iom_bbox(row_i["bbox"], row_j["bbox"])
+            if iom_bbox == 0:
+                continue
+
+            iom_mask: float = calculate_iom_mask(row_i["mask"], row_j["mask"])
+            if iom_mask > iom_threshold:
+                keep.iloc[j] = False
+
+    logging.info(
+        f"Non-maximum suppression, reducing instances from {len(df)} -> {keep.sum()}"
+    )
+    return keep
 
 
 def calculate_mean_prob(
@@ -157,114 +190,106 @@ def main(_):
             ).bitmask
         )
         df["area"] = df["mask"].map(np.sum)
-        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
-        df["is_tooth"] = df["category_name"].str.startswith("TOOTH")
 
-        #
-
-        df = basic_filter(df, min_score=FLAGS.min_score, min_area=FLAGS.min_area)
+        keep: pd.Series = basic_filter(
+            df, min_score=FLAGS.min_score, min_area=FLAGS.min_area
+        )
+        df = df.loc[keep]
         if len(df) == 0:
             continue
 
-        df_tooth = df.loc[df["is_tooth"]].copy()
-        df_nontooth = df.loc[~df["is_tooth"]].copy()
+        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
+        df["score_per_tooth"] = None
 
         npz_path: Path = Path(
             FLAGS.semseg_result_dir, "inference", f"{data.file_name.stem}.npz"
         )
-        # prob.shape == (num_classes, height, width)
         with np.load(npz_path) as npz:
+            # prob.shape == (num_classes, height, width)
             prob: np.ndarray = npz["prob"]
 
         prob = prob.transpose(1, 2, 0)
         prob = prob.astype(np.float32) / 65535
 
-        # if there are overlaps, the probability of each pixel should be weakened becauses there is no non-maximum suppression
-        mask_sum: np.ndarray = np.sum(
-            np.stack(df_tooth["mask"], axis=-1), axis=-1, keepdims=True
-        )
-        prob_modified: np.ndarray = 1 - np.power(1 - prob, 1 / mask_sum)
+        df_findings: list[pd.DataFrame] = []
+        s_missing: pd.Series | None = None
+        for finding in Category:
+            is_finding: pd.Series
+            match finding:
+                case Category.MISSING:
+                    # for tooth objects, additional nms is applied because in instance detection
+                    # we treat each fdi as a separate class
 
-        df_tooth["score_per_tooth"] = None
-        for index, row in df_tooth.iterrows():
-            if not row["is_tooth"]:
-                continue
+                    is_tooth: pd.Series = df["category_name"].str.startswith("TOOTH")
+                    keep: pd.Series = non_maximum_suppress(
+                        df.loc[is_tooth], iom_threshold=0.5
+                    )
+                    is_finding = is_tooth & keep
 
-            share_per_tooth = calculate_mean_prob(
-                row["mask"],
-                bbox=row["bbox"],
-                prob=prob_modified,
-                ignore_background=False,
-            )
-            df_tooth.at[index, "score_per_tooth"] = share_per_tooth
+                case _:
+                    is_finding = df["category_name"].eq(finding)  # type: ignore
 
-        p_tooth: np.ndarray = np.stack(df_tooth["score_per_tooth"], axis=0)
-        existence_score: np.ndarray = 1 - np.prod(1 - p_tooth, axis=0)
+            finding_score: np.ndarray
+            if is_finding.sum() > 0:
+                mask: np.ndarray = np.stack(df.loc[is_finding, "mask"], axis=-1)
+                discount_factor: np.ndarray = np.sum(mask, axis=-1, keepdims=True)
+                prob_discounted: np.ndarray = 1 - np.power(
+                    1 - prob, 1 / discount_factor
+                )
 
-        s_missing: pd.Series = pd.Series(
-            1 - existence_score, index=semseg_metadata.stuff_classes
-        )
-        for category_name, score in s_missing.items():
-            if category_name == "BACKGROUND":
-                continue
+                for index, row in df.loc[is_finding].iterrows():
+                    share_per_tooth = calculate_mean_prob(
+                        row["mask"],
+                        bbox=row["bbox"],
+                        prob=prob_discounted,
+                        ignore_background=True,
+                    )
 
-            row_results.append(
-                {
-                    "file_name": file_name,
-                    "fdi": category_name.split("_")[-1],
-                    "finding": "MISSING",
-                    "score": score,
-                }
-            )
+                    match finding:
+                        case Category.MISSING:
+                            # we do not use objectiveness score for teeth
+                            score_per_tooth = share_per_tooth
 
-        #
+                        case _:
+                            score_per_tooth = 1 - np.power(
+                                1 - row["score"], share_per_tooth
+                            )
 
-        df_nontooth["score_per_tooth"] = None
-        for index, row in df_nontooth.iterrows():
-            # q_ij <= mean(prob over mask)
-            share_per_tooth = calculate_mean_prob(
-                row["mask"], bbox=row["bbox"], prob=prob, ignore_background=True
-            )
-            # p_ij <= 1 - (1 - p_j) ** q_ij
-            score_per_tooth = 1 - np.power(1 - row["score"], share_per_tooth)
+                    df.at[index, "score_per_tooth"] = score_per_tooth
 
-            df_nontooth.at[index, "score_per_tooth"] = score_per_tooth
+                score_per_tooth = np.stack(
+                    df.loc[is_finding, "score_per_tooth"], axis=0
+                )
+                finding_score = 1 - np.prod(1 - score_per_tooth, axis=0)
 
-        for finding in [
-            "IMPLANT",
-            "ROOT_REMNANTS",
-            "CROWN_BRIDGE",
-            "FILLING",
-            "ENDO",
-            "CARIES",
-            "PERIAPICAL_RADIOLUCENT",
-        ]:
-            df_finding = df_nontooth.loc[df_nontooth["category_name"] == finding]
-            if len(df_finding) == 0:
-                continue
-
-            p_tooth = np.stack(df_finding["score_per_tooth"], axis=0)
-            finding_score: np.ndarray = 1 - np.prod(1 - p_tooth, axis=0)
+            else:
+                finding_score = np.zeros((len(semseg_metadata.stuff_classes),))
 
             s_finding: pd.Series = pd.Series(
                 finding_score, index=semseg_metadata.stuff_classes
             )
+            match finding:
+                case Category.MISSING:
+                    s_finding = 1 - s_finding
+                    s_missing = s_finding
+
+                case Category.CROWN_BRIDGE:
+                    # for CROWN_BRIDGE, we do not assume tooth missing-ness
+                    pass
+
+                case Category.IMPLANT:
+                    # for IMPLANT, we need the tooth to be missing
+                    assert s_missing is not None
+                    s_finding = s_finding * s_missing
+
+                case _:
+                    # for the rest, we need the tooth to be present
+                    assert s_missing is not None
+                    s_finding = s_finding * (1 - s_missing)
+
             for category_name, score in s_finding.items():
                 if category_name == "BACKGROUND":
                     continue
-
-                # for CROWN_BRIDGE, we do not assume tooth missing-ness
-                # for IMPLANT, we need the tooth to be missing
-                # for the rest, we need the tooth to be present
-                match finding:
-                    case "CROWN_BRIDGE":
-                        pass
-
-                    case "IMPLANT":
-                        score = score * s_missing[category_name]
-
-                    case _:
-                        score = score * (1 - s_missing[category_name])
 
                 row_results.append(
                     {
@@ -275,6 +300,9 @@ def main(_):
                     }
                 )
 
+            df_findings.append(df.loc[is_finding])
+
+        df = pd.concat(df_findings, axis=0)
         instances = parse_obj_as(
             list[InstanceDetectionPredictionInstance], df.to_dict(orient="records")
         )
