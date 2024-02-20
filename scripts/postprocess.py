@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import tqdm
+import rich.progress
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -194,19 +194,19 @@ def process_data(
             prob_discounted: np.ndarray = 1 - np.power(1 - prob, 1 / discount_factor)
 
             for index, row in df.loc[is_finding].iterrows():
+                score_per_tooth: np.ndarray
                 match finding:
                     case Category.MISSING:
                         # we do not use objectiveness score for teeth
-                        share_per_tooth = calculate_mean_prob(
+                        score_per_tooth = calculate_mean_prob(
                             row["mask"],
                             bbox=row["bbox"],
                             prob=prob_discounted,
                             ignore_background=False,
                         )
-                        score_per_tooth = share_per_tooth
 
                     case _:
-                        share_per_tooth = calculate_mean_prob(
+                        share_per_tooth: np.ndarray = calculate_mean_prob(
                             row["mask"],
                             bbox=row["bbox"],
                             prob=prob_discounted,
@@ -356,7 +356,7 @@ def main(_):
 
         output_predictions: list[InstanceDetectionPrediction] = []
         df_results: list[pd.DataFrame] = []
-        for result in tqdm.tqdm(results, total=len(tasks)):
+        for result in rich.progress.track(results, total=len(tasks)):
             _output_prediction: InstanceDetectionPrediction | None
             _df_result: pd.DataFrame | None
             _output_prediction, _df_result = result
