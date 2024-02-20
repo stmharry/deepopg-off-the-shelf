@@ -206,24 +206,6 @@ def plot_roc_curve(
     return fig
 
 
-def extract_false_negatives(df: pd.DataFrame) -> pd.DataFrame:
-    _df_fns: list[pd.DataFrame] = []
-    for finding in Category:
-        df_finding = df.loc[df["finding"].eq(finding.value)]
-
-        _df_fns.append(
-            df_finding.loc[(df_finding.label == 1.0) & (df_finding.score == 0.0)].drop(
-                columns=["label", "score"]
-            )
-        )
-
-    df_fn: pd.DataFrame = pd.concat(_df_fns, axis=0, ignore_index=True).sort_values(
-        ["file_name", "fdi", "finding"]
-    )
-
-    return df_fn
-
-
 def main(_):
     logging.set_verbosity(logging.INFO)
     warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -309,9 +291,6 @@ def main(_):
     df.sort_values(["finding", "score"], ascending=True).to_csv(
         Path(evaluation_dir, "evaluation.csv"), index=False
     )
-
-    df_fn: pd.DataFrame = extract_false_negatives(df)
-    df_fn.to_csv(Path(evaluation_dir, "false-negative.csv"), index=False)
 
 
 if __name__ == "__main__":
