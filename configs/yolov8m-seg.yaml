@@ -1,12 +1,17 @@
 model: yolov8m-seg.pt
 epochs: 50
 batch: 1
-imgsz: 1024
+imgsz: 1440
 save_period: 5
+cache: true
 workers: 12
 
-cos_lr: false
 pretrained: true
+rect: true
+cos_lr: true
+close_mosaic: 10
+amp: true
+plots: true
 
 hsv_h: 0.0
 hsv_s: 0.0
@@ -19,3 +24,4 @@ flipud: 0.0
 fliplr: 0.0
 mosaic: 1.0
 mixup: 0.5
+copy_paste: 0.5
