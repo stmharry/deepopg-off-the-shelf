@@ -1,8 +1,11 @@
+import multiprocessing as mp
+import warnings
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import tqdm
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -49,6 +52,8 @@ flags.DEFINE_string(
 flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_float("min_area", 0, "Object area threshold.")
+flags.DEFINE_boolean("save_predictions", False, "Save predictions.")
+flags.DEFINE_integer("num_workers", 4, "Number of workers.")
 
 FLAGS = flags.FLAGS
 
@@ -117,6 +122,173 @@ def calculate_mean_prob(
     return mean_prob
 
 
+def process_data(
+    data: InstanceDetectionData,
+    file_name: str,
+    prediction: InstanceDetectionPrediction,
+    metadata: Metadata,
+    semseg_metadata: Metadata,
+) -> tuple[InstanceDetectionPrediction | None, pd.DataFrame | None]:
+    logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
+
+    df: pd.DataFrame = pd.DataFrame.from_records(
+        [instance.dict() for instance in prediction.instances]
+    )
+    if len(df) == 0:
+        return None, None
+
+    logging.info(f"Original instance count: {len(df)}.")
+
+    df["mask"] = df["segmentation"].map(
+        lambda segmentation: Mask.from_obj(
+            segmentation, width=data.width, height=data.height
+        ).bitmask
+    )
+    df["area"] = df["mask"].map(np.sum)
+
+    keep: pd.Series = basic_filter(
+        df, min_score=FLAGS.min_score, min_area=FLAGS.min_area
+    )
+    df = df.loc[keep]
+    if len(df) == 0:
+        return None, None
+
+    df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
+    df["score_per_tooth"] = None
+
+    npz_path: Path = Path(
+        FLAGS.semseg_result_dir, "inference", f"{data.file_name.stem}.npz"
+    )
+    with np.load(npz_path) as npz:
+        # prob.shape == (num_classes, height, width)
+        prob: np.ndarray = npz["prob"]
+
+    prob = prob.transpose(1, 2, 0)
+    prob = prob.astype(np.float32) / 65535
+
+    df_findings: list[pd.DataFrame] = []
+    row_results: list[dict[str, Any]] = []
+
+    s_missing: pd.Series | None = None
+    for finding in Category:
+        is_finding: pd.Series
+        match finding:
+            case Category.MISSING:
+                # for tooth objects, additional nms is applied because in instance detection
+                # we treat each fdi as a separate class
+
+                is_tooth: pd.Series = df["category_name"].str.startswith("TOOTH")
+                keep: pd.Series = non_maximum_suppress(
+                    df.loc[is_tooth], iom_threshold=0.3
+                )
+                is_finding = is_tooth & keep
+
+            case _:
+                is_finding = df["category_name"].eq(finding)  # type: ignore
+
+        finding_score: np.ndarray
+        if is_finding.sum() > 0:
+            mask: np.ndarray = np.stack(df.loc[is_finding, "mask"], axis=-1)
+            discount_factor: np.ndarray = np.sum(mask, axis=-1, keepdims=True)
+            prob_discounted: np.ndarray = 1 - np.power(1 - prob, 1 / discount_factor)
+
+            for index, row in df.loc[is_finding].iterrows():
+                share_per_tooth = calculate_mean_prob(
+                    row["mask"],
+                    bbox=row["bbox"],
+                    prob=prob_discounted,
+                    ignore_background=True,
+                )
+
+                match finding:
+                    case Category.MISSING:
+                        # we do not use objectiveness score for teeth
+                        score_per_tooth = share_per_tooth
+
+                    case _:
+                        score_per_tooth = 1 - np.power(
+                            1 - row["score"], share_per_tooth
+                        )
+
+                df.at[index, "score_per_tooth"] = score_per_tooth
+
+            score_per_tooth = np.stack(df.loc[is_finding, "score_per_tooth"], axis=0)
+            # soft or
+            finding_score = 1 - np.prod(1 - score_per_tooth, axis=0)
+
+        else:
+            finding_score = np.zeros((len(semseg_metadata.stuff_classes),))
+
+        s_finding: pd.Series = pd.Series(
+            finding_score, index=semseg_metadata.stuff_classes
+        )
+        match finding:
+            case Category.MISSING:
+                s_finding = 1 - s_finding
+                s_missing = s_finding
+
+            case Category.CROWN_BRIDGE:
+                # for CROWN_BRIDGE, we do not assume tooth missing-ness
+                pass
+
+            case Category.IMPLANT:
+                # for IMPLANT, we need the tooth to be missing
+                assert s_missing is not None
+                s_finding = s_finding * s_missing
+
+            case _:
+                # for the rest, we need the tooth to be present
+                assert s_missing is not None
+                s_finding = s_finding * (1 - s_missing)
+
+        for category_name, score in s_finding.items():
+            if category_name == "BACKGROUND":
+                continue
+
+            assert isinstance(category_name, str)
+
+            row_results.append(
+                {
+                    "file_name": file_name,
+                    "fdi": category_name.split("_")[-1],
+                    "finding": finding,
+                    "score": score,
+                }
+            )
+
+        df_findings.append(df.loc[is_finding])
+
+    output_prediction: InstanceDetectionPrediction | None = None
+    if FLAGS.save_predictions:
+        df_finding = pd.concat(df_findings, axis=0)
+        instances: list[InstanceDetectionPredictionInstance] = parse_obj_as(
+            list[InstanceDetectionPredictionInstance],
+            df_finding.to_dict(orient="records"),
+        )
+        output_prediction = InstanceDetectionPrediction(
+            image_id=prediction.image_id, instances=instances
+        )
+
+    df_result: pd.DataFrame = pd.DataFrame(row_results)
+
+    return output_prediction, df_result
+
+
+def _process_data(
+    args: tuple[
+        InstanceDetectionData,
+        str,
+        InstanceDetectionPrediction,
+        Metadata,
+        Metadata,
+    ],
+) -> tuple[InstanceDetectionPrediction | None, pd.DataFrame | None]:
+    warnings.simplefilter("ignore")
+    logging.set_verbosity(logging.WARNING)
+
+    return process_data(*args)
+
+
 def main(_):
     logging.set_verbosity(logging.INFO)
 
@@ -163,162 +335,42 @@ def main(_):
 
     #
 
-    output_predictions: list[InstanceDetectionPrediction] = []
-    row_results: list[dict[str, Any]] = []
-    for data in dataset:
-        if data.image_id not in id_to_prediction:
-            logging.warning(f"Image id {data.image_id} not found in predictions.")
-            continue
-
-        logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
-
-        file_name: str = Path(data.file_name).relative_to(data_driver.image_dir).stem
-        prediction: InstanceDetectionPrediction = id_to_prediction[data.image_id]
-        instances: list[InstanceDetectionPredictionInstance] = prediction.instances
-
-        df: pd.DataFrame = pd.DataFrame.from_records(
-            [instance.dict() for instance in instances]
-        )
-        if len(df) == 0:
-            continue
-
-        logging.info(f"Original instance count: {len(df)}.")
-
-        df["mask"] = df["segmentation"].map(
-            lambda segmentation: Mask.from_obj(
-                segmentation, width=data.width, height=data.height
-            ).bitmask
-        )
-        df["area"] = df["mask"].map(np.sum)
-
-        keep: pd.Series = basic_filter(
-            df, min_score=FLAGS.min_score, min_area=FLAGS.min_area
-        )
-        df = df.loc[keep]
-        if len(df) == 0:
-            continue
-
-        df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
-        df["score_per_tooth"] = None
-
-        npz_path: Path = Path(
-            FLAGS.semseg_result_dir, "inference", f"{data.file_name.stem}.npz"
-        )
-        with np.load(npz_path) as npz:
-            # prob.shape == (num_classes, height, width)
-            prob: np.ndarray = npz["prob"]
-
-        prob = prob.transpose(1, 2, 0)
-        prob = prob.astype(np.float32) / 65535
-
-        df_findings: list[pd.DataFrame] = []
-        s_missing: pd.Series | None = None
-        for finding in Category:
-            is_finding: pd.Series
-            match finding:
-                case Category.MISSING:
-                    # for tooth objects, additional nms is applied because in instance detection
-                    # we treat each fdi as a separate class
-
-                    is_tooth: pd.Series = df["category_name"].str.startswith("TOOTH")
-                    keep: pd.Series = non_maximum_suppress(
-                        df.loc[is_tooth], iom_threshold=0.5
-                    )
-                    is_finding = is_tooth & keep
-
-                case _:
-                    is_finding = df["category_name"].eq(finding)  # type: ignore
-
-            finding_score: np.ndarray
-            if is_finding.sum() > 0:
-                mask: np.ndarray = np.stack(df.loc[is_finding, "mask"], axis=-1)
-                discount_factor: np.ndarray = np.sum(mask, axis=-1, keepdims=True)
-                prob_discounted: np.ndarray = 1 - np.power(
-                    1 - prob, 1 / discount_factor
-                )
-
-                for index, row in df.loc[is_finding].iterrows():
-                    share_per_tooth = calculate_mean_prob(
-                        row["mask"],
-                        bbox=row["bbox"],
-                        prob=prob_discounted,
-                        ignore_background=True,
-                    )
-
-                    match finding:
-                        case Category.MISSING:
-                            # we do not use objectiveness score for teeth
-                            score_per_tooth = share_per_tooth
-
-                        case _:
-                            score_per_tooth = 1 - np.power(
-                                1 - row["score"], share_per_tooth
-                            )
-
-                    df.at[index, "score_per_tooth"] = score_per_tooth
-
-                score_per_tooth = np.stack(
-                    df.loc[is_finding, "score_per_tooth"], axis=0
-                )
-                finding_score = 1 - np.prod(1 - score_per_tooth, axis=0)
-
-            else:
-                finding_score = np.zeros((len(semseg_metadata.stuff_classes),))
-
-            s_finding: pd.Series = pd.Series(
-                finding_score, index=semseg_metadata.stuff_classes
+    with mp.Pool(processes=FLAGS.num_workers) as pool:
+        tasks: list[tuple] = [
+            (
+                data,
+                Path(data.file_name).relative_to(data_driver.image_dir).stem,
+                id_to_prediction[data.image_id],
+                metadata,
+                semseg_metadata,
             )
-            match finding:
-                case Category.MISSING:
-                    s_finding = 1 - s_finding
-                    s_missing = s_finding
+            for data in dataset
+            if data.image_id in id_to_prediction
+        ]
+        results = pool.imap_unordered(_process_data, tasks)
 
-                case Category.CROWN_BRIDGE:
-                    # for CROWN_BRIDGE, we do not assume tooth missing-ness
-                    pass
+        output_predictions: list[InstanceDetectionPrediction] = []
+        df_results: list[pd.DataFrame] = []
+        for result in tqdm.tqdm(results, total=len(tasks)):
+            _output_prediction: InstanceDetectionPrediction | None
+            _df_result: pd.DataFrame | None
+            _output_prediction, _df_result = result
 
-                case Category.IMPLANT:
-                    # for IMPLANT, we need the tooth to be missing
-                    assert s_missing is not None
-                    s_finding = s_finding * s_missing
+            if _output_prediction is not None:
+                output_predictions.append(_output_prediction)
 
-                case _:
-                    # for the rest, we need the tooth to be present
-                    assert s_missing is not None
-                    s_finding = s_finding * (1 - s_missing)
-
-            for category_name, score in s_finding.items():
-                if category_name == "BACKGROUND":
-                    continue
-
-                row_results.append(
-                    {
-                        "file_name": file_name,
-                        "fdi": category_name.split("_")[-1],
-                        "finding": finding,
-                        "score": score,
-                    }
-                )
-
-            df_findings.append(df.loc[is_finding])
-
-        df = pd.concat(df_findings, axis=0)
-        instances = parse_obj_as(
-            list[InstanceDetectionPredictionInstance], df.to_dict(orient="records")
-        )
-        output_predictions.append(
-            InstanceDetectionPrediction(
-                image_id=prediction.image_id, instances=instances
-            )
-        )
+            if _df_result is not None:
+                df_results.append(_df_result)
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
-    InstanceDetectionPredictionList.to_detectron2_detection_pth(
-        output_predictions, path=Path(FLAGS.result_dir, FLAGS.output_prediction_name)
-    )
+    if FLAGS.save_predictions:
+        InstanceDetectionPredictionList.to_detectron2_detection_pth(
+            output_predictions,
+            path=Path(FLAGS.result_dir, FLAGS.output_prediction_name),
+        )
 
-    df_result: pd.DataFrame = pd.DataFrame(row_results).sort_values(
+    df_result: pd.DataFrame = pd.concat(df_results, axis=0).sort_values(
         ["file_name", "fdi", "finding"], ascending=True
     )
     df_result = df_result.drop_duplicates(
