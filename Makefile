@@ -50,8 +50,8 @@ COMMON_ARGS = \
 ### variables
 
 MIN_SCORE ?= 0.0001
-MIN_IOU ?= 0.0
-MAX_OBJS ?= 500
+MIN_IOU ?= 0.5
+MAX_OBJS ?= 300
 PREDICTION_NAME ?= instances_predictions.pth
 CSV_NAME ?= result.csv
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION_NAME)))
@@ -272,8 +272,7 @@ test-yolo:
 		max_det=$(MAX_OBJS) \
 		save=True \
 		save_txt=True \
-		save_conf=True \
-		save_crop=False
+		save_conf=True
 
 ### overall targets
 
@@ -295,7 +294,8 @@ postprocess:
 		--input_prediction_name $(PREDICTION_NAME) \
 		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
 		--csv_name $(CSV_NAME) \
-		--min_score $(MIN_SCORE)
+		--min_score $(MIN_SCORE) \
+		--num_workers $(CPUS)
 
 postprocess-with-semseg: --check-COMMON
 postprocess-with-semseg: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
@@ -309,7 +309,8 @@ postprocess-with-semseg:
 		--input_prediction_name $(PREDICTION_NAME) \
 		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
 		--csv_name $(CSV_NAME) \
-		--min_score $(MIN_SCORE)
+		--min_score $(MIN_SCORE) \
+		--num_workers $(CPUS)
 
 postprocess-gt: --check-COMMON
 postprocess-gt: OUTPUT_PREDICTION_NAME ?= instances_predictions.pth
@@ -327,7 +328,8 @@ postprocess-gt:
 		$(USE_GT) \
 		--prediction_name $(PREDICTION_NAME) \
 		--visualize_dir $(VISUALIZE_DIR) \
-		--visualize_subset
+		--visualize_subset \
+		--num_workers $(CPUS)
 
 visualize: USE_GT = --nouse_gt_as_prediction
 visualize: --visualize
@@ -367,3 +369,10 @@ evaluate-auroc-with-human:
 		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
 		--human_csv_path "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR)
+
+compare: check-ROOT_DIR check-IMAGE_PATTERNS
+	$(PY) scripts/$@.py \
+		--root_dir $(ROOT_DIR) \
+		--height 400 \
+		--image_patterns $(IMAGE_PATTERNS) \
+		--output_html_path results/index.html
