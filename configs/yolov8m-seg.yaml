@@ -8,7 +8,6 @@ workers: 12
 
 pretrained: true
 rect: true
-cos_lr: true
 close_mosaic: 10
 amp: true
 plots: true
@@ -19,9 +18,7 @@ hsv_v: 0.9
 degrees: 15.0
 scale: 0.5
 shear: 5.0
-perspective: 0.001
+perspective: 0.0
 flipud: 0.0
 fliplr: 0.0
 mosaic: 1.0
-mixup: 0.5
-copy_paste: 0.5
