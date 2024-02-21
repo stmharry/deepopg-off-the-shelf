@@ -194,24 +194,20 @@ def process_data(
             prob_discounted: np.ndarray = 1 - np.power(1 - prob, 1 / discount_factor)
 
             for index, row in df.loc[is_finding].iterrows():
+                share_per_tooth: np.ndarray = calculate_mean_prob(
+                    row["mask"],
+                    bbox=row["bbox"],
+                    prob=prob_discounted,
+                    ignore_background=True,
+                )
+
                 score_per_tooth: np.ndarray
                 match finding:
                     case Category.MISSING:
                         # we do not use objectiveness score for teeth
-                        score_per_tooth = calculate_mean_prob(
-                            row["mask"],
-                            bbox=row["bbox"],
-                            prob=prob_discounted,
-                            ignore_background=False,
-                        )
+                        score_per_tooth = share_per_tooth
 
                     case _:
-                        share_per_tooth: np.ndarray = calculate_mean_prob(
-                            row["mask"],
-                            bbox=row["bbox"],
-                            prob=prob_discounted,
-                            ignore_background=True,
-                        )
                         score_per_tooth = 1 - np.power(
                             1 - row["score"], share_per_tooth
                         )
