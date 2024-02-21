@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TypedDict
 
 import matplotlib as mpl
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -153,16 +154,24 @@ def plot_roc_curve(
         max_fpr: float = max(fprs)
         min_fpr: float = min(fprs)
 
+        distance: list[np.array] = [(fpr - fprs[i])**2 + (tpr - tprs[i])**2 for i in range(len(fprs))]
+        min_distance: list[float] = [arr.min() for arr in distance]
+        min_distance_index: list[int] = [arr.argmin() for arr in distance]
+        min_distance_fpr: list[float] = [fpr[i] for i in min_distance_index]
+        min_distance_tpr: list[float] = [tpr[i] for i in min_distance_index]
+        max_min_distance_fpr: float = max(min_distance_fpr)
+        max_min_distance_tpr: float = max(min_distance_tpr)
+
         # plotting
 
         ax: plt.axes.Axes = axes.flatten()[num]
         inset_ax: plt.axes.Axes = inset_axes(
-            ax,
-            width="100%",
-            height="100%",
-            bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
-            bbox_transform=ax.transAxes,
+            ax, width="60%", height="60%", loc="lower right", borderpad=1.1
         )
+
+        for i in range(len(fprs)):
+            inset_ax.scatter(fpr[min_distance_index[i]], tpr[min_distance_index[i]], color="b", marker="x", s=6, linewidths=0.5)
+            inset_ax.plot([fprs[i], fpr[min_distance_index[i]]], [tprs[i], tpr[min_distance_index[i]]], linestyle="--", color="b", linewidth=0.5)
 
         min_width = 0.025
         min_height = 0.025
@@ -171,13 +180,33 @@ def plot_roc_curve(
         width = max(min_width, max_fpr - min_fpr)
         height = max(min_height, max_tpr - min_tpr)
 
+        bounds = [
+            max((min_fpr + max_fpr) / 2 - width / 2 - padding, 0),
+            max((min_fpr + max_fpr) / 2 + width / 2 + padding, max_min_distance_fpr+padding),
+            max((min_tpr + max_tpr) / 2 - height / 2 - padding, 0),
+            max((min_tpr + max_tpr) / 2 + height / 2 + padding, max_min_distance_tpr+padding),
+        ]
+
         inset_ax.set_xlim(
-            (min_fpr + max_fpr) / 2 - width / 2 - padding,
-            (min_fpr + max_fpr) / 2 + width / 2 + padding,
+            bounds[0],
+            bounds[1],
         )
         inset_ax.set_ylim(
-            (min_tpr + max_tpr) / 2 - height / 2 - padding,
-            (min_tpr + max_tpr) / 2 + height / 2 + padding,
+            bounds[2],
+            bounds[3],
+        )
+        inset_ax.tick_params(axis="both", which="major", labelsize=4)
+
+        ax.add_patch(
+            patches.Rectangle(
+                (bounds[0], bounds[2]),
+                bounds[1] - bounds[0],
+                bounds[3] - bounds[2],
+                edgecolor="black",
+                linewidth=1,
+                alpha=0.2,
+                facecolor="black",
+            )
         )
 
         ax.grid(
@@ -185,13 +214,6 @@ def plot_roc_curve(
             which="major",
             linestyle="--",
             linewidth=0.5,
-        )
-        ax.plot(
-            [0, 1],
-            [0, 1],
-            color="k",
-            linestyle="--",
-            linewidth=0.75,
         )
 
         for _ax in [ax, inset_ax]:
@@ -333,7 +355,8 @@ def main(_):
         .apply(process_per_tooth)
     )
 
-    evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-02-21/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
     #
