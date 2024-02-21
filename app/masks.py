@@ -63,7 +63,7 @@ class Mask(object):
     def convert_rle_to_bitmask(cls, rle: CocoRLE) -> npt.NDArray[np.uint8]:
         rle_obj: dict = rle.dict()
         bitmask: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
-        return bitmask
+        return bitmask.astype(np.bool_)
 
     @classmethod
     def convert_bitmask_to_rle(cls, bitmask: npt.NDArray[np.uint8]) -> CocoRLE:
@@ -82,7 +82,7 @@ class Mask(object):
             logging.warning(
                 "Failed to convert polygons to bitmask. Returning an empty bitmask."
             )
-            bitmask = np.zeros((height, width), dtype=np.uint8)
+            bitmask = np.zeros((height, width), dtype=np.bool_)
 
         return bitmask
 
