@@ -264,7 +264,7 @@ convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION
 convert-yolo-labels-to-detectron2-prediction-pt:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		--prediction_name $(PREDICTION)
+		--prediction $(PREDICTION)
 
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest

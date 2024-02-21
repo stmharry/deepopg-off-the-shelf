@@ -18,7 +18,7 @@ flags.DEFINE_string("data_dir", None, "Data directory")
 flags.DEFINE_string("result_dir", None, "Result directory")
 flags.DEFINE_string("dataset_name", None, "Dataset name")
 flags.DEFINE_string(
-    "prediction_name", "instances_predictions.pth", "Input prediction file name."
+    "prediction", "instances_predictions.pth", "Input prediction file name."
 )
 FLAGS = flags.FLAGS
 
@@ -97,7 +97,7 @@ def main(_):
         )
         predictions.append(prediction)
 
-    predictions_path: Path = Path(FLAGS.result_dir, FLAGS.prediction_name)
+    predictions_path: Path = Path(FLAGS.result_dir, FLAGS.prediction)
     logging.info(f"Saving predictions to {predictions_path}")
 
     InstanceDetectionPredictionList.to_detectron2_detection_pth(
