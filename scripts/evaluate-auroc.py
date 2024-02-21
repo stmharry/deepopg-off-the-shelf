@@ -320,7 +320,8 @@ def main(_):
     df = (
         pd.DataFrame(index=s_index)
         .join(
-            df_golden.set_index(index_names)
+            df_golden.drop_duplicates()
+            .set_index(index_names)
             .assign(label=1)
             .reindex(index=s_index, fill_value=0)
         )
@@ -328,7 +329,8 @@ def main(_):
     )
     for tag, df_human in df_human_by_tag.items():
         df = df.join(
-            df_human.set_index(index_names)
+            df_human.drop_duplicates()
+            .set_index(index_names)
             .assign(score=1.0)
             .reindex(index=s_index, fill_value=0.0),
             rsuffix=f"_human_{tag}",
