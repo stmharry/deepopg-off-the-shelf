@@ -1,6 +1,7 @@
 import math
 import warnings
 from pathlib import Path
+from typing import TypedDict
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -9,6 +10,7 @@ import pandas as pd
 import sklearn.metrics
 from absl import app, flags, logging
 from matplotlib.figure import Figure
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 from app.instance_detection.types import (
     EVALUATE_WHEN_MISSING_FINDINGS,
@@ -29,16 +31,28 @@ flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
 FLAGS = flags.FLAGS
 
 
-HUMAN_METADATA: dict[str, dict] = {
+class HumanMetadata(TypedDict):
+    color: str | tuple[float, ...]
+    marker: str
+    title: str
+
+
+HUMAN_METADATA: dict[str, HumanMetadata] = {
     "A": {"color": "blue", "marker": "D", "title": "Expert 1"},
     "C": {"color": "green", "marker": "s", "title": "Expert 2"},
     "D": {"color": "red", "marker": "^", "title": "Expert 3"},
     "E": {"color": "purple", "marker": "v", "title": "Expert 4"},
 }
 
+
+class CategoryMetadata(TypedDict):
+    color: str | tuple[float, ...]
+    title: str
+
+
 CMAP = mpl.colormaps.get_cmap("tab10")
 
-CATEGORY_METADATA: dict[Category, dict] = {
+CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
     Category.MISSING: {"color": CMAP(0), "title": "Missing Teeth"},
     Category.IMPLANT: {"color": CMAP(2), "title": "Implants"},
     Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Root Remnants"},
@@ -78,11 +92,12 @@ def plot_roc_curve(
         ncols=num_columns,
         sharey=True,
         figsize=(FLAGS.plot_size * num_columns, FLAGS.plot_size * num_rows),
+        layout="constrained",
     )
 
     for num, finding in enumerate(Category):
-        metadata = CATEGORY_METADATA[finding]
-        df_finding = df.loc[df["finding"].eq(finding.value)].copy()
+        metadata: CategoryMetadata = CATEGORY_METADATA[finding]
+        df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].copy()
 
         P = df_finding["label"].eq(1).sum()
         N = df_finding["label"].eq(0).sum()
@@ -128,23 +143,48 @@ def plot_roc_curve(
 
             report_by_tag[tag] = report
 
+        tprs: list[float] = [report["1"]["recall"] for report in report_by_tag.values()]
+        max_tpr: float = max(tprs)
+        min_tpr: float = min(tprs)
+
+        fprs: list[float] = [
+            1 - report["0"]["recall"] for report in report_by_tag.values()
+        ]
+        max_fpr: float = max(fprs)
+        min_fpr: float = min(fprs)
+
         # plotting
 
-        ax = axes.flatten()[num]
+        ax: plt.axes.Axes = axes.flatten()[num]
+        inset_ax: plt.axes.Axes = inset_axes(
+            ax,
+            width="100%",
+            height="100%",
+            bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
+            bbox_transform=ax.transAxes,
+        )
+
+        min_width = 0.025
+        min_height = 0.025
+        padding = 0.025
+
+        width = max(min_width, max_fpr - min_fpr)
+        height = max(min_height, max_tpr - min_tpr)
+
+        inset_ax.set_xlim(
+            (min_fpr + max_fpr) / 2 - width / 2 - padding,
+            (min_fpr + max_fpr) / 2 + width / 2 + padding,
+        )
+        inset_ax.set_ylim(
+            (min_tpr + max_tpr) / 2 - height / 2 - padding,
+            (min_tpr + max_tpr) / 2 + height / 2 + padding,
+        )
 
         ax.grid(
             visible=True,
             which="major",
             linestyle="--",
             linewidth=0.5,
-        )
-        ax.fill_between(
-            fpr,
-            tpr_ci_lower,
-            tpr_ci_upper,
-            color=metadata["color"],
-            alpha=0.2,
-            linewidth=0.0,
         )
         ax.plot(
             [0, 1],
@@ -153,31 +193,36 @@ def plot_roc_curve(
             linestyle="--",
             linewidth=0.75,
         )
-        ax.plot(
-            fpr,
-            tpr,
-            color=metadata["color"],
-            linewidth=0.75,
-            label="AI System",
-        )
 
-        for tag, report in report_by_tag.items():
-            human_metadata = HUMAN_METADATA[tag]
-
-            ax.plot(
-                1 - report["0"]["recall"],
-                report["1"]["recall"],
-                color=human_metadata["color"],
-                marker=human_metadata["marker"],
-                markersize=2,
+        for _ax in [ax, inset_ax]:
+            _ax.fill_between(
+                fpr,
+                tpr_ci_lower,
+                tpr_ci_upper,
+                color=metadata["color"],
+                alpha=0.2,
                 linewidth=0.0,
-                label=human_metadata["title"],
+            )
+            _ax.plot(
+                fpr,
+                tpr,
+                color=metadata["color"],
+                linewidth=0.75,
+                label="AI System",
             )
 
-        ax.legend(
-            loc="lower right",
-            fontsize="x-small",
-        )
+            for tag, report in report_by_tag.items():
+                human_metadata: HumanMetadata = HUMAN_METADATA[tag]
+
+                _ax.plot(
+                    1 - report["0"]["recall"],
+                    report["1"]["recall"],
+                    color=human_metadata["color"],
+                    marker=human_metadata["marker"],
+                    markersize=2,
+                    linewidth=0.0,
+                    label=human_metadata["title"],
+                )
 
         xticks: np.ndarray = np.linspace(0, 1, 6)
         ax.set_xticks(xticks)
@@ -191,7 +236,10 @@ def plot_roc_curve(
         if num % num_columns == 0:
             ax.set_ylabel("Senstivity")
 
-        ax.set_title(f"{metadata['title']} (AUC = {roc_auc:.1%})")
+        ax.set_title(
+            f"{metadata['title']} (AUC = {roc_auc:.1%})",
+            fontsize="medium",
+        )
 
         logging.info(
             f"Finding {finding.value}\n"
@@ -201,7 +249,13 @@ def plot_roc_curve(
             f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})"
         )
 
-    fig.tight_layout()
+    ax = axes.flatten()[0]
+    fig.legend(
+        handles=ax.lines,
+        loc="outside lower center",
+        ncols=len(ax.lines),
+        fontsize="small",
+    )
 
     return fig
 
