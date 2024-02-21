@@ -37,7 +37,12 @@ flags.DEFINE_string(
     "inference/sem_seg_predictions.json",
     "Input prediction file name.",
 )
-
+flags.DEFINE_bool(
+    "use_gt_as_prediction",
+    False,
+    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
+    "finding summary but only ground truth segmentation.",
+)
 flags.DEFINE_string(
     "output_prediction",
     "instances_predictions.postprocessed.pth",
@@ -300,11 +305,18 @@ def main(_):
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
-    predictions: list[
-        InstanceDetectionPrediction
-    ] = InstanceDetectionPredictionList.from_detectron2_detection_pth(
-        Path(FLAGS.result_dir, FLAGS.prediction)
-    )
+    predictions: list[InstanceDetectionPrediction]
+    if FLAGS.use_gt_as_prediction:
+        predictions = [
+            InstanceDetectionPrediction.from_instance_detection_data(data)
+            for data in dataset
+        ]
+
+    else:
+        predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
+            Path(FLAGS.result_dir, FLAGS.input_prediction_name)
+        )
+
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }

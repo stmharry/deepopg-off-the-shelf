@@ -153,7 +153,7 @@ train-maskdino:
 		OUTPUT_DIR $(MODEL_DIR)
 
 test-maskdino: RESULT_NAME ?= $(NEW_NAME)
-test-maskdino: CONFIG_FILE ?= $(MODEL_CONFIG_FILE)
+test-maskdino: CONFIG_FILE = $(MODEL_CONFIG_FILE)
 test-maskdino: MODEL_CHECKPOINT ?= $(LATEST_MODEL_DETECTRON2)
 test-maskdino: --check-MAIN check-MODEL_NAME
 test-maskdino:
@@ -189,7 +189,7 @@ train-mvitv2:
 		train.output_dir=$(MODEL_DIR)
 
 test-mvitv2: RESULT_NAME ?= $(NEW_NAME)
-test-mvitv2: CONFIG_FILE ?= $(MODEL_CONFIG_FILE)
+test-mvitv2: CONFIG_FILE = $(MODEL_CONFIG_FILE)
 test-mvitv2: MODEL_CHECKPOINT ?= $(LATEST_MODEL_DETECTRON2)
 test-mvitv2: --check-MAIN check-MODEL_NAME
 test-mvitv2:
@@ -308,10 +308,11 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
-postprocess:
+--postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
+--postprocess:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
+		$(GT_ARG) \
 		--prediction $(PREDICTION) \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
@@ -323,6 +324,12 @@ postprocess:
 		--min_iom 0.3 \
 		--nosave_predictions \
 		--num_workers $(CPUS)
+
+postprocess: GT_ARG = --nouse_gt_as_prediction
+postprocess: --postprocess
+
+postprocess.gt: GT_ARG = --use_gt_as_prediction
+postprocess.gt: --postprocess
 
 --visualize: --check-COMMON
 --visualize:
@@ -361,7 +368,7 @@ evaluate-auroc:
 	$(RUN_SCRIPT) \
 		--result_dir $(RESULT_DIR) \
 		--csv $(RESULT_CSV) \
-		--golden_csv_path "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv" \
+		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
 		--verbosity $(VERBOSITY)
 
@@ -370,8 +377,8 @@ evaluate-auroc.with-human:
 	$(RUN_SCRIPT) \
 		--result_dir $(RESULT_DIR) \
 		--csv $(RESULT_CSV) \
-		--golden_csv_path "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv" \
-		--human_csv_path "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
+		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
+		--human_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
 		--verbosity $(VERBOSITY)
 
