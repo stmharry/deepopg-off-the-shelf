@@ -143,42 +143,50 @@ def plot_roc_curve(
 
             report_by_tag[tag] = report
 
-        tprs: list[float] = [report["1"]["recall"] for report in report_by_tag.values()]
-        max_tpr: float = max(tprs)
-        min_tpr: float = min(tprs)
-
-        fprs: list[float] = [
-            1 - report["0"]["recall"] for report in report_by_tag.values()
-        ]
-        max_fpr: float = max(fprs)
-        min_fpr: float = min(fprs)
-
         # plotting
 
+        axes_to_plot_data: list[plt.axes.Axes] = []
+
         ax: plt.axes.Axes = axes.flatten()[num]
-        inset_ax: plt.axes.Axes = inset_axes(
-            ax,
-            width="100%",
-            height="100%",
-            bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
-            bbox_transform=ax.transAxes,
-        )
+        axes_to_plot_data.append(ax)
 
-        min_width = 0.025
-        min_height = 0.025
-        padding = 0.025
+        if len(human_tags):
+            inset_ax: plt.axes.Axes = inset_axes(
+                ax,
+                width="100%",
+                height="100%",
+                bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
+                bbox_transform=ax.transAxes,
+            )
+            axes_to_plot_data.append(inset_ax)
 
-        width = max(min_width, max_fpr - min_fpr)
-        height = max(min_height, max_tpr - min_tpr)
+            tprs: list[float] = [
+                report["1"]["recall"] for report in report_by_tag.values()
+            ]
+            max_tpr: float = max(tprs)
+            min_tpr: float = min(tprs)
 
-        inset_ax.set_xlim(
-            (min_fpr + max_fpr) / 2 - width / 2 - padding,
-            (min_fpr + max_fpr) / 2 + width / 2 + padding,
-        )
-        inset_ax.set_ylim(
-            (min_tpr + max_tpr) / 2 - height / 2 - padding,
-            (min_tpr + max_tpr) / 2 + height / 2 + padding,
-        )
+            fprs: list[float] = [
+                1 - report["0"]["recall"] for report in report_by_tag.values()
+            ]
+            max_fpr: float = max(fprs)
+            min_fpr: float = min(fprs)
+
+            min_width = 0.025
+            min_height = 0.025
+            padding = 0.025
+
+            width = max(min_width, max_fpr - min_fpr)
+            height = max(min_height, max_tpr - min_tpr)
+
+            inset_ax.set_xlim(
+                (min_fpr + max_fpr) / 2 - width / 2 - padding,
+                (min_fpr + max_fpr) / 2 + width / 2 + padding,
+            )
+            inset_ax.set_ylim(
+                (min_tpr + max_tpr) / 2 - height / 2 - padding,
+                (min_tpr + max_tpr) / 2 + height / 2 + padding,
+            )
 
         ax.grid(
             visible=True,
@@ -194,7 +202,7 @@ def plot_roc_curve(
             linewidth=0.75,
         )
 
-        for _ax in [ax, inset_ax]:
+        for _ax in axes_to_plot_data:
             _ax.fill_between(
                 fpr,
                 tpr_ci_lower,
@@ -340,7 +348,11 @@ def main(_):
 
     fig: Figure
     fig = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
-    fig.savefig(Path(evaluation_dir, f"roc-curve.pdf"))
+
+    fig_path: Path = Path(evaluation_dir, "roc-curve.pdf")
+    logging.info(f"Saving the ROC curve to {fig_path}.")
+
+    fig.savefig(fig_path)
 
     df.sort_values(["finding", "score"], ascending=True).to_csv(
         Path(evaluation_dir, "evaluation.csv"), index=False
