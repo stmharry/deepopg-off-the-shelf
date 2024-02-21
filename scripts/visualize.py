@@ -37,7 +37,7 @@ flags.DEFINE_bool(
     False,
     "Set to true to visualize tooth-only, m3-only, and findings-only objects.",
 )
-flags.DEFINE_float("min_score", 0.01, "Minimum score to visualize.")
+flags.DEFINE_float("min_score", 0.0, "Minimum score to visualize.")
 flags.DEFINE_integer("num_workers", 4, "Number of workers.")
 FLAGS = flags.FLAGS
 

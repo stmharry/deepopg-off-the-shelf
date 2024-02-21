@@ -308,11 +308,12 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
---postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
---postprocess:
+--check-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
+
+postprocess: --check-postprocess
+postprocess:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		$(GT_ARG) \
 		--prediction $(PREDICTION) \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
@@ -325,28 +326,37 @@ coco-annotator:
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
-postprocess: GT_ARG = --nouse_gt_as_prediction
-postprocess: --postprocess
-
-postprocess.gt: GT_ARG = --use_gt_as_prediction
-postprocess.gt: --postprocess
-
---visualize: --check-COMMON
---visualize:
+postprocess.gt: --check-postprocess
+postprocess.gt:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		$(GT_ARG) \
+		--use_gt_as_prediction \
+		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
+		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
+		--semseg_prediction $(SEMSEG_PREDICTION) \
+		--output_csv $(RESULT_CSV) \
+		--min_iom 1.0 \
+		--nosave_predictions \
+		--num_workers $(CPUS)
+
+visualize: --check-COMMON
+visualize:
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
 		--prediction $(PREDICTION) \
 		--visualize_dir $(VISUALIZE_DIR) \
 		--visualize_subset \
 		--min_score $(MIN_SCORE) \
 		--num_workers $(CPUS)
 
-visualize: GT_ARG = --nouse_gt_as_prediction
-visualize: --visualize
-
-visualize.gt: GT_ARG = --use_gt_as_prediction
-visualize.gt: --visualize
+visualize.gt: --check-COMMON
+visualize.gt:
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		--use_gt_as_prediction \
+		--visualize_dir $(VISUALIZE_DIR) \
+		--visualize_subset \
+		--num_workers $(CPUS)
 
 visualize-semseg: --check-COMMON
 visualize-semseg: VISUALIZE_DIR = visualize
@@ -387,4 +397,4 @@ compare: check-ROOT_DIR check-IMAGE_PATTERNS
 		--root_dir $(ROOT_DIR) \
 		--height 400 \
 		--image_patterns $(IMAGE_PATTERNS) \
-		--output_html_path results/index.html
+		--output_html_path $(HTML_PATH)
