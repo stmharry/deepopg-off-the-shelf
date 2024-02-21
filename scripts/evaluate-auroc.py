@@ -154,11 +154,14 @@ def plot_roc_curve(
         max_fpr: float = max(fprs)
         min_fpr: float = min(fprs)
 
-        distance: list[np.array] = [(fpr - fprs[i])**2 + (tpr - tprs[i])**2 for i in range(len(fprs))]
-        min_distance: list[float] = [arr.min() for arr in distance]
+        distance: list[np.array] = [
+            (fpr - fprs[i]) ** 2 + (tpr - tprs[i]) ** 2 for i in range(len(fprs))
+        ]
         min_distance_index: list[int] = [arr.argmin() for arr in distance]
+        # find the index of the shortest distance from human to AI
         min_distance_fpr: list[float] = [fpr[i] for i in min_distance_index]
         min_distance_tpr: list[float] = [tpr[i] for i in min_distance_index]
+        # farthest distance from humman to AI
         max_min_distance_fpr: float = max(min_distance_fpr)
         max_min_distance_tpr: float = max(min_distance_tpr)
 
@@ -170,8 +173,21 @@ def plot_roc_curve(
         )
 
         for i in range(len(fprs)):
-            inset_ax.scatter(fpr[min_distance_index[i]], tpr[min_distance_index[i]], color="b", marker="x", s=6, linewidths=0.5)
-            inset_ax.plot([fprs[i], fpr[min_distance_index[i]]], [tprs[i], tpr[min_distance_index[i]]], linestyle="--", color="b", linewidth=0.5)
+            inset_ax.scatter(
+                fpr[min_distance_index[i]],
+                tpr[min_distance_index[i]],
+                color="b",
+                marker="x",
+                s=6,
+                linewidths=0.5,
+            )
+            inset_ax.plot(
+                [fprs[i], fpr[min_distance_index[i]]],
+                [tprs[i], tpr[min_distance_index[i]]],
+                linestyle="--",
+                color="b",
+                linewidth=0.5,
+            )
 
         min_width = 0.025
         min_height = 0.025
@@ -182,9 +198,15 @@ def plot_roc_curve(
 
         bounds = [
             max((min_fpr + max_fpr) / 2 - width / 2 - padding, 0),
-            max((min_fpr + max_fpr) / 2 + width / 2 + padding, max_min_distance_fpr+padding),
+            max(
+                (min_fpr + max_fpr) / 2 + width / 2 + padding,
+                max_min_distance_fpr + padding,
+            ),
             max((min_tpr + max_tpr) / 2 - height / 2 - padding, 0),
-            max((min_tpr + max_tpr) / 2 + height / 2 + padding, max_min_distance_tpr+padding),
+            max(
+                (min_tpr + max_tpr) / 2 + height / 2 + padding,
+                max_min_distance_tpr + padding,
+            ),
         ]
 
         inset_ax.set_xlim(
@@ -355,12 +377,9 @@ def main(_):
         .apply(process_per_tooth)
     )
 
-    # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
-    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-02-21/")
+    evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    # evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-02-21/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
-
-    #
-
     fig: Figure
     fig = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
     fig.savefig(Path(evaluation_dir, f"roc-curve.pdf"))
