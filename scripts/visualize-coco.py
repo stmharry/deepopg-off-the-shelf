@@ -21,7 +21,7 @@ flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string(
-    "prediction_name", "instances_predictions.pth", "Input prediction file name."
+    "prediction", "instances_predictions.pth", "Input prediction file name."
 )
 flags.DEFINE_bool(
     "use_gt_as_prediction",
@@ -85,7 +85,7 @@ def main(_):
         ]
     else:
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
-            Path(FLAGS.result_dir, FLAGS.prediction_name)
+            Path(FLAGS.result_dir, FLAGS.prediction)
         )
 
     predictions = [

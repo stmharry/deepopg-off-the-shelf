@@ -16,7 +16,7 @@ from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string("mask_dir", "masks", "Mask directory (relative to `data_dir`).")
-flags.DEFINE_integer("num_processes", 1, "Number of processes to use.")
+flags.DEFINE_integer("num_workers", 1, "Number of processes to use.")
 
 FLAGS = flags.FLAGS
 
@@ -177,7 +177,7 @@ def main(_):
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with multiprocessing.Pool(FLAGS.num_processes) as pool:
+    with multiprocessing.Pool(FLAGS.num_workers) as pool:
         _: list[InstanceDetectionData | None] = pool.starmap(
             process,
             [(data, metadata, output_dir) for data in dataset],

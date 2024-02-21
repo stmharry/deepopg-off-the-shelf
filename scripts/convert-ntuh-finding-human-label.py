@@ -9,11 +9,11 @@ import app as _app  # type: ignore
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string(
-    "input_dir",
+    "label_dir",
     None,
     "Input directory containing csv files as downloaded from Google Sheets.",
 )
-flags.DEFINE_string("output", None, "Output human label csv file.")
+flags.DEFINE_string("output_csv", None, "Output human label csv file.")
 FLAGS = flags.FLAGS
 
 FINDING_MAPPING: dict[str, str] = {
@@ -42,9 +42,9 @@ def main(_):
 
         for csv_index in CSV_INDICES:
             finding_filename = Path(
-                FLAGS.input_dir, FINDING_CSV_PATTERN.format(csv_index)
+                FLAGS.label_dir, FINDING_CSV_PATTERN.format(csv_index)
             )
-            image_filename = Path(FLAGS.input_dir, IMAGE_CSV_PATTERN.format(csv_index))
+            image_filename = Path(FLAGS.label_dir, IMAGE_CSV_PATTERN.format(csv_index))
 
             logging.info(f"Reading '{finding_filename}' and '{image_filename}'...")
 
@@ -109,7 +109,7 @@ def main(_):
             f"For human {tag}, found {num_images} studies, {num_teeth} teeth, and {num_findings} findings."
         )
 
-        output_path: Path = Path(FLAGS.output.format(tag))
+        output_path: Path = Path(FLAGS.output_csv.format(tag))
         df_output.to_csv(output_path, index=False)
 
         logging.info(f"The human labels are saved to {output_path!s}.")

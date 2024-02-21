@@ -4,19 +4,22 @@
 
 ### paths
 
-CONFIG_DIR ?= ./configs
 DATA_DIR ?= $(ROOT_DIR)/data
-MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
-RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
 
-MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
-RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
+CONFIG_DIR ?= ./configs
 CONFIG_FILE ?= $(CONFIG_DIR)/$(CONFIG_NAME)
 
-LATEST_MODEL_CHECKPOINT ?= $(shell realpath --relative-to=$(MODEL_DIR) $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1))
-YOLO_LATEST_MODEL_CHECKPOINT ?= weights/best.pt
+MODEL_DIR_ROOT ?= $(ROOT_DIR)/models
+MODEL_DIR ?= $(MODEL_DIR_ROOT)/$(MODEL_NAME)
+MODEL_CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
+
+RESULT_DIR_ROOT ?= $(ROOT_DIR)/results
+RESULT_DIR ?= $(RESULT_DIR_ROOT)/$(RESULT_NAME)
+
+LATEST_MODEL_DETECTRON2 ?= $(shell realpath --relative-to=$(MODEL_DIR) $(shell ls -t $(MODEL_DIR)/model_*.pth | head -n1))
+LATEST_MODEL_YOLO ?= weights/best.pt
+
 NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
-COCO_ANNOTATOR_URL ?= http://192.168.0.79:5000/api
 
 ### executables
 
@@ -28,6 +31,8 @@ PY ?= \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 \
 		$(PYTHON)
 
+RUN_SCRIPT = $(PY) scripts/$(word 1,$(subst ., ,$(subst --,,$@))).py
+
 # we enter yolo with a script to patch `amp`
 YOLO_TRAIN ?= $(PY) scripts/main_yolo.py segment train
 YOLO_PREDICT ?= \
@@ -36,7 +41,15 @@ YOLO_PREDICT ?= \
 
 ### arguments
 
-MAIN = scripts/main.py \
+ifeq ($(ARCH),maskdino)
+	MAIN_APP = train_net:main
+else ifeq ($(ARCH),mvitv2)
+	MAIN_APP = tools.lazyconfig_train_net:main
+else ifeq ($(ARCH),deeplab)
+	MAIN_APP = projects.DeepLab.train_net:main
+endif
+
+RUN_MAIN_DETECTRON2 = $(PY) scripts/main.py \
 	--main-app $(MAIN_APP) \
 	--config-file $(CONFIG_FILE) \
 	--data-dir $(DATA_DIR) \
@@ -45,31 +58,32 @@ MAIN = scripts/main.py \
 COMMON_ARGS = \
 	--data_dir $(DATA_DIR) \
 	--result_dir $(RESULT_DIR) \
-	--dataset_name $(DATASET_NAME)
+ 	--dataset_name $(DATASET_NAME) \
+ 	--verbosity $(VERBOSITY)
 
 ### variables
 
 MIN_SCORE ?= 0.0001
 MIN_IOU ?= 0.5
 MAX_OBJS ?= 300
-PREDICTION_NAME ?= instances_predictions.pth
-CSV_NAME ?= result.csv
-VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION_NAME)))
-EVALUATION_DIR ?= evaluation
+
+YOLO_DIR ?= yolo
+RESULT_CSV ?= result.csv
+EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))
+
+PREDICTION ?= instances_predictions.pth
+OUTPUT_PREDICTION ?= $(PREDICTION:.pth=.postprocessed.pth)
+VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION)))
+
+SEMSEG_PREDICTION ?= inference/sem_seg_predictions.json
+
+VERBOSITY ?= 0
 CPUS ?= $(shell echo $$(( $(shell nproc --all) - 2 )))
 
 ifeq ($(CUDA_VISIBLE_DEVICES),)
 	DEVICE = cpu
 else
 	DEVICE = cuda
-endif
-
-ifeq ($(ARCH),maskdino)
-	MAIN_APP = train_net:main
-else ifeq ($(ARCH),mvitv2)
-	MAIN_APP = tools.lazyconfig_train_net:main
-else ifeq ($(ARCH),deeplab)
-	MAIN_APP = projects.DeepLab.train_net:main
 endif
 
 ###############
@@ -86,41 +100,44 @@ check-%:
 
 --check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_NAME
 --check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
---check-COCO: check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+--check-COCO: check-COCO_ANNOTATOR_URL check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 
 ### data preprocessing targets
 
 convert-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-coco-golden-label: check-RAW_DIR
 convert-ntuh-coco-golden-label:
-	$(PY) scripts/$@.py \
-		--input $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
-		--output $(DATA_DIR)/coco/instance-detection-v1-ntuh.json
+	$(RUN_SCRIPT) \
+		--verbosity $(VERBOSITY) \
+		--coco "$(DATA_DIR)/raw/NTUH/ntuh-opg-12.json" \
+		--output_coco "$(DATA_DIR)/coco/instance-detection-v1-ntuh.json"
 
 convert-ntuh-finding-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-finding-golden-label: check-RAW_DIR
 convert-ntuh-finding-golden-label:
-	$(PY) scripts/$@.py \
-		--input "$(DATA_DIR)/raw/NTUH/golden_label/(WIP) NTUH Summary Golden Label - Per-study.csv" \
-		--input_coco $(DATA_DIR)/raw/NTUH/ntuh-opg-12.json \
-		--output $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv
+	$(RUN_SCRIPT) \
+		--verbosity $(VERBOSITY) \
+		--label_csv "$(DATA_DIR)/raw/NTUH/golden_label/(WIP) NTUH Summary Golden Label - Per-study.csv" \
+		--coco "$(DATA_DIR)/raw/NTUH/ntuh-opg-12.json" \
+		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv"
 
 convert-ntuh-finding-human-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-finding-human-label: check-RAW_DIR
 convert-ntuh-finding-human-label:
-	$(PY) scripts/$@.py \
-		--input_dir $(DATA_DIR)/raw/NTUH/human_label \
-		--output "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
+	$(RUN_SCRIPT) \
+		--verbosity $(VERBOSITY) \
+		--label_dir "$(DATA_DIR)/raw/NTUH/human_label" \
+		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
 
-convert-coco-to-detectron2-semseg: PYTHONPATH = ./detectron2
 convert-coco-to-detectron2-semseg: ROOT_DIR = $(RAW_DIR)
 convert-coco-to-detectron2-semseg: check-RAW_DIR
 convert-coco-to-detectron2-semseg:
-	$(PY) scripts/$@.py \
-		--data_dir $(DATA_DIR) \
+	$(RUN_SCRIPT) \
+		--verbosity $(VERBOSITY) \
+		--data_dir "$(DATA_DIR)" \
 		--dataset_name $(DATASET_NAME) \
 		--mask_dir "masks/segmentation-v4" \
-		--num_processes $(CPUS)
+		--num_workers $(CPUS)
 
 ### maskdino targets
 
@@ -132,24 +149,25 @@ train-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
 train-maskdino: DATASET_NAME = pano_train,pano_eval
 train-maskdino: --check-MAIN
 train-maskdino:
-	$(PY) $(MAIN) \
+	$(RUN_MAIN_DETECTRON2) \
 		OUTPUT_DIR $(MODEL_DIR)
 
 test-maskdino: RESULT_NAME ?= $(NEW_NAME)
-test-maskdino: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
-test-maskdino: MODEL_CHECKPOINT ?= $(LATEST_MODEL_CHECKPOINT)
+test-maskdino: CONFIG_FILE ?= $(MODEL_CONFIG_FILE)
+test-maskdino: MODEL_CHECKPOINT ?= $(LATEST_MODEL_DETECTRON2)
 test-maskdino: --check-MAIN check-MODEL_NAME
 test-maskdino:
-	$(PY) $(MAIN) --eval-only \
+	$(RUN_MAIN_DETECTRON2) \
+		--eval-only \
 		MODEL.WEIGHTS $(MODEL_DIR)/$(MODEL_CHECKPOINT) \
-		DATASETS.TEST "('pano_eval',)"
+		DATASETS.TEST "('$(DATASET_NAME)',)"
 
 debug-maskdino: PYTHON = python -m pdb
 debug-maskdino: MODEL_DIR = /tmp/debug
 debug-maskdino: DATASET_NAME = pano_train,pano_eval
 debug-maskdino: --check-MAIN
 debug-maskdino:
-	$(PY) $(MAIN) \
+	$(RUN_MAIN_DETECTRON2) \
 		OUTPUT_DIR $(MODEL_DIR)
 		DATASETS.TEST "('pano_debug',)" \
 		TEST.EVAL_PERIOD 10
@@ -167,15 +185,16 @@ train-mvitv2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
 train-mvitv2: DATASET_NAME = pano_train,pano_eval
 train-mvitv2: --check-MAIN
 train-mvitv2:
-	$(PY) $(MAIN) \
+	$(RUN_MAIN_DETECTRON2) \
 		train.output_dir=$(MODEL_DIR)
 
 test-mvitv2: RESULT_NAME ?= $(NEW_NAME)
-test-mvitv2: CONFIG_FILE ?= $(MODEL_DIR)/config.yaml
-test-mvitv2: MODEL_CHECKPOINT ?= $(LATEST_MODEL_CHECKPOINT)
+test-mvitv2: CONFIG_FILE ?= $(MODEL_CONFIG_FILE)
+test-mvitv2: MODEL_CHECKPOINT ?= $(LATEST_MODEL_DETECTRON2)
 test-mvitv2: --check-MAIN check-MODEL_NAME
 test-mvitv2:
-	$(PY) $(MAIN) --eval-only \
+	$(RUN_MAIN_DETECTRON2) \
+		--eval-only \
 		train.init_checkpoint=$(MODEL_DIR)/$(MODEL_CHECKPOINT) \
 		train.output_dir=$(RESULT_DIR) \
 		dataloader.test.dataset.names=$(DATASET_NAME) \
@@ -191,7 +210,7 @@ debug-mvitv2: CONFIG_NAME = mask_rcnn_mvitv2_t_3x.py
 debug-mvitv2: DATASET_NAME = pano_train,pano_eval
 debug-mvitv2: --check-MAIN
 debug-mvitv2:
-	$(PY) $(MAIN) \
+	$(RUN_MAIN_DETECTRON2) \
 		train.output_dir=$(MODEL_DIR) \
 		dataloader.train.dataset.names=pano_debug
 
@@ -202,15 +221,16 @@ train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
 train-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
 train-deeplab: --check-MAIN
 train-deeplab:
-	$(PY) $(MAIN) \
+	$(RUN_MAIN_DETECTRON2) \
 		OUTPUT_DIR $(MODEL_DIR)
 
 test-deeplab: RESULT_NAME ?= $(NEW_NAME)
-test-deeplab: CONFIG_FILE = $(MODEL_DIR)/config.yaml
-test-deeplab: MODEL_CHECKPOINT ?= $(LATEST_MODEL_CHECKPOINT)
-test-deeplab: check-ROOT_DIR check-MAIN_APP check-MODEL_NAME
+test-deeplab: CONFIG_FILE = $(MODEL_CONFIG_FILE)
+test-deeplab: MODEL_CHECKPOINT ?= $(LATEST_MODEL_DETECTRON2)
+test-deeplab: --check-MAIN check-MODEL_NAME
 test-deeplab:
-	$(PY) $(MAIN) --eval-only \
+	$(RUN_MAIN_DETECTRON2) \
+		--eval-only \
 		OUTPUT_DIR $(RESULT_DIR) \
 		DATASETS.TEST "('$(DATASET_NAME)',)" \
 		MODEL.DEVICE $(DEVICE) \
@@ -225,7 +245,7 @@ debug-deeplab: CONFIG_NAME = deeplab-v3.yaml
 debug-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
 debug-deeplab: --check-MAIN
 debug-deeplab:
-	$(PY) $(MAIN) \
+	$(RUN_MAIN_DETECTRON2) \
 		DATALOADER.NUM_WORKERS 0 \
 		SOLVER.MAX_ITER 10 \
 		OUTPUT_DIR $(MODEL_DIR)
@@ -234,14 +254,17 @@ debug-deeplab:
 
 convert-coco-to-yolo: check-ROOT_DIR check-DATASET_NAME
 convert-coco-to-yolo:
-	$(PY) scripts/$@.py \
+	$(RUN_SCRIPT) \
+		--verbosity $(VERBOSITY) \
 		--data_dir $(DATA_DIR) \
-		--dataset_name $(DATASET_NAME)
+		--dataset_name $(DATASET_NAME) \
+		--yolo_dir $(YOLO_DIR)
 
-convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION_NAME
+convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION
 convert-yolo-labels-to-detectron2-prediction-pt:
-	$(PY) scripts/$@.py $(COMMON_ARGS) \
-		--prediction_name $(PREDICTION_NAME)
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		--prediction_name $(PREDICTION)
 
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
@@ -258,11 +281,11 @@ train-yolo:
 		$(YOLO_TRAIN) cfg="$(TMP_FILE)"
 
 test-yolo: RESULT_NAME ?= $(NEW_NAME)
-test-yolo: MODEL_CHECKPOINT ?= $(YOLO_LATEST_MODEL_CHECKPOINT)
+test-yolo: MODEL_CHECKPOINT ?= $(LATEST_MODEL_YOLO)
 test-yolo: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
 test-yolo:
 	$(YOLO_PREDICT) \
-		source="$(DATA_DIR)/yolo/$(DATASET_NAME).txt" \
+		source="$(DATA_DIR)/$(YOLO_DIR)/$(DATASET_NAME).txt" \
 		project="$(RESULT_DIR_ROOT)" \
 		name="./$(RESULT_NAME)" \
 		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \
@@ -285,93 +308,75 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
-postprocess: --check-COMMON
-postprocess: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
-postprocess: SEMSEG_PREDICTION_NAME ?= inference/sem_seg_predictions.json
+postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
 postprocess:
-	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--nouse_gt_as_prediction \
-		--input_prediction_name $(PREDICTION_NAME) \
-		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
-		--csv_name $(CSV_NAME) \
-		--min_score $(MIN_SCORE) \
-		--num_workers $(CPUS)
-
-postprocess-with-semseg: --check-COMMON
-postprocess-with-semseg: OUTPUT_PREDICTION_NAME ?= $(PREDICTION_NAME:.pth=.postprocessed.pth)
-postprocess-with-semseg: SEMSEG_PREDICTION_NAME ?= inference/sem_seg_predictions.json
-postprocess-with-semseg:
-	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--nouse_gt_as_prediction \
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		--prediction $(PREDICTION) \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
-		--semseg_prediction_name $(SEMSEG_PREDICTION_NAME) \
-		--input_prediction_name $(PREDICTION_NAME) \
-		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
-		--csv_name $(CSV_NAME) \
+		--semseg_prediction $(SEMSEG_PREDICTION) \
+		--output_prediction $(OUTPUT_PREDICTION) \
+		--output_csv $(RESULT_CSV) \
 		--min_score $(MIN_SCORE) \
+		--min_area 0 \
+		--min_iom 0.3 \
+		--nosave_predictions \
 		--num_workers $(CPUS)
-
-postprocess-gt: --check-COMMON
-postprocess-gt: OUTPUT_PREDICTION_NAME ?= instances_predictions.pth
-postprocess-gt:
-	$(PY) scripts/postprocess.py $(COMMON_ARGS) \
-		--use_gt_as_prediction \
-		--input_prediction_name $(PREDICTION_NAME) \
-		--output_prediction_name $(OUTPUT_PREDICTION_NAME) \
-		--csv_name $(CSV_NAME) \
-		--min_score $(MIN_SCORE)
 
 --visualize: --check-COMMON
 --visualize:
-	$(PY) scripts/visualize.py $(COMMON_ARGS) \
-		$(USE_GT) \
-		--prediction_name $(PREDICTION_NAME) \
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		$(GT_ARG) \
+		--prediction $(PREDICTION) \
 		--visualize_dir $(VISUALIZE_DIR) \
 		--visualize_subset \
+		--min_score $(MIN_SCORE) \
 		--num_workers $(CPUS)
 
-visualize: USE_GT = --nouse_gt_as_prediction
+visualize: GT_ARG = --nouse_gt_as_prediction
 visualize: --visualize
 
-visualize-gt: USE_GT = --use_gt_as_prediction
-visualize-gt: --visualize
+visualize.gt: GT_ARG = --use_gt_as_prediction
+visualize.gt: --visualize
 
---visualize-semseg: --check-COMMON
---visualize-semseg: PREDICTION_NAME = inference/sem_seg_predictions.json
---visualize-semseg: VISUALIZE_DIR = visualize
---visualize-semseg:
-	$(PY) scripts/visualize-semseg.py $(COMMON_ARGS) \
-		--prediction_name $(PREDICTION_NAME) \
+visualize-semseg: --check-COMMON
+visualize-semseg: VISUALIZE_DIR = visualize
+visualize-semseg:
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		--prediction $(SEMSEG_PREDICTION) \
 		--visualize_dir $(VISUALIZE_DIR)
-
-visualize-semseg: --visualize-semseg
 
 visualize-coco: --check-COMMON --check-COCO
 visualize-coco:
-	$(PY) scripts/$@.py $(COMMON_ARGS) \
-		--prediction_name $(PREDICTION_NAME) \
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		--prediction $(PREDICTION) \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
 
 evaluate-auroc: check-ROOT_DIR
 evaluate-auroc:
-	$(PY) scripts/$@.py \
+	$(RUN_SCRIPT) \
 		--result_dir $(RESULT_DIR) \
-		--csv_name $(CSV_NAME) \
-		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
-		--evaluation_dir $(EVALUATION_DIR)
+		--csv $(RESULT_CSV) \
+		--golden_csv_path "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv" \
+		--evaluation_dir $(EVALUATION_DIR) \
+		--verbosity $(VERBOSITY)
 
-evaluate-auroc-with-human: check-ROOT_DIR
-evaluate-auroc-with-human:
-	$(PY) scripts/evaluate-auroc.py \
+evaluate-auroc.with-human: check-ROOT_DIR
+evaluate-auroc.with-human:
+	$(RUN_SCRIPT) \
 		--result_dir $(RESULT_DIR) \
-		--csv_name $(CSV_NAME) \
-		--golden_csv_path $(DATA_DIR)/csvs/pano_ntuh_golden_label.csv \
+		--csv $(RESULT_CSV) \
+		--golden_csv_path "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv" \
 		--human_csv_path "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
-		--evaluation_dir $(EVALUATION_DIR)
+		--evaluation_dir $(EVALUATION_DIR) \
+		--verbosity $(VERBOSITY)
 
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
-	$(PY) scripts/$@.py \
+	$(RUN_SCRIPT) \
 		--root_dir $(ROOT_DIR) \
 		--height 400 \
 		--image_patterns $(IMAGE_PATTERNS) \

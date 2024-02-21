@@ -26,30 +26,24 @@ flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Detection Dataset name.")
 flags.DEFINE_string(
-    "input_prediction_name", "instances_predictions.pth", "Input prediction file name."
+    "prediction", "instances_predictions.pth", "Input prediction file name."
 )
 flags.DEFINE_string(
     "semseg_result_dir", None, "Semantic segmentation result directory."
 )
 flags.DEFINE_string("semseg_dataset_name", None, "Semantic segmentation dataset name.")
 flags.DEFINE_string(
-    "semseg_prediction_name",
+    "semseg_prediction",
     "inference/sem_seg_predictions.json",
     "Input prediction file name.",
 )
 
-flags.DEFINE_bool(
-    "use_gt_as_prediction",
-    False,
-    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
-    "finding summary but only ground truth segmentation.",
-)
 flags.DEFINE_string(
-    "output_prediction_name",
+    "output_prediction",
     "instances_predictions.postprocessed.pth",
     "Output prediction file name.",
 )
-flags.DEFINE_string("csv_name", "result.csv", "Output result file name.")
+flags.DEFINE_string("output_csv", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_float("min_area", 0, "Object area threshold.")
 flags.DEFINE_float("min_iom", 0.3, "Intersection over minimum threshold.")
@@ -306,18 +300,11 @@ def main(_):
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
-    predictions: list[InstanceDetectionPrediction]
-    if FLAGS.use_gt_as_prediction:
-        predictions = [
-            InstanceDetectionPrediction.from_instance_detection_data(data)
-            for data in dataset
-        ]
-
-    else:
-        predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
-            Path(FLAGS.result_dir, FLAGS.input_prediction_name)
-        )
-
+    predictions: list[
+        InstanceDetectionPrediction
+    ] = InstanceDetectionPredictionList.from_detectron2_detection_pth(
+        Path(FLAGS.result_dir, FLAGS.prediction)
+    )
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
@@ -368,7 +355,7 @@ def main(_):
     if FLAGS.save_predictions:
         InstanceDetectionPredictionList.to_detectron2_detection_pth(
             output_predictions,
-            path=Path(FLAGS.result_dir, FLAGS.output_prediction_name),
+            path=Path(FLAGS.result_dir, FLAGS.output_prediction),
         )
 
     df_result: pd.DataFrame = pd.concat(df_results, axis=0).sort_values(
@@ -377,7 +364,7 @@ def main(_):
     df_result = df_result.drop_duplicates(
         subset=["file_name", "fdi", "finding"], keep="first"
     )
-    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.csv_name), index=False)
+    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv), index=False)
 
 
 if __name__ == "__main__":

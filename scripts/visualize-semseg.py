@@ -16,10 +16,10 @@ from detectron2.utils.visualizer import VisImage, Visualizer
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
-flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
 flags.DEFINE_string(
-    "prediction_name", "sem_seg_predictions.json", "Input prediction file name."
+    "prediction", "inference/sem_seg_predictions.json", "Input prediction file name."
 )
+flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
 FLAGS = flags.FLAGS
 
 
@@ -40,7 +40,7 @@ def main(_):
     predictions: list[
         SemanticSegmentationPrediction
     ] = SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
-        Path(FLAGS.result_dir, FLAGS.prediction_name),
+        Path(FLAGS.result_dir, FLAGS.prediction),
         file_name_to_image_id={
             file_name: data["image_id"] for file_name, data in file_name_to_data.items()
         },

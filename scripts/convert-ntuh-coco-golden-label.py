@@ -6,8 +6,8 @@ from absl import app, flags
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 
-flags.DEFINE_string("input", None, "Input COCO file.")
-flags.DEFINE_string("output", None, "Output COCO file.")
+flags.DEFINE_string("coco", None, "Input COCO file.")
+flags.DEFINE_string("output_coco", None, "Output COCO file.")
 flags.DEFINE_string("prefix", "NTUH/", "Prefix for image file paths.")
 FLAGS = flags.FLAGS
 
@@ -55,7 +55,7 @@ CATEGORY_MAPPING: dict[str, str] = {
 
 
 def main(_):
-    coco: Coco = Coco.parse_file(FLAGS.input)
+    coco: Coco = Coco.parse_file(FLAGS.coco)
 
     categories: list[CocoCategory] = [
         CocoCategory(id=i, name=name)
@@ -108,7 +108,7 @@ def main(_):
 
     coco: Coco = Coco(categories=categories, images=images, annotations=annotations)
     json_str: str = coco.json(indent=2)
-    with open(FLAGS.output, "w") as f:
+    with open(FLAGS.output_coco, "w") as f:
         f.write(json_str)
 
 

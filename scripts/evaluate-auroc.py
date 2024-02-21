@@ -21,7 +21,7 @@ from app.instance_detection.types import InstanceDetectionV1Category as Category
 plt.rcParams["font.family"] = "Arial"
 
 flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("csv_name", "result.csv", "Result file name.")
+flags.DEFINE_string("csv", "result.csv", "Result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
 flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
@@ -266,7 +266,7 @@ def main(_):
 
     # reading the data
 
-    df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.csv_name))
+    df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.csv))
     df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
 
     golden_file_names = set(df_golden["file_name"])

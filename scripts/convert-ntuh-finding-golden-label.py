@@ -4,18 +4,20 @@ from typing import Any
 
 import pandas as pd
 from absl import app, flags, logging
-from ID import Coco, CocoImage
 
 from app.instance_detection.types import (
     EVALUATE_WHEN_MISSING_FINDINGS,
     EVALUATE_WHEN_NONMISSING_FINDINGS,
 )
 from app.instance_detection.types import InstanceDetectionV1Category as Category
+from app.schemas import Coco, CocoImage
 from app.utils import uns_to_fdi
 
-flags.DEFINE_string("input", None, "Input csv file as downloaded from Google Sheets.")
-flags.DEFINE_string("input_coco", None, "Input coco json file.")
-flags.DEFINE_string("output", None, "Output golden label csv file.")
+flags.DEFINE_string(
+    "label_csv", None, "Input csv file as downloaded from Google Sheets."
+)
+flags.DEFINE_string("coco", None, "Input coco json file.")
+flags.DEFINE_string("output_csv", None, "Output golden label csv file.")
 FLAGS = flags.FLAGS
 
 
@@ -67,8 +69,8 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main(_):
-    df: pd.DataFrame = pd.read_csv(FLAGS.input, index_col="No.")
-    coco: Coco = Coco.parse_file(FLAGS.input_coco)
+    df: pd.DataFrame = pd.read_csv(FLAGS.label_csv, index_col="No.")
+    coco: Coco = Coco.parse_file(FLAGS.coco)
 
     id_to_image: dict = {image.id: image for image in coco.images}
 
@@ -112,9 +114,9 @@ def main(_):
         f"Found {num_images} studies, {num_teeth} teeth, and {num_findings} findings."
     )
 
-    df_output.to_csv(FLAGS.output, index=False)
+    df_output.to_csv(FLAGS.output_csv, index=False)
 
-    logging.info(f"The golden labels are saved to {FLAGS.output}.")
+    logging.info(f"The golden labels are saved to {FLAGS.output_csv}.")
 
 
 if __name__ == "__main__":
