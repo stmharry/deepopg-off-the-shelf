@@ -91,6 +91,7 @@ class InstanceDetectionPrediction(BaseModel):
         height: int,
         width: int,
         category_ids: list[int] | None = None,
+        min_score: float = 0.0,
     ) -> Instances:
         scores: list[float] = []
         pred_boxes: list[list[int]] = []
@@ -99,6 +100,9 @@ class InstanceDetectionPrediction(BaseModel):
 
         for instance in self.instances:
             score: float = instance.score
+
+            if score < min_score:
+                continue
 
             if (category_ids is not None) and (
                 instance.category_id not in category_ids
