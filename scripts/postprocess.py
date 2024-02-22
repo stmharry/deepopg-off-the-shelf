@@ -129,14 +129,14 @@ def process_data(
     prediction: InstanceDetectionPrediction,
     metadata: Metadata,
     semseg_metadata: Metadata,
-) -> tuple[InstanceDetectionPrediction | None, pd.DataFrame | None]:
+) -> tuple[InstanceDetectionPrediction | None, pd.DataFrame] | None:
     logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
     df: pd.DataFrame = pd.DataFrame.from_records(
         [instance.dict() for instance in prediction.instances]
     )
     if len(df) == 0:
-        return None, None
+        return None
 
     logging.info(f"Original instance count: {len(df)}.")
 
@@ -152,7 +152,7 @@ def process_data(
     )
     df = df.loc[keep]
     if len(df) == 0:
-        return None, None
+        return None
 
     df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
     df["score_per_tooth"] = None
@@ -337,15 +337,17 @@ def main(_):
         for result in map_fn(
             process_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
         ):
+            if result is None:
+                continue
+
             _output_prediction: InstanceDetectionPrediction | None
-            _df_result: pd.DataFrame | None
+            _df_result: pd.DataFrame
             _output_prediction, _df_result = result
 
             if _output_prediction is not None:
                 output_predictions.append(_output_prediction)
 
-            if _df_result is not None:
-                df_results.append(_df_result)
+            df_results.append(_df_result)
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
