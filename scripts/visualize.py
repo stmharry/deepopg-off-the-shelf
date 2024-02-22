@@ -102,8 +102,6 @@ def _visualize_data(
 
 
 def main(_):
-    logging.set_verbosity(logging.INFO)
-
     data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
