@@ -93,9 +93,6 @@ class SemanticSegmentation(CocoDataset):
                     )
                 )
             else:
-                logging.warning(
-                    f"Segmentation mask {sem_seg_file_name!s} does not exist!"
-                )
                 data_schemas.append(
                     SemanticSegmentationData(
                         file_name=data["file_name"],
