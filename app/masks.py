@@ -16,7 +16,7 @@ from detectron2.structures import polygons_to_bitmask
 class Mask(object):
     _rle: CocoRLE | None = None
     _polygons: list[list[int]] | None = None
-    _bitmask: npt.NDArray[np.uint8] | None = None
+    _bitmask: npt.NDArray[np.bool_] | None = None
 
     _height: int | None = None
     _width: int | None = None
@@ -60,22 +60,26 @@ class Mask(object):
     #   4. bitmask -> polygons
 
     @classmethod
-    def convert_rle_to_bitmask(cls, rle: CocoRLE) -> npt.NDArray[np.uint8]:
+    def convert_rle_to_bitmask(cls, rle: CocoRLE) -> npt.NDArray[np.bool_]:
         rle_obj: dict = rle.dict()
-        bitmask: npt.NDArray[np.uint8] = pycocotools.mask.decode(rle_obj)
-        return bitmask.astype(np.bool_)
+        bitmask: npt.NDArray[np.bool_] = pycocotools.mask.decode(rle_obj).astype(  # type: ignore
+            np.bool_
+        )
+        return bitmask
 
     @classmethod
-    def convert_bitmask_to_rle(cls, bitmask: npt.NDArray[np.uint8]) -> CocoRLE:
-        rle_obj: dict = pycocotools.mask.encode(bitmask.ravel(order="F"))
+    def convert_bitmask_to_rle(cls, bitmask: npt.NDArray[np.bool_]) -> CocoRLE:
+        rle_obj: dict = pycocotools.mask.encode(  # type: ignore
+            bitmask.astype(np.uint8).ravel(order="F")
+        )
         rle: CocoRLE = CocoRLE.parse_obj(rle_obj)
         return rle
 
     @classmethod
     def convert_polygons_to_bitmask(
         cls, polygons: list[list[int]], height: int, width: int
-    ) -> npt.NDArray[np.uint8]:
-        bitmask: npt.NDArray[np.uint8]
+    ) -> npt.NDArray[np.bool_]:
+        bitmask: npt.NDArray[np.bool_]
         try:
             bitmask = polygons_to_bitmask(polygons, height, width)
         except TypeError:
@@ -88,11 +92,13 @@ class Mask(object):
 
     @classmethod
     def convert_bitmask_to_polygons(
-        cls, bitmask: npt.NDArray[np.uint8]
+        cls, bitmask: npt.NDArray[np.bool_]
     ) -> list[list[int]]:
         contours: list[npt.NDArray[np.int32]]
         contours, _ = cv2.findContours(
-            bitmask[..., None], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            bitmask[..., None].astype(np.uint8),
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE,
         )
         polygons: list[list[int]] = [contour.flatten().tolist() for contour in contours]
         return polygons
@@ -103,7 +109,7 @@ class Mask(object):
             return self._rle
 
         # note this calls self.bitmask()
-        bitmask: npt.NDArray[np.uint8] = self.bitmask
+        bitmask: npt.NDArray[np.bool_] = self.bitmask
         return self.convert_bitmask_to_rle(bitmask)
 
     @property
@@ -126,7 +132,7 @@ class Mask(object):
         if self._polygons is not None:
             return self._polygons
 
-        bitmask: npt.NDArray[np.uint8]
+        bitmask: npt.NDArray[np.bool_]
         if self._bitmask is not None:
             bitmask = self._bitmask
 
@@ -139,7 +145,7 @@ class Mask(object):
 
     def calculate_bitmask(
         self, allow_unspecified_shape: bool = False
-    ) -> npt.NDArray[np.uint8]:
+    ) -> npt.NDArray[np.bool_]:
         if self._bitmask is not None:
             return self._bitmask
 
@@ -166,16 +172,16 @@ class Mask(object):
         )
 
     @property
-    def bitmask(self) -> npt.NDArray[np.uint8]:
+    def bitmask(self) -> npt.NDArray[np.bool_]:
         return self.calculate_bitmask(allow_unspecified_shape=False)
 
     @property
     def area(self) -> int:
         # we don't actually need the extra padding suppose height and width are not provided
-        bitmask: npt.NDArray[np.uint8] = self.calculate_bitmask(
+        bitmask: npt.NDArray[np.bool_] = self.calculate_bitmask(
             allow_unspecified_shape=True
         )
-        return np.sum(bitmask)
+        return bitmask.sum()
 
     @property
     def bbox_xywh(self) -> list[int]:
