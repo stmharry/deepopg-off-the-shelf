@@ -1,5 +1,6 @@
 import contextlib
 import functools
+import itertools
 import multiprocessing as mp
 import warnings
 from collections.abc import Callable, Iterable
@@ -11,7 +12,7 @@ from absl import logging
 T = TypeVar("T")
 
 
-def suppress_message(fn: Callable[..., T]) -> Callable[..., T | None]:
+def wrap_fn(fn: Callable[..., T]) -> Callable[..., T | None]:
     @functools.wraps(fn)
     def _fn(args: tuple) -> T | None:
         warnings.simplefilter("ignore")
@@ -28,17 +29,18 @@ def suppress_message(fn: Callable[..., T]) -> Callable[..., T | None]:
 
 
 def map_fn(
-    fn: Callable,
+    fn: Callable[..., T],
     tasks: list[Any],
     stack: contextlib.ExitStack,
     num_workers: int = 0,
-) -> Iterable[Any]:
+) -> Iterable[T | None]:
     if num_workers == 0:
-        return map(fn, tasks)
+        return itertools.starmap(fn, tasks)
 
-    fn = suppress_message(fn)
     pool = stack.enter_context(mp.Pool(processes=num_workers))
-    results = pool.imap_unordered(fn, tasks)
+    wrapped_fn: Callable[..., T | None] = wrap_fn(fn)
+
+    results = pool.imap_unordered(wrapped_fn, tasks)
     results = rich.progress.track(results, total=len(tasks))
 
     return results
