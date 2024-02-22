@@ -71,6 +71,10 @@ def main(_):
 
     html_head: str = """
     <style>
+    table, th, td {
+        border: 1px solid black;
+        border-collapse: separate;
+    }
     th[scope=col] {
       background-color: white;
       position: -webkit-sticky;
