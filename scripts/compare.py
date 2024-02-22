@@ -69,9 +69,28 @@ def main(_):
 
     #
 
-    html_table: str = "\n".join(
+    html_head: str = """
+    <style>
+    th[scope=col] {
+      background-color: white;
+      position: -webkit-sticky;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    th[scope=row] {
+      background-color: white;
+      position: -webkit-sticky;
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+    </style>
+    """
+
+    html_body: str = "\n".join(
         [
-            f"<table border='1'>",
+            f"<table>",
             f"  <thead>",
             f"    <th scope='col'>Name</th>",
             *[
@@ -96,10 +115,22 @@ def main(_):
         ]
     )
 
+    html: str = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      {html_head}
+    </head>
+    <body>
+      {html_body}
+    </body>
+    </html>
+    """
+
     logging.info(f"Writing to {output_html_path}")
 
     with open(output_html_path, "w") as f:
-        f.write(html_table)
+        f.write(html)
 
 
 if __name__ == "__main__":
