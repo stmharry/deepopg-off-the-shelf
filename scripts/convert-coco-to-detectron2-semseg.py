@@ -1,4 +1,4 @@
-import multiprocessing
+import contextlib
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -11,13 +11,13 @@ from pydantic import parse_obj_as
 from app.instance_detection.datasets import InstanceDetection
 from app.instance_detection.schemas import InstanceDetectionData
 from app.masks import Mask
+from app.tasks import map_fn
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("dataset_name", None, "Dataset name.")
 flags.DEFINE_string("mask_dir", "masks", "Mask directory (relative to `data_dir`).")
-flags.DEFINE_integer("num_workers", 1, "Number of processes to use.")
-
+flags.DEFINE_integer("num_workers", 0, "Number of processes to use.")
 FLAGS = flags.FLAGS
 
 CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
@@ -56,8 +56,10 @@ CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
 }
 
 
-def _process(
-    data: InstanceDetectionData, metadata: Metadata, output_dir: Path
+def process_data(
+    data: InstanceDetectionData,
+    metadata: Metadata,
+    output_dir: Path,
 ) -> InstanceDetectionData | None:
     logging.info(f"Converting {data.file_name!s}...")
 
@@ -142,17 +144,6 @@ def _process(
     return data
 
 
-def process(
-    data: InstanceDetectionData, metadata: Metadata, output_dir: Path
-) -> InstanceDetectionData | None:
-    try:
-        return _process(data, metadata=metadata, output_dir=output_dir)
-
-    except ValueError as e:
-        logging.error(e)
-        return None
-
-
 def main(_):
     if FLAGS.dataset_name == "pano_all":
         directory_name = "PROMATON"
@@ -177,11 +168,20 @@ def main(_):
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with multiprocessing.Pool(FLAGS.num_workers) as pool:
-        _: list[InstanceDetectionData | None] = pool.starmap(
-            process,
-            [(data, metadata, output_dir) for data in dataset],
-        )
+    with contextlib.ExitStack() as stack:
+        tasks: list[tuple] = [
+            (
+                data,
+                metadata,
+                output_dir,
+            )
+            for data in dataset
+        ]
+
+        for _ in map_fn(
+            process_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
+        ):
+            ...
 
 
 if __name__ == "__main__":

@@ -1,10 +1,8 @@
-import multiprocessing as mp
+import contextlib
 import re
-import warnings
 from pathlib import Path
 
 import numpy as np
-import rich.progress
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -14,6 +12,7 @@ from app.instance_detection.schemas import (
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
 )
+from app.tasks import map_fn
 from app.utils import read_image
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -38,7 +37,7 @@ flags.DEFINE_bool(
     "Set to true to visualize tooth-only, m3-only, and findings-only objects.",
 )
 flags.DEFINE_float("min_score", 0.0, "Minimum score to visualize.")
-flags.DEFINE_integer("num_workers", 4, "Number of workers.")
+flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
 
 
@@ -86,21 +85,6 @@ def visualize_data(
         image_vis.save(image_path)
 
 
-def _visualize_data(
-    args: tuple[
-        InstanceDetectionData,
-        InstanceDetectionPrediction,
-        Metadata,
-        dict[str, str],
-        Path,
-    ]
-) -> None:
-    warnings.simplefilter("ignore")
-    logging.set_verbosity(logging.WARNING)
-
-    return visualize_data(*args)
-
-
 def main(_):
     data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
@@ -142,10 +126,8 @@ def main(_):
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
-    #
-
-    with mp.Pool(processes=FLAGS.num_workers) as pool:
-        tasks = [
+    with contextlib.ExitStack() as stack:
+        tasks: list[tuple] = [
             (
                 data,
                 id_to_prediction[data.image_id],
@@ -156,8 +138,10 @@ def main(_):
             for data in dataset
             if data.image_id in id_to_prediction
         ]
-        results = pool.imap_unordered(_visualize_data, tasks)
-        for _ in rich.progress.track(results, total=len(tasks)):
+
+        for _ in map_fn(
+            visualize_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
+        ):
             ...
 
 

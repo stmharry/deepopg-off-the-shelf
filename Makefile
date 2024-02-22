@@ -23,6 +23,7 @@ NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 
 ### executables
 
+DEBUG ?= false
 PYTHONPATH ?= ./detectron2:./MaskDINO
 PYTHON ?= python
 PY ?= \
@@ -63,7 +64,7 @@ COMMON_ARGS = \
 
 ### variables
 
-MIN_SCORE ?= 0.0001
+MIN_SCORE ?= 0.01
 MIN_IOU ?= 0.5
 MAX_OBJS ?= 300
 
@@ -71,14 +72,19 @@ YOLO_DIR ?= yolo
 RESULT_CSV ?= result.csv
 EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))
 
-PREDICTION ?= instances_predictions.pth
-OUTPUT_PREDICTION ?= $(PREDICTION:.pth=.postprocessed.pth)
+RAW_PREDICTION ?= instances_predictions.pth
+PREDICTION ?= $(RAW_PREDICTION:.pth=.postprocessed.pth)
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION)))
 
 SEMSEG_PREDICTION ?= inference/sem_seg_predictions.json
 
 VERBOSITY ?= 0
 CPUS ?= $(shell echo $$(( $(shell nproc --all) - 2 )))
+
+ifeq ($(DEBUG),true)
+	PYTHON = python -m pdb
+	CPUS = 0
+endif
 
 ifeq ($(CUDA_VISIBLE_DEVICES),)
 	DEVICE = cpu
@@ -99,7 +105,7 @@ check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
 
 --check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_NAME
---check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
+--check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME check-VERBOSITY
 --check-COCO: check-COCO_ANNOTATOR_URL check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 
 ### data preprocessing targets
@@ -314,11 +320,11 @@ postprocess: --check-postprocess
 postprocess:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		--prediction $(PREDICTION) \
+		--prediction $(RAW_PREDICTION) \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
 		--semseg_prediction $(SEMSEG_PREDICTION) \
-		--output_prediction $(OUTPUT_PREDICTION) \
+		--output_prediction $(PREDICTION) \
 		--output_csv $(RESULT_CSV) \
 		--min_score $(MIN_SCORE) \
 		--min_area 0 \
@@ -364,7 +370,8 @@ visualize-semseg:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
 		--prediction $(SEMSEG_PREDICTION) \
-		--visualize_dir $(VISUALIZE_DIR)
+		--visualize_dir $(VISUALIZE_DIR) \
+		--num_workers $(CPUS)
 
 visualize-coco: --check-COMMON --check-COCO
 visualize-coco:
@@ -395,6 +402,6 @@ evaluate-auroc.with-human:
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
 	$(RUN_SCRIPT) \
 		--root_dir $(ROOT_DIR) \
-		--height 400 \
+		--height 800 \
 		--image_patterns $(IMAGE_PATTERNS) \
 		--output_html_path $(HTML_PATH)

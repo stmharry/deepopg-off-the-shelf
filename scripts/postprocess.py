@@ -1,11 +1,9 @@
-import multiprocessing as mp
-import warnings
+import contextlib
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import rich.progress
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
@@ -19,6 +17,7 @@ from app.instance_detection.schemas import (
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.masks import Mask
 from app.semantic_segmentation.datasets import SemanticSegmentation
+from app.tasks import map_fn
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
@@ -53,8 +52,7 @@ flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_float("min_area", 0, "Object area threshold.")
 flags.DEFINE_float("min_iom", 0.3, "Intersection over minimum threshold.")
 flags.DEFINE_boolean("save_predictions", False, "Save predictions.")
-flags.DEFINE_integer("num_workers", 4, "Number of workers.")
-
+flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
 
 
@@ -79,6 +77,9 @@ def non_maximum_suppress(
     num_instances: int = len(df)
 
     keep: pd.Series = pd.Series(True, index=df.index)
+    if iom_threshold == 1.0:
+        return keep
+
     for i in range(num_instances):
         row_i = df.iloc[i]
 
@@ -274,24 +275,7 @@ def process_data(
     return output_prediction, df_result
 
 
-def _process_data(
-    args: tuple[
-        InstanceDetectionData,
-        str,
-        InstanceDetectionPrediction,
-        Metadata,
-        Metadata,
-    ],
-) -> tuple[InstanceDetectionPrediction | None, pd.DataFrame | None]:
-    warnings.simplefilter("ignore")
-    logging.set_verbosity(logging.WARNING)
-
-    return process_data(*args)
-
-
 def main(_):
-    logging.set_verbosity(logging.INFO)
-
     # instance detection
 
     data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
@@ -314,7 +298,7 @@ def main(_):
 
     else:
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
-            Path(FLAGS.result_dir, FLAGS.input_prediction_name)
+            Path(FLAGS.result_dir, FLAGS.prediction)
         )
 
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
@@ -335,7 +319,9 @@ def main(_):
 
     #
 
-    with mp.Pool(processes=FLAGS.num_workers) as pool:
+    output_predictions: list[InstanceDetectionPrediction] = []
+    df_results: list[pd.DataFrame] = []
+    with contextlib.ExitStack() as stack:
         tasks: list[tuple] = [
             (
                 data,
@@ -347,11 +333,10 @@ def main(_):
             for data in dataset
             if data.image_id in id_to_prediction
         ]
-        results = pool.imap_unordered(_process_data, tasks)
 
-        output_predictions: list[InstanceDetectionPrediction] = []
-        df_results: list[pd.DataFrame] = []
-        for result in rich.progress.track(results, total=len(tasks)):
+        for result in map_fn(
+            process_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
+        ):
             _output_prediction: InstanceDetectionPrediction | None
             _df_result: pd.DataFrame | None
             _output_prediction, _df_result = result

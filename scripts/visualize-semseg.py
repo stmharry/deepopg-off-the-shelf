@@ -1,5 +1,4 @@
 import contextlib
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -26,11 +25,11 @@ flags.DEFINE_string(
     "prediction", "inference/sem_seg_predictions.json", "Input prediction file name."
 )
 flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
-flags.DEFINE_integer("num_workers", 4, "Number of workers.")
+flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
 
 
-def visualize_prediction(
+def visualize_data(
     data: SemanticSegmentationData,
     prediction: SemanticSegmentationPrediction,
     metadata: Metadata,
@@ -65,20 +64,6 @@ def visualize_prediction(
     image_vis.save(image_path)
 
 
-def _visualize_data(
-    args: tuple[
-        SemanticSegmentationData,
-        SemanticSegmentationPrediction,
-        Metadata,
-        Path,
-    ]
-) -> None:
-    warnings.simplefilter("ignore")
-    logging.set_verbosity(logging.WARNING)
-
-    return visualize_prediction(*args)
-
-
 def main(_):
     data_driver: SemanticSegmentation | None = SemanticSegmentation.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
@@ -102,24 +87,22 @@ def main(_):
         prediction.image_id: prediction for prediction in predictions
     }
 
-    #
-
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
     with contextlib.ExitStack() as stack:
-        tasks = [
+        tasks: list[tuple] = [
             (
                 data,
                 id_to_prediction[data.image_id],
                 metadata,
-                Path(visualize_dir),
+                visualize_dir,
             )
             for data in dataset
             if data.image_id in id_to_prediction
         ]
         for _ in map_fn(
-            _visualize_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
+            visualize_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
         ):
             ...
 
