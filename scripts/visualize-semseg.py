@@ -83,8 +83,8 @@ def main(_):
         file_name_to_image_id={data.file_name: data.image_id for data in dataset},
     )
 
-    id_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore
-        prediction.image_id: prediction for prediction in predictions
+    name_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore
+        prediction.file_name.stem: prediction for prediction in predictions
     }
 
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
@@ -94,12 +94,12 @@ def main(_):
         tasks: list[tuple] = [
             (
                 data,
-                id_to_prediction[data.image_id],
+                name_to_prediction[data.file_name.stem],
                 metadata,
                 visualize_dir,
             )
             for data in dataset
-            if data.image_id in id_to_prediction
+            if data.file_name.stem in name_to_prediction
         ]
         for _ in map_fn(
             visualize_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
