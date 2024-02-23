@@ -25,6 +25,7 @@ flags.DEFINE_string(
     "prediction", "inference/sem_seg_predictions.json", "Input prediction file name."
 )
 flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
+flags.DEFINE_boolean("force", False, "Overwrite existing files.")
 flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
 
@@ -35,6 +36,11 @@ def visualize_data(
     metadata: Metadata,
     visualize_dir: Path,
 ) -> None:
+    output_image_path: Path = Path(visualize_dir, f"{prediction.file_name.stem}.png")
+    if not FLAGS.force and output_image_path.exists():
+        logging.info(f"Skipping {output_image_path!s}.")
+        return
+
     image_rgb: np.ndarray = read_image(prediction.file_name)
 
     visualizer = Visualizer(image_rgb, metadata=metadata)
@@ -58,10 +64,8 @@ def visualize_data(
 
     image_vis: VisImage = visualizer.draw_sem_seg(semseg_mask, alpha=0.5)
 
-    image_path: Path = Path(visualize_dir, f"{prediction.file_name.stem}.png")
-
-    logging.info(f"Saving to {image_path!s}.")
-    image_vis.save(image_path)
+    logging.info(f"Saving to {output_image_path!s}.")
+    image_vis.save(output_image_path)
 
 
 def main(_):
