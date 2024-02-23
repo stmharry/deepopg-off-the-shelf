@@ -124,7 +124,9 @@ def non_maximum_suppress(
             if iom_bbox == 0:
                 continue
 
-            iom_mask: float = calculate_iom_mask(row_i["mask"], row_j["mask"])
+            iom_mask: float = calculate_iom_mask(
+                row_i["mask"], row_j["mask"], bbox1=row_i["bbox"], bbox2=row_j["bbox"]
+            )
             if iom_mask > iom_threshold:
                 keep.iloc[j] = False
 
