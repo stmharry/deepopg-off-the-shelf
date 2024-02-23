@@ -68,6 +68,32 @@ CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
 }
 
 
+def fleiss_kappa(M):
+    N, k = M.shape
+    n = np.sum(M[0])
+
+    P_i = np.sum(M**2, axis=1) - n
+    P_i = P_i / (n * (n - 1))
+
+    P = np.sum(P_i) / N
+    P_j = np.sum(M, axis=0) / (N * n)
+    PE = np.sum(P_j**2)
+    kappa = (P - PE) / (1 - PE)
+
+    return kappa
+
+
+def convert_matrix(M):
+    N = M.shape[0]
+    converted_M = np.zeros((N, 2))
+
+    for i in range(N):
+        counts = np.bincount(M[i], minlength=2)
+        converted_M[i] = counts
+
+    return converted_M
+
+
 def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
     is_missing: bool = df.loc[df["finding"].eq(Category.MISSING), "label"].eq(1.0).any()
 
@@ -159,6 +185,14 @@ def plot_roc_curve(
         ]
         max_fpr: float = max(fprs)
         min_fpr: float = min(fprs)
+
+        _df_finding: np.array = np.array(
+            [
+                df_finding[f"score_human_{tag}"].eq(1).astype(int).values
+                for tag in human_tags
+            ]
+        ).T
+        f_kappa = fleiss_kappa(convert_matrix(_df_finding))
 
         distance: list[np.array] = [
             (fpr - fprs[i]) ** 2 + (tpr - tprs[i]) ** 2 for i in range(len(fprs))
@@ -297,11 +331,11 @@ def plot_roc_curve(
             f"  - Positive Count: {P}\n"
             f"  - Negative Count: {N}\n"
             f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})\n"
-            f"  - Kappa: {kappa_by_tag}"
+            f"  - Kappa: {kappa_by_tag}\n"
+            f"  - Fleiss' Kappa: {f_kappa:.3f}"
         )
 
     ax_kappa = axes.flatten()[0]
-
 
     ax = axes.flatten()[0]
     fig.legend(
