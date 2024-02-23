@@ -137,16 +137,27 @@ def non_maximum_suppress(
 
 
 def calculate_mean_prob(
-    mask: np.ndarray,
-    prob: np.ndarray,
+    mask: np.ndarray,  # (H, W)
+    prob_uint16: np.ndarray,  # (C, H, W)
+    prob_discount_uint8: np.ndarray | None = None,  # (H, W)
     bbox: np.ndarray | None = None,
 ) -> np.ndarray:
-    if bbox:
+    if bbox is not None:
         x, y, w, h = bbox
-        mask = mask[y : y + h + 1, x : x + w + 1]
-        prob = prob[y : y + h + 1, x : x + w + 1]
+        slices: tuple[slice, slice] = (slice(y, y + h + 1), slice(x, x + w + 1))
 
-    mean_prob = prob[mask].mean(axis=0)
+        mask = mask[slices]
+        prob_uint16 = prob_uint16[(..., *slices)]
+
+        if prob_discount_uint8 is not None:
+            prob_discount_uint8 = prob_discount_uint8[slices]
+
+    prob_uint16 = prob_uint16[..., mask]
+    if prob_discount_uint8 is not None:
+        prob_discount_uint8 = prob_discount_uint8[mask]
+
+    prob_uint16 = prob_uint16 / prob_discount_uint8
+    mean_prob: np.ndarray = prob_uint16.mean(axis=-1) / 65535
 
     return mean_prob
 
@@ -225,11 +236,7 @@ def process_data(
 
     npz_path: Path = Path(semseg_result_dir, "inference", f"{data.file_name.stem}.npz")
     with np.load(npz_path) as npz:
-        # prob.shape == (num_classes, height, width)
-        prob: np.ndarray = npz["prob"]
-
-    prob = prob.transpose(1, 2, 0)
-    prob = prob.astype(np.float32) / 65535
+        prob_uint16: np.ndarray = npz["prob"]  # (C, H, W)
 
     df_findings: list[pd.DataFrame] = []
     row_results: list[dict[str, Any]] = []
@@ -254,8 +261,7 @@ def process_data(
         finding_score: np.ndarray
         if is_finding.sum() > 0:
             mask: np.ndarray = np.stack(df.loc[is_finding, "mask"], axis=-1)
-            discount_factor: np.ndarray = np.sum(mask, axis=-1, keepdims=True)
-            prob_discounted: np.ndarray = 1 - np.power(1 - prob, 1 / discount_factor)
+            prob_discount_uint8: np.ndarray = np.sum(mask, axis=-1, dtype=np.uint8)
 
             for index, row in df.loc[is_finding].iterrows():
                 scoring_method: ScoringMethod
@@ -267,7 +273,10 @@ def process_data(
                         scoring_method = finding_scoring_method
 
                 share_including_bg: np.ndarray = calculate_mean_prob(
-                    row["mask"], bbox=row["bbox"], prob=prob_discounted
+                    row["mask"],
+                    bbox=row["bbox"],
+                    prob_uint16=prob_uint16,
+                    prob_discount_uint8=prob_discount_uint8,
                 )
                 score_per_tooth: np.ndarray = calculate_score(
                     score=row["score"],
