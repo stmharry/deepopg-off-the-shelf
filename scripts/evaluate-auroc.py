@@ -25,11 +25,7 @@ flags.DEFINE_string("csv", "result.csv", "Result file name.")
 flags.DEFINE_string(
     "golden_csv_path", "./data/csvs/pano_ntuh_golden_label.csv", "Golden csv file path."
 )
-flags.DEFINE_string(
-    "human_csv_path",
-    "./data/csvs/pano_ntuh_human_label_{}.csv",
-    "Expert csv file path.",
-)
+flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
 flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
 flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
