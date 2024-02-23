@@ -188,6 +188,13 @@ def process_data(
     prediction: InstanceDetectionPrediction,
     metadata: Metadata,
     semseg_metadata: Metadata,
+    semseg_result_dir: Path,
+    min_score: float,
+    min_area: float,
+    min_iom: float,
+    missing_scoring_method: ScoringMethod,
+    finding_scoring_method: ScoringMethod,
+    save_predictions: bool,
 ) -> tuple[InstanceDetectionPrediction | None, pd.DataFrame] | None:
     logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
@@ -206,9 +213,7 @@ def process_data(
     )
     df["area"] = df["mask"].map(np.sum)
 
-    keep: pd.Series = basic_filter(
-        df, min_score=FLAGS.min_score, min_area=FLAGS.min_area
-    )
+    keep: pd.Series = basic_filter(df, min_score=min_score, min_area=min_area)
     df = df.loc[keep]
     if len(df) == 0:
         return None
@@ -216,9 +221,7 @@ def process_data(
     df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
     df["score_per_tooth"] = None
 
-    npz_path: Path = Path(
-        FLAGS.semseg_result_dir, "inference", f"{data.file_name.stem}.npz"
-    )
+    npz_path: Path = Path(semseg_result_dir, "inference", f"{data.file_name.stem}.npz")
     with np.load(npz_path) as npz:
         # prob.shape == (num_classes, height, width)
         prob: np.ndarray = npz["prob"]
@@ -239,7 +242,7 @@ def process_data(
 
                 is_tooth: pd.Series = df["category_name"].str.startswith("TOOTH")
                 keep: pd.Series = non_maximum_suppress(
-                    df.loc[is_tooth], iom_threshold=FLAGS.min_iom
+                    df.loc[is_tooth], iom_threshold=min_iom
                 )
                 is_finding = is_tooth & keep
 
@@ -256,10 +259,10 @@ def process_data(
                 scoring_method: ScoringMethod
                 match finding:
                     case Category.MISSING:
-                        scoring_method = ScoringMethod[FLAGS.missing_scoring_method]
+                        scoring_method = missing_scoring_method
 
                     case _:
-                        scoring_method = ScoringMethod[FLAGS.finding_scoring_method]
+                        scoring_method = finding_scoring_method
 
                 share_including_bg: np.ndarray = calculate_mean_prob(
                     row["mask"], bbox=row["bbox"], prob=prob_discounted
@@ -317,7 +320,7 @@ def process_data(
         df_findings.append(df.loc[is_finding])
 
     output_prediction: InstanceDetectionPrediction | None = None
-    if FLAGS.save_predictions:
+    if save_predictions:
         df_finding = pd.concat(df_findings, axis=0)
         instances: list[InstanceDetectionPredictionInstance] = parse_obj_as(
             list[InstanceDetectionPredictionInstance],
@@ -386,13 +389,23 @@ def main(_):
                 id_to_prediction[data.image_id],
                 metadata,
                 semseg_metadata,
+                Path(FLAGS.semseg_result_dir),
+                FLAGS.min_score,
+                FLAGS.min_area,
+                FLAGS.min_iom,
+                ScoringMethod[FLAGS.missing_scoring_method],
+                ScoringMethod[FLAGS.finding_scoring_method],
+                FLAGS.save_predictions,
             )
             for data in dataset
             if data.image_id in id_to_prediction
         ]
 
         for result in map_fn(
-            process_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
+            process_data,
+            tasks=tasks,
+            stack=stack,
+            num_workers=FLAGS.num_workers,
         ):
             if result is None:
                 continue

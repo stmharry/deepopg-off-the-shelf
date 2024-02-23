@@ -1,9 +1,10 @@
 import contextlib
 import itertools
 import multiprocessing as mp
+import multiprocessing.context as mp_context
 import warnings
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import rich.progress
 from absl import logging
@@ -34,11 +35,13 @@ def map_fn(
     tasks: list[tuple],
     stack: contextlib.ExitStack,
     num_workers: int = 0,
+    method: Literal["fork", "spawn", "forkserver"] | None = "fork",
 ) -> Iterable[T | None]:
     if num_workers == 0:
         return itertools.starmap(fn, tasks)
 
-    pool = stack.enter_context(mp.Pool(processes=num_workers))
+    context: mp_context.BaseContext = mp.get_context(method)
+    pool = stack.enter_context(context.Pool(processes=num_workers))
     results = pool.imap_unordered(_map_fn, [(fn, task) for task in tasks])
     results = rich.progress.track(results, total=len(tasks))
 
