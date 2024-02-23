@@ -135,14 +135,20 @@ def plot_roc_curve(
         roc_auc_ci_upper: float = np.minimum(1, roc_auc + 1.96 * auc_std_err)
 
         report_by_tag: dict[str, dict] = {}
+        kappa_by_tag: dict[str, float] = {}
         for tag in human_tags:
             report: dict = sklearn.metrics.classification_report(  # type: ignore
                 y_true=df_finding["label"],
                 y_pred=df_finding[f"score_human_{tag}"],
                 output_dict=True,
             )
-
             report_by_tag[tag] = report
+
+            kappa: float = sklearn.metrics.cohen_kappa_score(  # type: ignore
+                y1=df_finding["label"],
+                y2=df_finding[f"score_human_{tag}"],
+            )
+            kappa_by_tag[tag] = round(kappa, 3)
 
         tprs: list[float] = [report["1"]["recall"] for report in report_by_tag.values()]
         max_tpr: float = max(tprs)
@@ -290,8 +296,12 @@ def plot_roc_curve(
             f"  - Sample Count: {len(df_finding)}\n"
             f"  - Positive Count: {P}\n"
             f"  - Negative Count: {N}\n"
-            f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})"
+            f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})\n"
+            f"  - Kappa: {kappa_by_tag}"
         )
+
+    ax_kappa = axes.flatten()[0]
+
 
     ax = axes.flatten()[0]
     fig.legend(
@@ -301,7 +311,7 @@ def plot_roc_curve(
         fontsize="small",
     )
 
-    return fig
+    return fig, ax_kappa
 
 
 def main(_):
@@ -377,11 +387,11 @@ def main(_):
         .apply(process_per_tooth)
     )
 
-    evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
-    # evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-02-21/")
+    # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-02-21/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
     fig: Figure
-    fig = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
+    fig, ax_kappa = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
     fig.savefig(Path(evaluation_dir, f"roc-curve.pdf"))
 
     df.sort_values(["finding", "score"], ascending=True).to_csv(
