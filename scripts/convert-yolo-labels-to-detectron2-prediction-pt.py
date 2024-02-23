@@ -14,9 +14,11 @@ from app.instance_detection.schemas import (
 from app.masks import Mask
 from detectron2.data import DatasetCatalog
 
-flags.DEFINE_string("data_dir", None, "Data directory")
-flags.DEFINE_string("result_dir", None, "Result directory")
-flags.DEFINE_string("dataset_name", None, "Dataset name")
+flags.DEFINE_string("data_dir", None, "Data directory.")
+flags.DEFINE_string("result_dir", None, "Result directory.")
+flags.DEFINE_enum(
+    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+)
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
 )
@@ -76,7 +78,8 @@ def main(_):
 
             except ValueError as e:
                 logging.warning(
-                    f"Error when parsing line from {label_file_path!s}: {line.strip()} due to '{e}', skipping..."
+                    f"Error when parsing line from {label_file_path!s}:"
+                    f" {line.strip()} due to '{e}', skipping..."
                 )
                 continue
 

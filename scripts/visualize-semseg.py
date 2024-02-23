@@ -18,9 +18,14 @@ from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
 
-flags.DEFINE_string("data_dir", None, "Data directory.")
-flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("dataset_name", None, "Dataset name.")
+flags.DEFINE_string("data_dir", "./data", "Data directory.")
+flags.DEFINE_string("result_dir", "./results", "Result directory.")
+flags.DEFINE_enum(
+    "dataset_name",
+    "pano_semseg_v4",
+    SemanticSegmentation.available_dataset_names(),
+    "Dataset name.",
+)
 flags.DEFINE_string(
     "prediction", "inference/sem_seg_predictions.json", "Input prediction file name."
 )
@@ -80,11 +85,11 @@ def main(_):
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
-    predictions: list[
-        SemanticSegmentationPrediction
-    ] = SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
-        Path(FLAGS.result_dir, FLAGS.prediction),
-        file_name_to_image_id={data.file_name: data.image_id for data in dataset},
+    predictions: list[SemanticSegmentationPrediction] = (
+        SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
+            Path(FLAGS.result_dir, FLAGS.prediction),
+            file_name_to_image_id={data.file_name: data.image_id for data in dataset},
+        )
     )
 
     name_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore

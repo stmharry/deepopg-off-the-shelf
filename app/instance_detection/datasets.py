@@ -290,7 +290,7 @@ class InstanceDetection(CocoDataset):
 
 class InstanceDetectionV1(InstanceDetection):
     PREFIX: ClassVar[str] = "pano"
-    SPLITS: ClassVar[list[str]] = ["all", "train", "eval", "test", "debug"]
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "debug"]
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
         r"TOOTH_(\d+)": r"TOOTH_\1",
         r"DENTAL_IMPLANT_(\d+)": "IMPLANT",

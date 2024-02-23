@@ -28,6 +28,16 @@ class CocoDataset(metaclass=abc.ABCMeta):
     _coco_dataset: list[dict[str, Any]] | None = dataclasses.field(default=None)
 
     @classmethod
+    def available_dataset_names(cls: type[T]) -> list[str]:
+        dataset_names: list[str] = []
+
+        subclass: type[T]
+        for subclass in cls.get_subclasses():  # type: ignore
+            dataset_names.extend(subclass.get_dataset_names())
+
+        return dataset_names
+
+    @classmethod
     def register_by_name(cls: type[T], dataset_name: str, root_dir: Path) -> T | None:
         data_driver: T | None = None
 
@@ -56,7 +66,7 @@ class CocoDataset(metaclass=abc.ABCMeta):
 
     @classmethod
     def get_dataset_names(cls) -> list[str]:
-        return [f"{cls.PREFIX}_{split}" for split in cls.SPLITS]
+        return [cls.PREFIX, *[f"{cls.PREFIX}_{split}" for split in cls.SPLITS]]
 
     @classmethod
     def get_coco_categories(cls, coco_path: str | Path) -> list[CocoCategory]:
@@ -118,7 +128,8 @@ class CocoDataset(metaclass=abc.ABCMeta):
     def coco_paths(self) -> list[Path]:
         if self.coco_path is None:
             logging.warning(
-                f"InstanceDetection {self.__class__.__name__} does not have a coco_path!"
+                f"InstanceDetection {self.__class__.__name__} does not have a"
+                " coco_path!"
             )
             return []
 

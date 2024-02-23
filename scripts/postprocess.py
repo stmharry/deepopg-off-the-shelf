@@ -21,16 +21,20 @@ from app.tasks import map_fn
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
-flags.DEFINE_string("data_dir", None, "Data directory.")
-flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("dataset_name", None, "Detection Dataset name.")
-flags.DEFINE_string(
-    "prediction", "instances_predictions.pth", "Input prediction file name."
+flags.DEFINE_string("data_dir", "./data", "Data directory.")
+flags.DEFINE_string("result_dir", "./results", "Result directory.")
+flags.DEFINE_enum(
+    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
 )
 flags.DEFINE_string(
-    "semseg_result_dir", None, "Semantic segmentation result directory."
+    "semseg_result_dir", "./results", "Semantic segmentation result directory."
 )
-flags.DEFINE_string("semseg_dataset_name", None, "Semantic segmentation dataset name.")
+flags.DEFINE_enum(
+    "semseg_dataset_name",
+    "pano_semseg_v4",
+    SemanticSegmentation.available_dataset_names(),
+    "Semantic segmentation dataset name.",
+)
 flags.DEFINE_string(
     "semseg_prediction",
     "inference/sem_seg_predictions.json",
@@ -39,8 +43,8 @@ flags.DEFINE_string(
 flags.DEFINE_bool(
     "use_gt_as_prediction",
     False,
-    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
-    "finding summary but only ground truth segmentation.",
+    "Set to true to perform command on ground truth. Useful when we do not have ground"
+    " truth finding summary but only ground truth segmentation.",
 )
 flags.DEFINE_string(
     "output_prediction",
@@ -64,7 +68,8 @@ def basic_filter(
     keep: pd.Series = (df["area"] > min_area) & (df["score"] > min_score)
 
     logging.info(
-        f"Filtering by area and score, reducing instances from {len(df)} -> {keep.sum()}"
+        f"Filtering by area and score, reducing instances from {len(df)} ->"
+        f" {keep.sum()}"
     )
     return keep
 

@@ -18,9 +18,11 @@ from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
 
-flags.DEFINE_string("data_dir", None, "Data directory.")
-flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("dataset_name", None, "Dataset name.")
+flags.DEFINE_string("data_dir", "./data", "Data directory.")
+flags.DEFINE_string("result_dir", "./results", "Result directory.")
+flags.DEFINE_enum(
+    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+)
 flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
@@ -28,8 +30,8 @@ flags.DEFINE_string(
 flags.DEFINE_bool(
     "use_gt_as_prediction",
     False,
-    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
-    "finding summary but only ground truth segmentation.",
+    "Set to true to perform command on ground truth. Useful when we do not have ground"
+    " truth finding summary but only ground truth segmentation.",
 )
 flags.DEFINE_bool(
     "visualize_subset",

@@ -10,10 +10,14 @@ from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string(
     "label_dir",
-    None,
+    "./data/raw/NTUH/human_label",
     "Input directory containing csv files as downloaded from Google Sheets.",
 )
-flags.DEFINE_string("output_csv", None, "Output human label csv file.")
+flags.DEFINE_string(
+    "output_csv",
+    "./data/csvs/pano_ntuh_human_label_{}.csv",
+    "Output human label csv file.",
+)
 FLAGS = flags.FLAGS
 
 FINDING_MAPPING: dict[str, str] = {
@@ -67,7 +71,8 @@ def main(_):
 
                 if len(_df_finding) != 1:
                     raise ValueError(
-                        f"Multiple rows found for tag {tag} and index {index} in {finding_filename}. Expected 1."
+                        f"Multiple rows found for tag {tag} and index {index} in"
+                        f" {finding_filename}. Expected 1."
                     )
 
                 s_finding: pd.Series = _df_finding.squeeze()
@@ -94,7 +99,8 @@ def main(_):
                         )
 
                     logging.debug(
-                        f"Processing {row['file_name']} (image #{row['prefix']}) with FDI {fdi} and findings {findings.split(',')}."
+                        f"Processing {row['file_name']} (image #{row['prefix']}) with"
+                        f" FDI {fdi} and findings {findings.split(',')}."
                     )
 
         df_output: pd.DataFrame = pd.DataFrame(output_rows).sort_values(
@@ -106,7 +112,8 @@ def main(_):
         num_findings: int = len(df_output)
 
         logging.info(
-            f"For human {tag}, found {num_images} studies, {num_teeth} teeth, and {num_findings} findings."
+            f"For human {tag}, found {num_images} studies, {num_teeth} teeth, and"
+            f" {num_findings} findings."
         )
 
         output_path: Path = Path(FLAGS.output_csv.format(tag))

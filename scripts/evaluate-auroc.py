@@ -20,14 +20,19 @@ from app.instance_detection.types import InstanceDetectionV1Category as Category
 
 plt.rcParams["font.family"] = "Arial"
 
-flags.DEFINE_string("result_dir", None, "Result directory.")
+flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_string("csv", "result.csv", "Result file name.")
-flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
-flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
+flags.DEFINE_string(
+    "golden_csv_path", "./data/csvs/pano_ntuh_golden_label.csv", "Golden csv file path."
+)
+flags.DEFINE_string(
+    "human_csv_path",
+    "./data/csvs/pano_ntuh_human_label_{}.csv",
+    "Expert csv file path.",
+)
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
 flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
 flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
-
 FLAGS = flags.FLAGS
 
 
@@ -287,7 +292,8 @@ def main(_):
             df_human_by_tag[tag] = df_human
 
             logging.info(
-                f"Human prediction file {tag} has {df_human['file_name'].nunique()} file names."
+                f"Human prediction file {tag} has"
+                f" {df_human['file_name'].nunique()} file names."
             )
             pred_file_names = pred_file_names.intersection(df_human["file_name"])
 
@@ -295,9 +301,10 @@ def main(_):
         common_file_names: set[str] = pred_file_names.intersection(golden_file_names)
 
         logging.warning(
-            f"Only {len(common_file_names)} file names from the prediction file are in the golden file, "
-            f"while there are {len(pred_file_names)} file names in the prediction files. "
-            f"Setting the prediction file names to the intersection of both."
+            f"Only {len(common_file_names)} file names from the prediction file are in"
+            f" the golden file, while there are {len(pred_file_names)} file names in"
+            " the prediction files. Setting the prediction file names to the"
+            " intersection of both."
         )
         pred_file_names = common_file_names
 

@@ -17,25 +17,27 @@ from app.instance_detection.schemas import (
 from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
-flags.DEFINE_string("data_dir", None, "Data directory.")
-flags.DEFINE_string("result_dir", None, "Result directory.")
-flags.DEFINE_string("dataset_name", None, "Dataset name.")
+flags.DEFINE_string("data_dir", "./data", "Data directory.")
+flags.DEFINE_string("result_dir", "./results", "Result directory.")
+flags.DEFINE_enum(
+    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+)
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
 )
 flags.DEFINE_bool(
     "use_gt_as_prediction",
     False,
-    "Set to true to perform command on ground truth. Useful when we do not have ground truth "
-    "finding summary but only ground truth segmentation.",
+    "Set to true to perform command on ground truth. Useful when we do not have ground"
+    " truth finding summary but only ground truth segmentation.",
 )
-flags.DEFINE_string("coco_annotator_url", None, "Coco annotator API url.")
+flags.DEFINE_string(
+    "coco_annotator_url", "localhost:5000/api", "Coco annotator API url."
+)
 FLAGS = flags.FLAGS
 
 
 def main(_):
-    logging.set_verbosity(logging.INFO)
-
     data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )

@@ -23,7 +23,7 @@ NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 
 ### executables
 
-DEBUG ?= false
+CUDA_VISIBLE_DEVICES ?= 0
 PYTHONPATH ?= ./detectron2:./MaskDINO
 PYTHON ?= python
 PY ?= \
@@ -32,6 +32,7 @@ PY ?= \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 \
 		$(PYTHON)
 
+# for `--script.postfix`, we will run `script` target
 RUN_SCRIPT = $(PY) scripts/$(word 1,$(subst ., ,$(subst --,,$@))).py
 
 # we enter yolo with a script to patch `amp`
@@ -64,11 +65,17 @@ COMMON_ARGS = \
 
 ### variables
 
+DEBUG ?= false
+VERBOSITY ?= 0
+CPUS ?= 4
+
 MIN_SCORE ?= 0.01
 MIN_IOU ?= 0.5
 MAX_OBJS ?= 300
 
 YOLO_DIR ?= yolo
+MASK_DIR ?= masks/segmentation-v4
+
 RESULT_CSV ?= result.csv
 EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))
 
@@ -77,9 +84,6 @@ PREDICTION ?= $(RAW_PREDICTION:.pth=.postprocessed.pth)
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION)))
 
 SEMSEG_PREDICTION ?= inference/sem_seg_predictions.json
-
-VERBOSITY ?= 0
-CPUS ?= $(shell echo $$(( $(shell nproc --all) - 2 )))
 
 ifeq ($(DEBUG),true)
 	PYTHON = python -m pdb
@@ -97,7 +101,8 @@ endif
 ###############
 
 default:
-	echo $(LATEST_MODEL)
+	$(PY) scripts/visualize-semseg.py --help
+
 
 ### util targets
 
@@ -114,36 +119,36 @@ convert-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-coco-golden-label: check-RAW_DIR
 convert-ntuh-coco-golden-label:
 	$(RUN_SCRIPT) \
-		--verbosity $(VERBOSITY) \
 		--coco "$(DATA_DIR)/raw/NTUH/ntuh-opg-12.json" \
-		--output_coco "$(DATA_DIR)/coco/instance-detection-v1-ntuh.json"
+		--output_coco "$(DATA_DIR)/coco/instance-detection-v1-ntuh.json" \
+		--verbosity $(VERBOSITY)
 
 convert-ntuh-finding-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-finding-golden-label: check-RAW_DIR
 convert-ntuh-finding-golden-label:
 	$(RUN_SCRIPT) \
-		--verbosity $(VERBOSITY) \
 		--label_csv "$(DATA_DIR)/raw/NTUH/golden_label/(WIP) NTUH Summary Golden Label - Per-study.csv" \
 		--coco "$(DATA_DIR)/raw/NTUH/ntuh-opg-12.json" \
-		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv"
+		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv" \
+		--verbosity $(VERBOSITY)
 
 convert-ntuh-finding-human-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-finding-human-label: check-RAW_DIR
 convert-ntuh-finding-human-label:
 	$(RUN_SCRIPT) \
-		--verbosity $(VERBOSITY) \
 		--label_dir "$(DATA_DIR)/raw/NTUH/human_label" \
-		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv"
+		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
+		--verbosity $(VERBOSITY)
 
 convert-coco-to-detectron2-semseg: ROOT_DIR = $(RAW_DIR)
 convert-coco-to-detectron2-semseg: check-RAW_DIR
 convert-coco-to-detectron2-semseg:
 	$(RUN_SCRIPT) \
-		--verbosity $(VERBOSITY) \
 		--data_dir "$(DATA_DIR)" \
-		--dataset_name $(DATASET_NAME) \
-		--mask_dir "masks/segmentation-v4" \
-		--num_workers $(CPUS)
+		--dataset_prefix $(DATASET_NAME) \
+		--mask_dir "$(MASK_DIR)" \
+		--num_workers $(CPUS) \
+		--verbosity $(VERBOSITY)
 
 ### maskdino targets
 
@@ -261,10 +266,10 @@ debug-deeplab:
 convert-coco-to-yolo: check-ROOT_DIR check-DATASET_NAME
 convert-coco-to-yolo:
 	$(RUN_SCRIPT) \
-		--verbosity $(VERBOSITY) \
 		--data_dir $(DATA_DIR) \
-		--dataset_name $(DATASET_NAME) \
-		--yolo_dir $(YOLO_DIR)
+		--dataset_prefix $(DATASET_NAME) \
+		--yolo_dir $(YOLO_DIR) \
+		--verbosity $(VERBOSITY)
 
 convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION
 convert-yolo-labels-to-detectron2-prediction-pt:
@@ -274,16 +279,24 @@ convert-yolo-labels-to-detectron2-prediction-pt:
 
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
-train-yolo: MODEL_NAME = $(NEW_NAME)
+train-yolo: MODEL_NAME ?= $(NEW_NAME)
 train-yolo: CONFIG_NAME ?= yolov8n-seg.yaml
 train-yolo: TMP_FILE := $(shell mktemp --suffix=.yaml)
 train-yolo: check-ROOT_DIR
 train-yolo:
-	cat $(CONFIG_FILE) > $(TMP_FILE) && \
-		echo "mode: train" >> $(TMP_FILE) && \
-		echo "data: $(DATA_DIR)/yolo/metadata.yaml" >> $(TMP_FILE) && \
-		echo "project: $(MODEL_DIR_ROOT)" >> $(TMP_FILE) && \
-		echo "name: ./$(MODEL_NAME)" >> $(TMP_FILE) && \
+	if [ -d $(MODEL_DIR) ]; then \
+		cat $(MODEL_DIR)/config.yaml > $(TMP_FILE) && \
+			echo "resume: true" >> $(TMP_FILE) ; \
+	else \
+		mkdir $(MODEL_DIR) && \
+			cp $(CONFIG_FILE) $(MODEL_DIR)/config.yaml && \
+			cat $(CONFIG_FILE) > $(TMP_FILE) && \
+			echo \
+				"mode: train" \
+				"\ndata: $(DATA_DIR)/yolo/metadata.yaml" \
+				"\nproject: $(MODEL_DIR_ROOT)" \
+				"\nname: ./$(MODEL_NAME)" >> $(TMP_FILE) ; \
+	fi && \
 		$(YOLO_TRAIN) cfg="$(TMP_FILE)"
 
 test-yolo: RESULT_NAME ?= $(NEW_NAME)
@@ -371,6 +384,7 @@ visualize-semseg:
 		$(COMMON_ARGS) \
 		--prediction $(SEMSEG_PREDICTION) \
 		--visualize_dir $(VISUALIZE_DIR) \
+		--noforce \
 		--num_workers $(CPUS)
 
 visualize-coco: --check-COMMON --check-COCO
@@ -401,7 +415,7 @@ evaluate-auroc.with-human:
 
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
 	$(RUN_SCRIPT) \
-		--root_dir $(ROOT_DIR) \
-		--height 800 \
 		--image_patterns $(IMAGE_PATTERNS) \
-		--output_html_path $(HTML_PATH)
+		--output_html $(HTML_PATH) \
+		--height 800 \
+		--verbosity $(VERBOSITY)

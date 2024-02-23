@@ -14,9 +14,11 @@ from app.masks import Mask
 from app.tasks import map_fn
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
-flags.DEFINE_string("data_dir", None, "Data directory.")
-flags.DEFINE_string("dataset_name", None, "Dataset name.")
-flags.DEFINE_string("mask_dir", "masks", "Mask directory (relative to `data_dir`).")
+flags.DEFINE_string("data_dir", "./data", "Data directory.")
+flags.DEFINE_enum("dataset_prefix", "pano", ["pano", "pano_ntuh"], "Dataset prefix.")
+flags.DEFINE_string(
+    "mask_dir", "masks", "Mask directory to save masks to (relative to `data_dir`)."
+)
 flags.DEFINE_integer("num_workers", 0, "Number of processes to use.")
 FLAGS = flags.FLAGS
 
@@ -145,25 +147,27 @@ def process_data(
 
 
 def main(_):
-    if FLAGS.dataset_name == "pano_all":
-        directory_name = "PROMATON"
+    directory_name: str
+    match FLAGS.dataset_name:
+        case "pano":
+            directory_name = "PROMATON"
 
-    elif FLAGS.dataset_name == "pano_ntuh":
-        directory_name = "NTUH"
+        case "pano_ntuh":
+            directory_name = "NTUH"
 
-    else:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
+        case _:
+            raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
     driver: InstanceDetection | None = InstanceDetection.register_by_name(
-        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
+        dataset_name=FLAGS.dataset_prefix, root_dir=FLAGS.data_dir
     )
     if driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
+        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
     dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
+        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_prefix)
     )
-    metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
+    metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_prefix)
 
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)

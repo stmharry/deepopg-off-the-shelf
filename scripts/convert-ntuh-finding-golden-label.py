@@ -16,8 +16,12 @@ from app.utils import uns_to_fdi
 flags.DEFINE_string(
     "label_csv", None, "Input csv file as downloaded from Google Sheets."
 )
-flags.DEFINE_string("coco", None, "Input coco json file.")
-flags.DEFINE_string("output_csv", None, "Output golden label csv file.")
+flags.DEFINE_string("coco", "./data/raw/NTUH/ntuh-opg-12.json", "Input coco json file.")
+flags.DEFINE_string(
+    "output_csv",
+    "./data/csvs/pano_ntuh_golden_label.csv",
+    "Output golden label csv file.",
+)
 FLAGS = flags.FLAGS
 
 

@@ -6,9 +6,12 @@ from absl import app, flags
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 
-flags.DEFINE_string("coco", None, "Input COCO file.")
-flags.DEFINE_string("output_coco", None, "Output COCO file.")
-flags.DEFINE_string("prefix", "NTUH/", "Prefix for image file paths.")
+flags.DEFINE_string("coco", "./data/raw/NTUH/ntuh-opg-12.json", "Input COCO file path.")
+flags.DEFINE_string(
+    "output_coco",
+    "./data/coco/instance-detection-v1-ntuh.json",
+    "Output COCO file path.",
+)
 FLAGS = flags.FLAGS
 
 CATEGORY_MAPPING: dict[str, str] = {
@@ -76,7 +79,7 @@ def main(_):
         _image: CocoImage = image.copy(
             update={
                 "id": image.id,
-                "file_name": f"{FLAGS.prefix}{file_name}.jpg",
+                "file_name": f"NTUH/{file_name}.jpg",
             }
         )
         images.append(_image)

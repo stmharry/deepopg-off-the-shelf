@@ -11,7 +11,7 @@ flags.DEFINE_list(
     [],
     "Image path patterns to search for. Use '*' for wildcard.",
 )
-flags.DEFINE_string("output_html_path", "./index.html", "Output HTML path.")
+flags.DEFINE_string("output_html", "./index.html", "Output HTML path.")
 flags.DEFINE_integer("height", 400, "Height of images in the HTML.")
 FLAGS = flags.FLAGS
 
@@ -121,8 +121,8 @@ def html(df: pd.DataFrame) -> str:
 
 
 def main(_):
-    output_html_path: Path = Path(FLAGS.output_html_path)
-    output_dir: Path = output_html_path.parent
+    output_html: Path = Path(FLAGS.output_html)
+    output_dir: Path = output_html.parent
 
     df: pd.DataFrame = pd.concat(
         [glob(Path(pattern), root_dir=output_dir) for pattern in FLAGS.image_patterns],
@@ -130,8 +130,8 @@ def main(_):
     ).sort_index()
     html_str: str = html(df=df)
 
-    logging.info(f"Writing to {output_html_path}")
-    with open(output_html_path, "w") as f:
+    logging.info(f"Writing to {output_html}")
+    with open(output_html, "w") as f:
         f.write(html_str)
 
 
