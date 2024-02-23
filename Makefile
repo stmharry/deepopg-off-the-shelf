@@ -74,7 +74,6 @@ MIN_IOU ?= 0.5
 MAX_OBJS ?= 300
 
 YOLO_DIR ?= yolo
-MASK_DIR ?= masks/segmentation-v4
 
 RESULT_CSV ?= result.csv
 EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))
@@ -141,6 +140,7 @@ convert-ntuh-finding-human-label:
 		--verbosity $(VERBOSITY)
 
 convert-coco-to-detectron2-semseg: ROOT_DIR = $(RAW_DIR)
+convert-coco-to-detectron2-semseg: MASK_DIR ?= masks/segmentation-v4
 convert-coco-to-detectron2-semseg: check-RAW_DIR
 convert-coco-to-detectron2-semseg:
 	$(RUN_SCRIPT) \
@@ -312,7 +312,6 @@ test-yolo:
 		conf=$(MIN_SCORE) \
 		iou=$(MIN_IOU) \
 		max_det=$(MAX_OBJS) \
-		save=True \
 		save_txt=True \
 		save_conf=True
 
@@ -339,9 +338,7 @@ postprocess:
 		--semseg_prediction $(SEMSEG_PREDICTION) \
 		--output_prediction $(PREDICTION) \
 		--output_csv $(RESULT_CSV) \
-		--min_score $(MIN_SCORE) \
-		--min_area 0 \
-		--min_iom 0.3 \
+		$(POSTPROCESS_ARGS) \
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
@@ -355,6 +352,8 @@ postprocess.gt:
 		--semseg_prediction $(SEMSEG_PREDICTION) \
 		--output_csv $(RESULT_CSV) \
 		--min_iom 1.0 \
+		--missing_scoring_method SHARE_NOBG \
+		--finding_scoring_method SCORE_MUL_SHARE_NOBG \
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
@@ -413,9 +412,10 @@ evaluate-auroc.with-human:
 		--evaluation_dir $(EVALUATION_DIR) \
 		--verbosity $(VERBOSITY)
 
+compare: IMAGE_HEIGHT ?= 800
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
 	$(RUN_SCRIPT) \
 		--image_patterns $(IMAGE_PATTERNS) \
 		--output_html $(HTML_PATH) \
-		--height 800 \
+		--height $(IMAGE_HEIGHT) \
 		--verbosity $(VERBOSITY)

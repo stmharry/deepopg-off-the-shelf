@@ -1,4 +1,5 @@
 import contextlib
+import enum
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,16 @@ from app.semantic_segmentation.datasets import SemanticSegmentation
 from app.tasks import map_fn
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+
+
+class ScoringMethod(str, enum.Enum):
+    SHARE_BG = "SHARE_BG"
+    SHARE_NOBG = "SHARE_NOBG"
+    SCORE_MUL_SHARE_BG = "SCORE_MUL_SHARE_BG"
+    SCORE_MUL_SHARE_NOBG = "SCORE_MUL_SHARE_NOBG"
+    SCORE_DECOMP_USING_SHARE_BG = "SCORE_DECOMP_USING_SHARE_BG"
+    SCORE_DECOMP_USING_SHARE_NOBG = "SCORE_DECOMP_USING_SHARE_NOBG"
+
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
@@ -58,6 +69,18 @@ flags.DEFINE_string("output_csv", "result.csv", "Output result file name.")
 flags.DEFINE_float("min_score", 0.01, "Confidence score threshold.")
 flags.DEFINE_float("min_area", 0, "Object area threshold.")
 flags.DEFINE_float("min_iom", 0.3, "Intersection over minimum threshold.")
+flags.DEFINE_enum(
+    "missing_scoring_method",
+    ScoringMethod.SHARE_NOBG,
+    ScoringMethod,
+    "Scoring method for missing finding.",
+)
+flags.DEFINE_enum(
+    "finding_scoring_method",
+    ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG,
+    ScoringMethod,
+    "Scoring method for findings other than missing.",
+)
 flags.DEFINE_boolean("save_predictions", False, "Save predictions.")
 flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
@@ -115,7 +138,6 @@ def calculate_mean_prob(
     mask: np.ndarray,
     prob: np.ndarray,
     bbox: np.ndarray | None = None,
-    ignore_background: bool = False,
 ) -> np.ndarray:
     if bbox:
         x, y, w, h = bbox
@@ -124,11 +146,40 @@ def calculate_mean_prob(
 
     mean_prob = prob[mask].mean(axis=0)
 
-    if ignore_background:
-        mean_prob = np.r_["-1,1,0", 0, mean_prob[1:]]
-        mean_prob = mean_prob / mean_prob.sum()
-
     return mean_prob
+
+
+def calculate_score(
+    score: float,
+    share_including_bg: np.ndarray,
+    scoring_method: ScoringMethod,
+) -> np.ndarray:
+    share: np.ndarray
+    match scoring_method:
+        case (
+            ScoringMethod.SHARE_BG
+            | ScoringMethod.SCORE_MUL_SHARE_BG
+            | ScoringMethod.SCORE_DECOMP_USING_SHARE_BG
+        ):
+            share = share_including_bg
+
+        case (
+            ScoringMethod.SHARE_NOBG
+            | ScoringMethod.SCORE_MUL_SHARE_NOBG
+            | ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG
+        ):
+            share: np.ndarray = np.r_["-1,1,0", 0, share_including_bg[1:]]
+            share /= share.sum()
+
+    match scoring_method:
+        case ScoringMethod.SHARE_BG | ScoringMethod.SHARE_NOBG:
+            return share
+
+        case ScoringMethod.SCORE_MUL_SHARE_BG | ScoringMethod.SCORE_MUL_SHARE_NOBG:
+            return score * share
+
+        case ScoringMethod.SCORE_DECOMP_USING_SHARE_BG | ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG:
+            return 1 - np.power(1 - score, share)
 
 
 def process_data(
@@ -202,24 +253,22 @@ def process_data(
             prob_discounted: np.ndarray = 1 - np.power(1 - prob, 1 / discount_factor)
 
             for index, row in df.loc[is_finding].iterrows():
-                share_per_tooth: np.ndarray = calculate_mean_prob(
-                    row["mask"],
-                    bbox=row["bbox"],
-                    prob=prob_discounted,
-                    ignore_background=True,
-                )
-
-                score_per_tooth: np.ndarray
+                scoring_method: ScoringMethod
                 match finding:
                     case Category.MISSING:
-                        # we do not use objectiveness score for teeth
-                        score_per_tooth = share_per_tooth
+                        scoring_method = ScoringMethod[FLAGS.missing_scoring_method]
 
                     case _:
-                        score_per_tooth = 1 - np.power(
-                            1 - row["score"], share_per_tooth
-                        )
+                        scoring_method = ScoringMethod[FLAGS.finding_scoring_method]
 
+                share_including_bg: np.ndarray = calculate_mean_prob(
+                    row["mask"], bbox=row["bbox"], prob=prob_discounted
+                )
+                score_per_tooth: np.ndarray = calculate_score(
+                    score=row["score"],
+                    share_including_bg=share_including_bg,
+                    scoring_method=scoring_method,
+                )
                 df.at[index, "score_per_tooth"] = score_per_tooth
 
             score_per_tooth = np.stack(df.loc[is_finding, "score_per_tooth"], axis=0)
