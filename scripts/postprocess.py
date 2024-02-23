@@ -27,6 +27,9 @@ flags.DEFINE_enum(
     "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
 )
 flags.DEFINE_string(
+    "prediction", "instances_predictions.pth", "Input prediction file name."
+)
+flags.DEFINE_string(
     "semseg_result_dir", "./results", "Semantic segmentation result directory."
 )
 flags.DEFINE_enum(
