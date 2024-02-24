@@ -3,6 +3,8 @@ from pathlib import Path
 import cv2
 import imageio.v3 as iio
 import numpy as np
+import scipy.sparse
+from absl import logging
 
 
 def uns_to_fdi(uns: int) -> int:
@@ -37,29 +39,43 @@ def calculate_iom_bbox(
 
 
 def calculate_iom_mask(
-    mask1: np.ndarray,
-    mask2: np.ndarray,
+    mask1: np.ndarray | scipy.sparse.csr_array,
+    mask2: np.ndarray | scipy.sparse.csr_array,
     epsilon: float = 1e-3,
     bbox1: list[int] | None = None,
     bbox2: list[int] | None = None,
 ) -> float:
+    use_ndarray: bool = isinstance(mask1, np.ndarray) and isinstance(mask2, np.ndarray)
+    use_csr_array: bool = isinstance(mask1, scipy.sparse.csr_array) and isinstance(
+        mask2, scipy.sparse.csr_array
+    )
+
+    if not (use_ndarray or use_csr_array):
+        raise ValueError("Masks must be either numpy arrays or sparse arrays")
+
     if (bbox1 is not None) and (bbox2 is not None):
-        x1_1, y1_1, w1, h1 = bbox1
-        x1_2, y1_2, w2, h2 = bbox2
+        if use_ndarray:
+            assert isinstance(mask1, np.ndarray)
+            assert isinstance(mask2, np.ndarray)
 
-        slices: tuple[slice, slice] = (
-            slice(min(y1_1, y1_2), max(y1_1 + h1, y1_2 + h2) + 1),
-            slice(min(x1_1, x1_2), max(x1_1 + w1, x1_2 + w2) + 1),
-        )
-        mask1 = mask1[slices]
-        mask2 = mask2[slices]
+            x1_1, y1_1, w1, h1 = bbox1
+            x1_2, y1_2, w2, h2 = bbox2
 
-    area_1: int = np.sum(mask1)
-    area_2: int = np.sum(mask2)
+            slices: tuple[slice, slice] = (
+                slice(min(y1_1, y1_2), max(y1_1 + h1, y1_2 + h2) + 1),
+                slice(min(x1_1, x1_2), max(x1_1 + w1, x1_2 + w2) + 1),
+            )
+            mask1 = mask1[slices]
+            mask2 = mask2[slices]
 
-    intersection: np.ndarray = np.logical_and(mask1, mask2)
+        elif use_csr_array:
+            logging.debug(
+                "Bounding boxes are not supported for sparse masks. Ignoring them."
+            )
 
-    return np.sum(intersection) / (min(area_1, area_2) + epsilon)
+    intersection: np.ndarray | scipy.sparse.csr_array = mask1 * mask2
+
+    return intersection.sum() / (min(mask1.sum(), mask2.sum()) + epsilon)
 
 
 def calculate_iou_mask(

@@ -5,11 +5,13 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import pycocotools.mask
+import scipy.sparse
 import ultralytics.data.converter
 from absl import logging
 
 from app.schemas import CocoRLE
 from detectron2.structures import polygons_to_bitmask
+from detectron2.structures.masks import polygon_area
 
 
 @dataclasses.dataclass
@@ -176,12 +178,27 @@ class Mask(object):
         return self.calculate_bitmask(allow_unspecified_shape=False)
 
     @property
+    def sparse_bitmask(self) -> scipy.sparse.csr_array:
+        return scipy.sparse.csr_array(self.bitmask)
+
+    @property
     def area(self) -> int:
-        # we don't actually need the extra padding suppose height and width are not provided
-        bitmask: npt.NDArray[np.bool_] = self.calculate_bitmask(
-            allow_unspecified_shape=True
-        )
-        return bitmask.sum()
+        if self._rle is not None:
+            rle_obj: dict = self._rle.dict()
+            return pycocotools.mask.area(rle_obj)  # type: ignore
+
+        if self._bitmask is not None:
+            return self._bitmask.sum()
+
+        if self._polygons is not None:
+            return sum(
+                [
+                    polygon_area(polygon[0::2], polygon[1::2])
+                    for polygon in self._polygons
+                ]
+            )
+
+        raise ValueError("No valid representation of the mask")
 
     @property
     def bbox_xywh(self) -> list[int]:
