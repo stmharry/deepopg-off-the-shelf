@@ -135,9 +135,16 @@ class InstanceDetectionPrediction(BaseModel):
 class InstanceDetectionPredictionList(object):
     @classmethod
     def from_detectron2_detection_pth(
-        cls, path: Path
+        cls, path: Path, image_ids: set[ID] | None = None
     ) -> list[InstanceDetectionPrediction]:
         predictions_obj = torch.load(path)
+        if image_ids is not None:
+            predictions_obj = [
+                prediction
+                for prediction in predictions_obj
+                if prediction["image_id"] in image_ids
+            ]
+
         return parse_obj_as(list[InstanceDetectionPrediction], predictions_obj)
 
     @classmethod
