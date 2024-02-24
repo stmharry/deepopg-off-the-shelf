@@ -17,6 +17,7 @@ from app.instance_detection.schemas import (
 )
 from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.masks import Mask
+from app.schemas import ID
 from app.semantic_segmentation.datasets import SemanticSegmentation
 from app.tasks import map_fn
 from app.utils import calculate_iom_bbox, calculate_iom_mask
@@ -86,20 +87,6 @@ flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
 
 
-def basic_filter(
-    df: pd.DataFrame,
-    min_score: float,
-    min_area: float,
-) -> pd.Series:
-    keep: pd.Series = (df["area"] > min_area) & (df["score"] > min_score)
-
-    logging.info(
-        f"Filtering by area and score, reducing instances from {len(df)} ->"
-        f" {keep.sum()}"
-    )
-    return keep
-
-
 def non_maximum_suppress(
     df: pd.DataFrame,
     iom_threshold: float,
@@ -156,8 +143,12 @@ def calculate_mean_prob(
     if prob_discount_uint8 is not None:
         prob_discount_uint8 = prob_discount_uint8[mask]
 
-    prob_uint16 = prob_uint16 / prob_discount_uint8
-    mean_prob: np.ndarray = prob_uint16.mean(axis=-1) / 65535
+    prob_float32: np.ndarray = prob_uint16.astype(np.float32) / 65535
+    if prob_discount_uint8 is not None:
+        prob_discount_float32: np.ndarray = prob_discount_uint8.astype(np.float32)
+        prob_float32 = 1 - np.power(1 - prob_float32, 1 / prob_discount_float32)
+
+    mean_prob: np.ndarray = prob_float32.mean(axis=-1)
 
     return mean_prob
 
@@ -181,7 +172,7 @@ def calculate_score(
             | ScoringMethod.SCORE_MUL_SHARE_NOBG
             | ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG
         ):
-            share: np.ndarray = np.r_["-1,1,0", 0, share_including_bg[1:]]
+            share = np.r_["-1,1,0", 0, share_including_bg[1:]]
             share /= share.sum()
 
     match scoring_method:
@@ -214,23 +205,29 @@ def process_data(
     df: pd.DataFrame = pd.DataFrame.from_records(
         [instance.dict() for instance in prediction.instances]
     )
+    logging.info(f"Original instance count: {len(df)}.")
     if len(df) == 0:
         return None
 
-    logging.info(f"Original instance count: {len(df)}.")
+    df = df.loc[df["score"] > min_score]
+    if len(df) == 0:
+        return None
+
+    df["area"] = df["segmentation"].map(
+        lambda segmentation: Mask.from_obj(
+            segmentation, width=data.width, height=data.height
+        ).area
+    )
+    if min_area > 0:
+        df = df.loc[df["area"] > min_area]
+        if len(df) == 0:
+            return None
 
     df["mask"] = df["segmentation"].map(
         lambda segmentation: Mask.from_obj(
             segmentation, width=data.width, height=data.height
         ).bitmask
     )
-    df["area"] = df["mask"].map(np.sum)
-
-    keep: pd.Series = basic_filter(df, min_score=min_score, min_area=min_area)
-    df = df.loc[keep]
-    if len(df) == 0:
-        return None
-
     df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
     df["score_per_tooth"] = None
 
@@ -260,8 +257,10 @@ def process_data(
 
         finding_score: np.ndarray
         if is_finding.sum() > 0:
-            mask: np.ndarray = np.stack(df.loc[is_finding, "mask"], axis=-1)
-            prob_discount_uint8: np.ndarray = np.sum(mask, axis=-1, dtype=np.uint8)
+            masks: list[np.ndarray] = [
+                mask.astype(np.uint8) for mask in df.loc[is_finding, "mask"].tolist()
+            ]
+            prob_discount_uint8: np.ndarray = sum(masks[1:], start=masks[0])
 
             for index, row in df.loc[is_finding].iterrows():
                 scoring_method: ScoringMethod
@@ -369,10 +368,11 @@ def main(_):
 
     else:
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
-            Path(FLAGS.result_dir, FLAGS.prediction)
+            Path(FLAGS.result_dir, FLAGS.prediction),
+            image_ids=set(data.image_id for data in dataset),
         )
 
-    id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
+    id_to_prediction: dict[ID, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
     }
 
