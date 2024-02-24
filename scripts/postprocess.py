@@ -139,6 +139,9 @@ def calculate_mean_prob(
         if prob_discount_uint8 is not None:
             prob_discount_uint8 = prob_discount_uint8[slices]
 
+    if mask.sum() == 0:
+        return np.zeros(prob_uint16.shape[0], dtype=np.float32)
+
     prob_uint16 = prob_uint16[..., mask]
     if prob_discount_uint8 is not None:
         prob_discount_uint8 = prob_discount_uint8[mask]
@@ -148,9 +151,7 @@ def calculate_mean_prob(
         prob_discount_float32: np.ndarray = prob_discount_uint8.astype(np.float32)
         prob_float32 = 1 - np.power(1 - prob_float32, 1 / prob_discount_float32)
 
-    mean_prob: np.ndarray = prob_float32.mean(axis=-1)
-
-    return mean_prob
+    return prob_float32.mean(axis=-1)
 
 
 def calculate_score(
@@ -213,21 +214,17 @@ def process_data(
     if len(df) == 0:
         return None
 
-    df["area"] = df["segmentation"].map(
-        lambda segmentation: Mask.from_obj(
-            segmentation, width=data.width, height=data.height
-        ).area
-    )
-    if min_area > 0:
-        df = df.loc[df["area"] > min_area]
-        if len(df) == 0:
-            return None
-
     df["mask"] = df["segmentation"].map(
         lambda segmentation: Mask.from_obj(
             segmentation, width=data.width, height=data.height
         ).bitmask
     )
+    df["area"] = df["mask"].map(np.sum)
+
+    df = df.loc[df["area"] > min_area]
+    if len(df) == 0:
+        return None
+
     df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
     df["score_per_tooth"] = None
 
