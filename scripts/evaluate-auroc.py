@@ -356,11 +356,12 @@ def main(_):
 
     fig_path: Path = Path(evaluation_dir, "roc-curve.pdf")
     logging.info(f"Saving the ROC curve to {fig_path}.")
-
     fig.savefig(fig_path)
 
+    evaluation_csv_path: Path = Path(evaluation_dir, "evaluation.csv")
+    logging.info(f"Saving the evaluation to {evaluation_csv_path}.")
     df.sort_values(["finding", "score"], ascending=True).to_csv(
-        Path(evaluation_dir, "evaluation.csv"), index=False
+        evaluation_csv_path, index=False
     )
 
 
