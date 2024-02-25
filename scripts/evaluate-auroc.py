@@ -29,6 +29,7 @@ flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
 flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
 flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
+flags.DEFINE_string("title", None, "PlotPlot  ")
 FLAGS = flags.FLAGS
 
 
@@ -265,6 +266,9 @@ def plot_roc_curve(
         ncols=len(ax.lines),
         fontsize="small",
     )
+
+    if FLAGS.title:
+        fig.suptitle(FLAGS.title, fontsize="large")
 
     return fig
 
