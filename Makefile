@@ -34,6 +34,7 @@ PY ?= \
 
 # for `--script.postfix`, we will run `script` target
 RUN_SCRIPT = $(PY) scripts/$(word 1,$(subst ., ,$(subst --,,$@))).py
+DOT ?= dot
 
 # we enter yolo with a script to patch `amp`
 YOLO_TRAIN ?= $(PY) scripts/main_yolo.py segment train
@@ -69,7 +70,7 @@ DEBUG ?= false
 VERBOSITY ?= 0
 CPUS ?= 4
 
-MIN_SCORE ?= 0.01
+MIN_SCORE ?= 0.0001
 MIN_IOU ?= 0.5
 MAX_OBJS ?= 300
 
@@ -84,9 +85,18 @@ VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION
 
 SEMSEG_PREDICTION ?= inference/sem_seg_predictions.json
 
-ifeq ($(DEBUG),true)
-	PYTHON = python -m pdb
+CPROFILE_OUT ?= profile.out
+
+ifneq ($(DEBUG),false)
 	CPUS = 0
+endif
+
+ifeq ($(DEBUG),pdb)
+	PYTHON = python -m pdb
+else ifeq ($(DEBUG),memray)
+	PYTHON = python -m memray run
+else ifeq ($(DEBUG),cProfile)
+	PYTHON = python -m cProfile -o $(CPROFILE_OUT)
 endif
 
 ifeq ($(CUDA_VISIBLE_DEVICES),)
@@ -100,8 +110,6 @@ endif
 ###############
 
 default:
-	$(PY) scripts/visualize-semseg.py --help
-
 
 ### util targets
 
@@ -111,6 +119,12 @@ check-%:
 --check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_NAME
 --check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME check-VERBOSITY
 --check-COCO: check-COCO_ANNOTATOR_URL check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
+
+prof2png: DOT_OUT ?= $(CPROFILE_OUT:.out=.png)
+prof2png:
+	$(PYTHON) -m gprof2dot \
+		-f pstats	$(CPROFILE_OUT) | \
+		$(DOT) -T png -o $(DOT_OUT)
 
 ### data preprocessing targets
 
@@ -315,6 +329,21 @@ test-yolo:
 		save_txt=True \
 		save_conf=True
 
+debug-yolo: PYTHON = python -m pdb
+debug-yolo: MODEL_DIR_ROOT = /tmp/debug
+debug-yolo: MODEL_NAME = $(NEW_NAME)
+debug-yolo: CONFIG_NAME = yolov8n-seg.yaml
+debug-yolo: check-ROOT_DIR
+debug-yolo:
+	$(YOLO_TRAIN) \
+		cfg="$(CONFIG_FILE)" \
+		mode=train \
+		data="$(DATA_DIR)/yolo/metadata.yaml" \
+		project="$(MODEL_DIR_ROOT)" \
+		name="./$(MODEL_NAME)" \
+		cache=false \
+		workers=0
+
 ### overall targets
 
 install: install-maskdino install-detectron2
@@ -365,15 +394,18 @@ visualize:
 		--visualize_dir $(VISUALIZE_DIR) \
 		--visualize_subset \
 		--min_score $(MIN_SCORE) \
+		--force \
 		--num_workers $(CPUS)
 
 visualize.gt: --check-COMMON
+visualize.gt: VISUALIZE_DIR = visualize
 visualize.gt:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
 		--use_gt_as_prediction \
 		--visualize_dir $(VISUALIZE_DIR) \
 		--visualize_subset \
+		--noforce \
 		--num_workers $(CPUS)
 
 visualize-semseg: --check-COMMON
@@ -400,6 +432,7 @@ evaluate-auroc:
 		--csv $(RESULT_CSV) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
+		--title "$(DATASET_TITLE)" \
 		--verbosity $(VERBOSITY)
 
 evaluate-auroc.with-human: check-ROOT_DIR
@@ -409,7 +442,8 @@ evaluate-auroc.with-human:
 		--csv $(RESULT_CSV) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
 		--human_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_human_label_{}.csv" \
-		--evaluation_dir $(EVALUATION_DIR) \
+		--evaluation_dir $(EVALUATION_DIR).with-human \
+		--title "$(DATASET_TITLE)" \
 		--verbosity $(VERBOSITY)
 
 compare: IMAGE_HEIGHT ?= 800
