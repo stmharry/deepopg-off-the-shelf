@@ -77,7 +77,7 @@ def visualize_data(
                 thing_classes.append(thing_class)
 
             else:
-                matched_name: str | None = match_obj.group("name")
+                matched_name: str | None = match_obj.groupdict().get("name")
                 if matched_name is None:
                     matched_name = thing_class
 
@@ -132,7 +132,7 @@ def main(_):
             None: r"(?P<name>.*)",
             "tooth": r"TOOTH_(?P<name>\d+)",
             "m3": r"TOOTH_(?P<name>18|28|38|48)",
-            "findings": r"(?P<name>(?!TOOTH_\d+))",
+            "findings": r"(?!TOOTH_\d+)",
         }
     else:
         category_re_groups = {
