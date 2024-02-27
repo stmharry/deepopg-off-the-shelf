@@ -3,6 +3,7 @@ import enum
 from pathlib import Path
 from typing import Any
 
+import imageio.v3 as iio
 import numpy as np
 import pandas as pd
 from absl import app, flags, logging
@@ -19,6 +20,7 @@ from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.masks import Mask
 from app.schemas import ID
 from app.semantic_segmentation.datasets import SemanticSegmentation
+from app.semantic_segmentation.schemas import SemanticSegmentationData
 from app.tasks import Task, map_task
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
@@ -41,8 +43,14 @@ flags.DEFINE_enum(
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
 )
+flags.DEFINE_bool(
+    "use_gt_as_prediction",
+    False,
+    "Set to true to perform command on ground truth. Useful when we do not have ground"
+    " truth finding summary but only ground truth segmentation.",
+)
 flags.DEFINE_string(
-    "semseg_result_dir", "./results", "Semantic segmentation result directory."
+    "semseg_result_dir", None, "Semantic segmentation result directory."
 )
 flags.DEFINE_enum(
     "semseg_dataset_name",
@@ -50,13 +58,8 @@ flags.DEFINE_enum(
     SemanticSegmentation.available_dataset_names(),
     "Semantic segmentation dataset name.",
 )
-flags.DEFINE_string(
-    "semseg_prediction",
-    "inference/sem_seg_predictions.json",
-    "Input prediction file name.",
-)
 flags.DEFINE_bool(
-    "use_gt_as_prediction",
+    "use_semseg_gt_as_prob",
     False,
     "Set to true to perform command on ground truth. Useful when we do not have ground"
     " truth finding summary but only ground truth segmentation.",
@@ -193,7 +196,8 @@ def process_data(
     prediction: InstanceDetectionPrediction,
     metadata: Metadata,
     semseg_metadata: Metadata,
-    semseg_result_dir: Path,
+    semseg_data: SemanticSegmentationData | None,
+    semseg_result_dir: Path | None,
     min_score: float,
     min_area: float,
     min_iom: float,
@@ -228,9 +232,28 @@ def process_data(
     df["category_name"] = df["category_id"].map(metadata.thing_classes.__getitem__)
     df["score_per_tooth"] = None
 
-    npz_path: Path = Path(semseg_result_dir, "inference", f"{data.file_name.stem}.npz")
-    with np.load(npz_path) as npz:
-        prob_uint16: np.ndarray = npz["prob"]  # (C, H, W)
+    prob_uint16: np.ndarray
+    if semseg_data is not None:
+        assert semseg_data.sem_seg_file_name is not None
+        label_uint8: np.ndarray = iio.imread(semseg_data.sem_seg_file_name)
+
+        prob_bool: np.ndarray = (
+            label_uint8[None, ...]
+            == np.arange(len(semseg_metadata.stuff_classes))[:, None, None]
+        )
+        prob_uint16 = np.where(prob_bool, np.uint16(65535), np.uint16(0))
+
+    elif semseg_result_dir is not None:
+        npz_path: Path = Path(
+            semseg_result_dir, "inference", f"{data.file_name.stem}.npz"
+        )
+        with np.load(npz_path) as npz:
+            prob_uint16 = npz["prob"]  # (C, H, W)
+
+    else:
+        raise ValueError(
+            "Either `semseg_data` or `semseg_result_dir` must be provided."
+        )
 
     df_findings: list[pd.DataFrame] = []
     row_results: list[dict[str, Any]] = []
@@ -385,6 +408,14 @@ def main(_):
 
     semseg_metadata: Metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
 
+    id_to_semseg_data: dict[ID, SemanticSegmentationData] = {}
+    if FLAGS.use_semseg_gt_as_prob:
+        semseg_dataset: list[SemanticSegmentationData] = parse_obj_as(
+            list[SemanticSegmentationData],
+            DatasetCatalog.get(FLAGS.semseg_dataset_name),
+        )
+        id_to_semseg_data = {data.image_id: data for data in semseg_dataset}
+
     #
 
     output_predictions: list[InstanceDetectionPrediction] = []
@@ -400,8 +431,13 @@ def main(_):
                     ),
                     "prediction": id_to_prediction[data.image_id],
                     "metadata": metadata,
+                    "semseg_data": id_to_semseg_data.get(data.image_id),
                     "semseg_metadata": semseg_metadata,
-                    "semseg_result_dir": Path(FLAGS.semseg_result_dir),
+                    "semseg_result_dir": (
+                        Path(FLAGS.semseg_result_dir)
+                        if FLAGS.semseg_result_dir
+                        else None
+                    ),
                     "min_score": FLAGS.min_score,
                     "min_area": FLAGS.min_area,
                     "min_iom": FLAGS.min_iom,
@@ -434,9 +470,11 @@ def main(_):
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
     if FLAGS.save_predictions:
+        detection_path: Path = Path(FLAGS.result_dir, FLAGS.output_prediction)
+        logging.info(f"Saving predictions to {detection_path}")
+
         InstanceDetectionPredictionList.to_detectron2_detection_pth(
-            output_predictions,
-            path=Path(FLAGS.result_dir, FLAGS.output_prediction),
+            output_predictions, path=detection_path
         )
 
     df_result: pd.DataFrame = pd.concat(df_results, axis=0).sort_values(
@@ -445,7 +483,10 @@ def main(_):
     df_result = df_result.drop_duplicates(
         subset=["file_name", "fdi", "finding"], keep="first"
     )
-    df_result.to_csv(Path(FLAGS.result_dir, FLAGS.output_csv), index=False)
+
+    csv_path: Path = Path(FLAGS.result_dir, FLAGS.output_csv)
+    logging.info(f"Saving results to {csv_path}")
+    df_result.to_csv(csv_path, index=False)
 
 
 if __name__ == "__main__":

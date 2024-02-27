@@ -76,11 +76,15 @@ MAX_OBJS ?= 300
 
 YOLO_DIR ?= yolo
 
-RESULT_CSV ?= result.csv
+MISSING_SCORING_METHOD ?= SHARE_NOBG
+FINDING_SCORING_METHOD ?= SCORE_MUL_SHARE_NOBG
+POSTFIX ?= .postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
+
+RESULT_CSV ?= result$(POSTFIX).csv
 EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))
 
 RAW_PREDICTION ?= instances_predictions.pth
-PREDICTION ?= $(RAW_PREDICTION:.pth=.postprocessed.pth)
+PREDICTION ?= $(RAW_PREDICTION:.pth=$(POSTFIX).pth)
 VISUALIZE_DIR ?= $(subst instances_predictions,visualize,$(basename $(PREDICTION)))
 
 SEMSEG_PREDICTION ?= inference/sem_seg_predictions.json
@@ -358,6 +362,7 @@ coco-annotator:
 --check-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
 
 postprocess: --check-postprocess
+postprocess: PREDICTION = $(RESULT_DIR)/$(RESULT_NAME).json
 postprocess:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
@@ -367,22 +372,41 @@ postprocess:
 		--semseg_prediction $(SEMSEG_PREDICTION) \
 		--output_prediction $(PREDICTION) \
 		--output_csv $(RESULT_CSV) \
-		$(POSTPROCESS_ARGS) \
+		--min_score $(MIN_SCORE) \
+		--min_area 0 \
+		--min_iom 0.3 \
+		--missing_scoring_method $(MISSING_SCORING_METHOD) \
+		--finding_scoring_method $(FINDING_SCORING_METHOD) \
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
-postprocess.gt: --check-postprocess
-postprocess.gt:
+postprocess.gt-det: --check-postprocess
+postprocess.gt-det: POSTFIX = .postprocessed-with-$(SEMSEG_RESULT_NAME)
+postprocess.gt-det:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
 		--use_gt_as_prediction \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
-		--semseg_prediction $(SEMSEG_PREDICTION) \
 		--output_csv $(RESULT_CSV) \
 		--min_iom 1.0 \
 		--missing_scoring_method SHARE_NOBG \
-		--finding_scoring_method SCORE_MUL_SHARE_NOBG \
+		--finding_scoring_method SHARE_NOBG \
+		--nosave_predictions \
+		--num_workers $(CPUS)
+
+postprocess.gt-all: --check-postprocess
+postprocess.gt-all: POSTFIX = .postprocessed-with-gt.csv
+postprocess.gt-all:
+	$(RUN_SCRIPT) \
+		$(COMMON_ARGS) \
+		--use_gt_as_prediction \
+		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
+		--use_semseg_gt_as_prob \
+		--output_csv $(RESULT_CSV) \
+		--min_iom 1.0 \
+		--missing_scoring_method SHARE_NOBG \
+		--finding_scoring_method SHARE_NOBG \
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
