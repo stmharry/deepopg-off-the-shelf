@@ -13,7 +13,7 @@ from app.semantic_segmentation.schemas import (
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
 )
-from app.tasks import map_fn
+from app.tasks import Task, map_task
 from app.utils import read_image
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -73,8 +73,16 @@ def _visualize_heatmap_semseg(
 
     prob: np.ndarray = prob_uint16.astype(np.float32) / 65535.0
 
+    fg_prob: np.ndarray = np.sum(prob[1:], axis=0)
+    fg_prob_modified: np.ndarray = np.tanh(fg_prob / 0.25)
+    prob_modified: np.ndarray = np.r_[
+        "0,3",
+        (1 - fg_prob_modified),
+        prob[1:] / fg_prob * fg_prob_modified,
+    ]
+
     for num, (class_prob, stuff_class) in enumerate(
-        zip(prob, visualizer.metadata.stuff_classes)
+        zip(prob_modified, visualizer.metadata.stuff_classes)
     ):
         if num == 0:
             continue
@@ -153,19 +161,20 @@ def main(_):
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
     with contextlib.ExitStack() as stack:
-        tasks: list[tuple] = [
-            (
-                data,
-                name_to_prediction[data.file_name.stem],
-                metadata,
-                visualize_dir,
+        tasks: list[Task] = [
+            Task(
+                fn=visualize_data,
+                kwargs={
+                    "data": data,
+                    "prediction": name_to_prediction[data.file_name.stem],
+                    "metadata": metadata,
+                    "visualize_dir": visualize_dir,
+                },
             )
             for data in dataset
             if data.file_name.stem in name_to_prediction
         ]
-        for _ in map_fn(
-            visualize_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
-        ):
+        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
             ...
 
 
