@@ -96,8 +96,8 @@ class CocoDataset(metaclass=abc.ABCMeta):
         )
 
     @classmethod
-    def get_colors(cls, num_classes: int) -> np.ndarray:
-        return (
+    def get_colors(cls, num_classes: int) -> list[np.ndarray]:
+        return list(
             np.r_[
                 [(0, 0, 0)],
                 cm.gist_rainbow(np.arange(num_classes - 1))[:, :3],  # type: ignore
