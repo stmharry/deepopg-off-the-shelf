@@ -1,9 +1,10 @@
 import contextlib
+import dataclasses
 import multiprocessing as mp
 import multiprocessing.context as mp_context
 import warnings
 from collections.abc import Callable, Iterable
-from typing import Any, Literal, TypeAlias, TypeVar
+from typing import Any, Generic, Literal, TypeAlias, TypeVar
 
 import rich.progress
 from absl import logging
@@ -11,43 +12,41 @@ from absl import logging
 T = TypeVar("T")
 
 TaskFn: TypeAlias = Callable[..., T]
-Task: TypeAlias = (
-    tuple[TaskFn[T], tuple[Any, ...], dict[str, Any]]
-    | tuple[TaskFn[T], tuple[Any, ...]]
-    | tuple[TaskFn[T], dict[str, Any]]
-    | tuple[TaskFn[T]]
-)
 Result: TypeAlias = T | None
 
 
-def _do_task(task: Task[T]) -> Result[T]:
+@dataclasses.dataclass
+class Task(Generic[T]):
     fn: TaskFn[T]
     args: tuple[Any, ...] = ()
-    kwargs: dict[str, Any] = {}
-    match task:
-        case (fn, tuple() as args, dict() as kwargs):
-            ...
-        case (fn, tuple() as args):
-            ...
-        case (fn, dict() as kwargs):
-            ...
-        case (fn,):
-            ...
+    kwargs: dict[str, Any] = dataclasses.field(default_factory=dict)
 
-    return fn(*args, **kwargs)
+    def __call__(self) -> Result[T]:
+        return self.fn(*self.args, **self.kwargs)
 
 
-def do_task(task: Task[T]) -> Result[T]:
-    warnings.simplefilter("ignore")
-    logging.set_verbosity(logging.WARNING)
+def run_task(task: Task[T]) -> Result[T]:
+    return task.__call__()
 
-    try:
-        return _do_task(task)
 
-    except Exception as e:
-        fn: TaskFn[T] = task[0]
-        logging.error(f"Error in {fn.__name__}: {e}")
-        return None
+def run_task_with_message_suppressed(
+    task: Task[T], verbosity: int = logging.WARNING
+) -> Result[T]:
+    original_verbosity = logging.get_verbosity()
+
+    logging.set_verbosity(verbosity)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        try:
+            result: Result[T] = task.__call__()
+
+        except Exception as e:
+            logging.error(f"Error in {task.fn.__name__}: {e}")
+            return None
+
+    logging.set_verbosity(original_verbosity)
+    return result
 
 
 def map_task(
@@ -57,11 +56,11 @@ def map_task(
     method: Literal["fork", "spawn", "forkserver"] | None = "fork",
 ) -> Iterable[Result[T]]:
     if num_workers == 0:
-        return map(_do_task, tasks)
+        return map(run_task, tasks)
 
     context: mp_context.BaseContext = mp.get_context(method)
     pool = stack.enter_context(context.Pool(processes=num_workers))
-    results = pool.imap_unordered(do_task, tasks)
+    results = pool.imap_unordered(run_task_with_message_suppressed, tasks)
     results = rich.progress.track(results, total=len(tasks))
 
     return results
@@ -78,7 +77,7 @@ def map_fn(
     method: Literal["fork", "spawn", "forkserver"] | None = "fork",
 ) -> Iterable[Result[T]]:
     return map_task(
-        [(fn, task) for task in tasks],
+        [Task(fn, args=task) for task in tasks],
         stack=stack,
         num_workers=num_workers,
         method=method,

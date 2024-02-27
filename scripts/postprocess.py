@@ -19,7 +19,7 @@ from app.instance_detection.types import InstanceDetectionV1Category as Category
 from app.masks import Mask
 from app.schemas import ID
 from app.semantic_segmentation.datasets import SemanticSegmentation
-from app.tasks import map_fn
+from app.tasks import Task, map_task
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
@@ -390,31 +390,35 @@ def main(_):
     output_predictions: list[InstanceDetectionPrediction] = []
     df_results: list[pd.DataFrame] = []
     with contextlib.ExitStack() as stack:
-        tasks: list[tuple] = [
-            (
-                data,
-                Path(data.file_name).relative_to(data_driver.image_dir).stem,
-                id_to_prediction[data.image_id],
-                metadata,
-                semseg_metadata,
-                Path(FLAGS.semseg_result_dir),
-                FLAGS.min_score,
-                FLAGS.min_area,
-                FLAGS.min_iom,
-                ScoringMethod[FLAGS.missing_scoring_method],
-                ScoringMethod[FLAGS.finding_scoring_method],
-                FLAGS.save_predictions,
+        tasks: list[Task] = [
+            Task(
+                fn=process_data,
+                kwargs={
+                    "data": data,
+                    "file_name": (
+                        Path(data.file_name).relative_to(data_driver.image_dir).stem
+                    ),
+                    "prediction": id_to_prediction[data.image_id],
+                    "metadata": metadata,
+                    "semseg_metadata": semseg_metadata,
+                    "semseg_result_dir": Path(FLAGS.semseg_result_dir),
+                    "min_score": FLAGS.min_score,
+                    "min_area": FLAGS.min_area,
+                    "min_iom": FLAGS.min_iom,
+                    "missing_scoring_method": ScoringMethod[
+                        FLAGS.missing_scoring_method
+                    ],
+                    "finding_scoring_method": ScoringMethod[
+                        FLAGS.finding_scoring_method
+                    ],
+                    "save_predictions": FLAGS.save_predictions,
+                },
             )
             for data in dataset
             if data.image_id in id_to_prediction
         ]
 
-        for result in map_fn(
-            process_data,
-            tasks=tasks,
-            stack=stack,
-            num_workers=FLAGS.num_workers,
-        ):
+        for result in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
             if result is None:
                 continue
 
