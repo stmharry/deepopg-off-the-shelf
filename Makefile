@@ -173,9 +173,9 @@ convert-coco-to-detectron2-semseg:
 install-maskdino:
 	@$(PY) ./MaskDINO/maskdino/modeling/pixel_decoder/ops/setup.py build install
 
-train-maskdino: MODEL_NAME ?= $(NEW_NAME)
-train-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
+train-maskdino: MODEL_NAME = $(NEW_NAME)
 train-maskdino: DATASET_NAME = pano_train,pano_eval
+train-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
 train-maskdino: --check-MAIN
 train-maskdino:
 	$(RUN_MAIN_DETECTRON2) \
@@ -209,9 +209,9 @@ install-detectron2:
 
 # mvitv2 targets
 
-train-mvitv2: MODEL_NAME ?= $(NEW_NAME)
-train-mvitv2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
+train-mvitv2: MODEL_NAME = $(NEW_NAME)
 train-mvitv2: DATASET_NAME = pano_train,pano_eval
+train-mvitv2: CONFIG_NAME ?= mask_rcnn_mvitv2_t_3x.py
 train-mvitv2: --check-MAIN
 train-mvitv2:
 	$(RUN_MAIN_DETECTRON2) \
@@ -245,9 +245,9 @@ debug-mvitv2:
 
 # deeplab targets
 
-train-deeplab: MODEL_NAME ?= $(NEW_NAME)
-train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
+train-deeplab: MODEL_NAME = $(NEW_NAME)
 train-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
+train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
 train-deeplab: --check-MAIN
 train-deeplab:
 	$(RUN_MAIN_DETECTRON2) \
@@ -298,7 +298,7 @@ convert-yolo-labels-to-detectron2-prediction-pt:
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
 train-yolo: MODEL_NAME ?= $(NEW_NAME)
-train-yolo: CONFIG_NAME ?= yolov8n-seg.yaml
+train-yolo: CONFIG_NAME ?= yolov8m-seg.yaml
 train-yolo: TMP_FILE := $(shell mktemp --suffix=.yaml)
 train-yolo: check-ROOT_DIR
 train-yolo:
@@ -381,6 +381,7 @@ postprocess:
 		--num_workers $(CPUS)
 
 postprocess.gt-det: --check-postprocess
+postprocess.gt-det: RESULT_NAME = $(DATASET_NAME)
 postprocess.gt-det: POSTFIX = .postprocessed-with-$(SEMSEG_RESULT_NAME)
 postprocess.gt-det:
 	$(RUN_SCRIPT) \
@@ -396,6 +397,7 @@ postprocess.gt-det:
 		--num_workers $(CPUS)
 
 postprocess.gt-all: --check-postprocess
+postprocess.gt-all: RESULT_NAME = $(DATASET_NAME)
 postprocess.gt-all: POSTFIX = .postprocessed-with-gt.csv
 postprocess.gt-all:
 	$(RUN_SCRIPT) \
@@ -423,6 +425,7 @@ visualize:
 
 visualize.gt: --check-COMMON
 visualize.gt: VISUALIZE_DIR = visualize
+visualize.gt: RESULT_NAME = $(DATASET_NAME)
 visualize.gt:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
@@ -471,6 +474,7 @@ evaluate-auroc.with-human:
 		--verbosity $(VERBOSITY)
 
 compare: IMAGE_HEIGHT ?= 800
+compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
 	$(RUN_SCRIPT) \
 		--image_patterns $(IMAGE_PATTERNS) \
