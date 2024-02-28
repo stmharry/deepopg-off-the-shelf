@@ -177,7 +177,9 @@ def calculate_score(
             | ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG
         ):
             share = np.r_["-1,1,0", 0, share_including_bg[1:]]
-            share /= share.sum()
+            share_sum: float = share.sum()
+            if share_sum != 0:
+                share /= share.sum()
 
     match scoring_method:
         case ScoringMethod.SHARE_BG | ScoringMethod.SHARE_NOBG:
