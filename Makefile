@@ -194,6 +194,7 @@ test-maskdino:
 debug-maskdino: PYTHON = python -m pdb
 debug-maskdino: MODEL_DIR = /tmp/debug
 debug-maskdino: DATASET_NAME = pano_train,pano_eval
+debug-maskdino: CONFIG_NAME ?= config-maskdino-r50.yaml
 debug-maskdino: --check-MAIN
 debug-maskdino:
 	$(RUN_MAIN_DETECTRON2) \
@@ -359,7 +360,7 @@ coco-annotator:
 	cd coco-annotator && \
 		docker compose up --build --detach
 
---check-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME check-SEMSEG_PREDICTION
+--check-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME
 
 postprocess: --check-postprocess
 postprocess: PREDICTION = $(RESULT_DIR)/$(RESULT_NAME).json
@@ -369,7 +370,6 @@ postprocess:
 		--prediction $(RAW_PREDICTION) \
 		--semseg_result_dir $(RESULT_DIR_ROOT)/$(SEMSEG_RESULT_NAME) \
 		--semseg_dataset_name $(SEMSEG_DATASET_NAME) \
-		--semseg_prediction $(SEMSEG_PREDICTION) \
 		--output_prediction $(PREDICTION) \
 		--output_csv $(RESULT_CSV) \
 		--min_score $(MIN_SCORE) \
@@ -392,7 +392,7 @@ postprocess.gt-det:
 		--output_csv $(RESULT_CSV) \
 		--min_iom 1.0 \
 		--missing_scoring_method SHARE_NOBG \
-		--finding_scoring_method SHARE_NOBG \
+		--finding_scoring_method SHARE_NOBG_NOMUL_MISSING \
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
@@ -408,7 +408,7 @@ postprocess.gt-all:
 		--output_csv $(RESULT_CSV) \
 		--min_iom 1.0 \
 		--missing_scoring_method SHARE_NOBG \
-		--finding_scoring_method SHARE_NOBG \
+		--finding_scoring_method SHARE_NOBG_NOMUL_MISSING \
 		--nosave_predictions \
 		--num_workers $(CPUS)
 
