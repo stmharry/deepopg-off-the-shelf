@@ -26,13 +26,60 @@ from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 
-class ScoringMethod(str, enum.Enum):
-    SHARE_BG = "SHARE_BG"
-    SHARE_NOBG = "SHARE_NOBG"
-    SCORE_MUL_SHARE_BG = "SCORE_MUL_SHARE_BG"
-    SCORE_MUL_SHARE_NOBG = "SCORE_MUL_SHARE_NOBG"
-    SCORE_DECOMP_USING_SHARE_BG = "SCORE_DECOMP_USING_SHARE_BG"
-    SCORE_DECOMP_USING_SHARE_NOBG = "SCORE_DECOMP_USING_SHARE_NOBG"
+class ScoringMethod(enum.Flag):
+    _USE_SHARE_WITH_BACKGROUND = enum.auto()
+    _USE_SHARE_WITHOUT_BACKGROUND = enum.auto()
+
+    _USE_SCORE_CONSTANT_ONE = enum.auto()
+    _USE_SCORE_MULTIPLICATION = enum.auto()
+    _USE_SCORE_DECOMPOSITION = enum.auto()
+
+    _USE_MISSING_MULTIPLICATION = enum.auto()
+    _NOUSE_MISSING_MULTIPLICATION = enum.auto()
+
+    SHARE_BG = (
+        _USE_SCORE_CONSTANT_ONE
+        | _USE_SHARE_WITH_BACKGROUND
+        | _USE_MISSING_MULTIPLICATION
+    )
+    SHARE_NOBG = (
+        _USE_SCORE_CONSTANT_ONE
+        | _USE_SHARE_WITHOUT_BACKGROUND
+        | _USE_MISSING_MULTIPLICATION
+    )
+    SCORE_MUL_SHARE_BG = (
+        _USE_SCORE_MULTIPLICATION
+        | _USE_SHARE_WITH_BACKGROUND
+        | _USE_MISSING_MULTIPLICATION
+    )
+    SCORE_MUL_SHARE_NOBG = (
+        _USE_SCORE_MULTIPLICATION
+        | _USE_SHARE_WITHOUT_BACKGROUND
+        | _USE_MISSING_MULTIPLICATION
+    )
+    SCORE_DECOMP_USING_SHARE_BG = (
+        _USE_SCORE_DECOMPOSITION
+        | _USE_SHARE_WITH_BACKGROUND
+        | _USE_MISSING_MULTIPLICATION
+    )
+    SCORE_DECOMP_USING_SHARE_NOBG = (
+        _USE_SCORE_DECOMPOSITION
+        | _USE_SHARE_WITHOUT_BACKGROUND
+        | _USE_MISSING_MULTIPLICATION
+    )
+    SHARE_NOBG_NOMUL_MISSING = (
+        _USE_SCORE_CONSTANT_ONE
+        | _USE_SHARE_WITHOUT_BACKGROUND
+        | _NOUSE_MISSING_MULTIPLICATION
+    )
+
+    @classmethod
+    def members(cls) -> dict[str, "ScoringMethod"]:
+        return {
+            name: member
+            for name, member in cls.__members__.items()
+            if not name.startswith("_")
+        }
 
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
@@ -75,14 +122,14 @@ flags.DEFINE_float("min_area", 0, "Object area threshold.")
 flags.DEFINE_float("min_iom", 0.3, "Intersection over minimum threshold.")
 flags.DEFINE_enum(
     "missing_scoring_method",
-    ScoringMethod.SHARE_NOBG,
-    ScoringMethod,
+    ScoringMethod.SHARE_NOBG.name,
+    ScoringMethod.members(),
     "Scoring method for missing finding.",
 )
 flags.DEFINE_enum(
     "finding_scoring_method",
-    ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG,
-    ScoringMethod,
+    ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG.name,
+    ScoringMethod.members(),
     "Scoring method for findings other than missing.",
 )
 flags.DEFINE_boolean("save_predictions", False, "Save predictions.")
@@ -158,38 +205,37 @@ def calculate_mean_prob(
 
 
 def calculate_score(
-    score: float,
+    total_score: float,
     share_including_bg: np.ndarray,
     scoring_method: ScoringMethod,
 ) -> np.ndarray:
     share: np.ndarray
-    match scoring_method:
-        case (
-            ScoringMethod.SHARE_BG
-            | ScoringMethod.SCORE_MUL_SHARE_BG
-            | ScoringMethod.SCORE_DECOMP_USING_SHARE_BG
-        ):
-            share = share_including_bg
+    if scoring_method & ScoringMethod._USE_SHARE_WITH_BACKGROUND:
+        share = share_including_bg
 
-        case (
-            ScoringMethod.SHARE_NOBG
-            | ScoringMethod.SCORE_MUL_SHARE_NOBG
-            | ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG
-        ):
-            share = np.r_["-1,1,0", 0, share_including_bg[1:]]
-            share_sum: float = share.sum()
-            if share_sum != 0:
-                share /= share.sum()
+    elif scoring_method & ScoringMethod._USE_SHARE_WITHOUT_BACKGROUND:
+        share = np.r_["-1,1,0", 0, share_including_bg[1:]]
+        share_sum: float = share.sum()
+        if share_sum != 0:
+            share /= share.sum()
 
-    match scoring_method:
-        case ScoringMethod.SHARE_BG | ScoringMethod.SHARE_NOBG:
-            return share
+    else:
+        raise ValueError(f"Unknown scoring method: {scoring_method}")
 
-        case ScoringMethod.SCORE_MUL_SHARE_BG | ScoringMethod.SCORE_MUL_SHARE_NOBG:
-            return score * share
+    score: np.ndarray
+    if scoring_method & ScoringMethod._USE_SCORE_CONSTANT_ONE:
+        score = share
 
-        case ScoringMethod.SCORE_DECOMP_USING_SHARE_BG | ScoringMethod.SCORE_DECOMP_USING_SHARE_NOBG:
-            return 1 - np.power(1 - score, share)
+    elif scoring_method & ScoringMethod._USE_SCORE_MULTIPLICATION:
+        score = total_score * share
+
+    elif scoring_method & ScoringMethod._USE_SCORE_DECOMPOSITION:
+        score = 1 - np.power(1 - total_score, share)
+
+    else:
+        raise ValueError(f"Unknown scoring method: {scoring_method}")
+
+    return score
 
 
 def process_data(
@@ -300,7 +346,7 @@ def process_data(
                     prob_discount_uint8=prob_discount_uint8,
                 )
                 score_per_tooth: np.ndarray = calculate_score(
-                    score=row["score"],
+                    total_score=row["score"],
                     share_including_bg=share_including_bg,
                     scoring_method=scoring_method,
                 )
@@ -325,14 +371,24 @@ def process_data(
                 pass
 
             case Category.IMPLANT:
-                # for IMPLANT, we need the tooth to be missing
-                assert s_missing is not None
-                s_finding = s_finding * s_missing
+                if finding_scoring_method & ScoringMethod._USE_MISSING_MULTIPLICATION:
+                    assert s_missing is not None
+                    # for IMPLANT, we need the tooth to be missing
+                    s_finding = s_finding * s_missing
+
+                else:
+                    # no modification to the score
+                    pass
 
             case _:
-                # for the rest, we need the tooth to be present
-                assert s_missing is not None
-                s_finding = s_finding * (1 - s_missing)
+                if finding_scoring_method & ScoringMethod._USE_MISSING_MULTIPLICATION:
+                    # for the rest, we need the tooth to be present
+                    assert s_missing is not None
+                    s_finding = s_finding * (1 - s_missing)
+
+                else:
+                    # no modification to the score
+                    pass
 
         for category_name, score in s_finding.items():
             if category_name == "BACKGROUND":
