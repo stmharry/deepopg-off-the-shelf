@@ -11,6 +11,7 @@ class CocoRLE(BaseModel):
 
 
 class CocoCategory(BaseModel):
+    supercategory: str | None = None
     id: int | None = None
     name: str
 
