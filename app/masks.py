@@ -50,7 +50,21 @@ class Mask(object):
             return cls(_polygons=obj, _height=height, _width=width)
 
         elif isinstance(obj, np.ndarray):
-            return cls(_bitmask=obj, _height=height, _width=width)
+            bitmask: npt.NDArray[np.bool_]
+            match obj.shape:
+                case (height, width):
+                    bitmask = obj
+
+                case (height, width, 1):
+                    bitmask = obj[..., 0]
+
+                case _:
+                    raise ValueError(
+                        "Bitmask must be a 2D array, or a 3D array with a single"
+                        " channel"
+                    )
+
+            return cls(_bitmask=bitmask, _height=height, _width=width)
 
         else:
             raise NotImplementedError
@@ -72,7 +86,7 @@ class Mask(object):
     @classmethod
     def convert_bitmask_to_rle(cls, bitmask: npt.NDArray[np.bool_]) -> CocoRLE:
         rle_obj: dict = pycocotools.mask.encode(  # type: ignore
-            bitmask.astype(np.uint8).ravel(order="F")
+            np.asarray(bitmask, dtype=np.uint8, order="F")
         )
         rle: CocoRLE = CocoRLE.parse_obj(rle_obj)
         return rle
@@ -184,8 +198,7 @@ class Mask(object):
     @property
     def area(self) -> int:
         if self._rle is not None:
-            rle_obj: dict = self._rle.dict()
-            return pycocotools.mask.area(rle_obj)  # type: ignore
+            return pycocotools.mask.area(self._rle.dict())  # type: ignore
 
         if self._bitmask is not None:
             return self._bitmask.sum()
@@ -202,6 +215,9 @@ class Mask(object):
 
     @property
     def bbox_xywh(self) -> list[int]:
+        if self._rle is not None:
+            return pycocotools.mask.toBbox(self._rle.dict())  # type: ignore
+
         polygons: list[list[int]] = self.polygons
 
         x_min: int = min(
