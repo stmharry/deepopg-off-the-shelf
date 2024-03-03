@@ -3,7 +3,7 @@ import dataclasses
 import multiprocessing as mp
 import multiprocessing.context as mp_context
 import warnings
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sized
 from typing import Any, Generic, Literal, TypeAlias, TypeVar
 
 import rich.progress
@@ -50,7 +50,7 @@ def run_task_with_message_suppressed(
 
 
 def map_task(
-    tasks: list[Task[T]],
+    tasks: Iterable[Task[T]],
     stack: contextlib.ExitStack,
     num_workers: int = 0,
     method: Literal["fork", "spawn", "forkserver"] | None = "fork",
@@ -61,7 +61,9 @@ def map_task(
     context: mp_context.BaseContext = mp.get_context(method)
     pool = stack.enter_context(context.Pool(processes=num_workers))
     results = pool.imap_unordered(run_task_with_message_suppressed, tasks)
-    results = rich.progress.track(results, total=len(tasks))
+    results = rich.progress.track(
+        results, total=len(tasks) if isinstance(tasks, Sized) else None
+    )
 
     return results
 

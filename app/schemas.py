@@ -17,7 +17,7 @@ class CocoCategory(BaseModel):
 
 
 class CocoImage(BaseModel):
-    id: int | str
+    id: ID
     file_name: str
     width: int
     height: int

@@ -32,6 +32,8 @@ PY ?= \
 	PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:64 \
 		$(PYTHON)
 
+PIP ?= $(PYTHON) -m pip
+
 # for `--script.postfix`, we will run `script` target
 RUN_SCRIPT = $(PY) scripts/$(word 1,$(subst ., ,$(subst --,,$@))).py
 DOT ?= dot
@@ -132,6 +134,15 @@ prof2png:
 
 ### data preprocessing targets
 
+convert-promaton-to-coco: ROOT_DIR = $(RAW_DIR)
+convert-promaton-to-coco: check-RAW_DIR
+convert-promaton-to-coco:
+	$(RUN_SCRIPT) \
+		--data_dir "$(DATA_DIR)" \
+		--output_coco "$(DATA_DIR)/coco/promaton.json" \
+		--num_workers $(CPUS) \
+		--verbosity $(VERBOSITY)
+
 convert-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-coco-golden-label: check-RAW_DIR
 convert-ntuh-coco-golden-label:
@@ -205,7 +216,8 @@ debug-maskdino:
 ### detectron2 targets
 
 install-detectron2:
-	@pip install -e ./detectron2 && \
+	@rm -rf ./detectron2/{build,**/*.so} && \
+		$(PIP) install -e ./detectron2 && \
 		ln -sf ../../configs ./detectron2/detectron2/model_zoo/
 
 # mvitv2 targets
