@@ -9,7 +9,11 @@ import scipy.ndimage
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection import InstanceDetection, InstanceDetectionData
+from app.instance_detection import (
+    InstanceDetection,
+    InstanceDetectionData,
+    InstanceDetectionFactory,
+)
 from app.masks import Mask
 from app.tasks import Task, map_task
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
@@ -148,7 +152,7 @@ def process_data(
 
 def main(_):
     directory_name: str
-    match FLAGS.dataset_name:
+    match FLAGS.dataset_prefix:
         case "pano":
             directory_name = "PROMATON"
 
@@ -158,7 +162,7 @@ def main(_):
         case _:
             raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
-    driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_prefix, root_dir=FLAGS.data_dir
     )
     if driver is None:

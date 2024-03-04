@@ -6,7 +6,11 @@ import yaml
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection import InstanceDetection, InstanceDetectionData
+from app.instance_detection import (
+    InstanceDetection,
+    InstanceDetectionData,
+    InstanceDetectionFactory,
+)
 from app.masks import Mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
@@ -29,7 +33,7 @@ def main(_):
         case _:
             raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
-    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_prefix, root_dir=FLAGS.data_dir
     )
     if data_driver is None:
@@ -53,7 +57,7 @@ def main(_):
             "\n".join(
                 [
                     str(Path(FLAGS.data_dir, "images", f"{file_name}.jpg"))
-                    for file_name in data_driver.get_split_file_names(split)
+                    for file_name in data_driver.get_file_names(split)
                 ]
             )
         )

@@ -6,7 +6,7 @@ import numpy.typing as npt
 import torch
 from pydantic import BaseModel, parse_obj_as
 
-from app.coco import ID, CocoAnnotation, CocoCategory, CocoRLE
+from app.coco import ID, CocoAnnotation, CocoCategory, CocoData, CocoRLE
 from app.masks import Mask
 from detectron2.structures import BoxMode, Instances
 
@@ -19,11 +19,7 @@ class InstanceDetectionAnnotation(BaseModel):
     iscrowd: int
 
 
-class InstanceDetectionData(BaseModel):
-    file_name: Path
-    height: int
-    width: int
-    image_id: ID
+class InstanceDetectionData(CocoData):
     annotations: list[InstanceDetectionAnnotation]
 
 

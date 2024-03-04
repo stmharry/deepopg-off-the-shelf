@@ -1,5 +1,6 @@
 from semantic_segmentation.datasets import (  # type: ignore
     SemanticSegmentation,
+    SemanticSegmentationFactory,
     SemanticSegmentationV4,
     SemanticSegmentationV4NTUH,
 )

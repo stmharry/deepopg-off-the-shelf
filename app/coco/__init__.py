@@ -4,6 +4,7 @@ from app.coco.schemas import (  # type: ignore
     Coco,
     CocoAnnotation,
     CocoCategory,
+    CocoData,
     CocoImage,
     CocoRLE,
 )

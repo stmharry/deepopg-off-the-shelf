@@ -13,6 +13,7 @@ from app.coco import ID
 from app.instance_detection import (
     InstanceDetection,
     InstanceDetectionData,
+    InstanceDetectionFactory,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
     InstanceDetectionPredictionList,
@@ -425,7 +426,7 @@ def process_data(
 def main(_):
     # instance detection
 
-    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
     if data_driver is None:

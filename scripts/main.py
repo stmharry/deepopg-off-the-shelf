@@ -3,8 +3,8 @@ import warnings
 
 from absl import logging
 
-from app.instance_detection import InstanceDetection
-from app.semantic_segmentation import SemanticSegmentation
+from app.instance_detection import InstanceDetectionFactory
+from app.semantic_segmentation import SemanticSegmentationFactory
 from detectron2.engine import default_argument_parser, launch
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")
@@ -23,8 +23,10 @@ def main():
     logging.info(f"Command Line Args: {args!s}")
 
     for dataset_name in args.dataset_name.split(","):
-        InstanceDetection.register_by_name(dataset_name, root_dir=args.data_dir)
-        SemanticSegmentation.register_by_name(dataset_name, root_dir=args.data_dir)
+        InstanceDetectionFactory.register_by_name(dataset_name, root_dir=args.data_dir)
+        SemanticSegmentationFactory.register_by_name(
+            dataset_name, root_dir=args.data_dir
+        )
 
     (module, name) = args.main_app.split(":")
     main_app = getattr(importlib.import_module(module), name)

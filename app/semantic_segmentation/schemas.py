@@ -5,16 +5,12 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, parse_file_as
 
-from app.coco.schemas import ID, CocoRLE
+from app.coco.schemas import ID, CocoData, CocoRLE
 from app.masks import Mask
 from detectron2.structures import BoxMode, Instances
 
 
-class SemanticSegmentationData(BaseModel):
-    file_name: Path
-    height: int
-    width: int
-    image_id: ID
+class SemanticSegmentationData(CocoData):
     sem_seg_file_name: Path | None = None
 
 

@@ -5,57 +5,34 @@ from pathlib import Path
 from typing import ClassVar, TypeVar
 
 import numpy as np
-import numpy.typing as npt
 from absl import logging
 
-from app.coco.datasets import CocoDataset
+from app.coco.datasets import CocoDatasetDriver, CocoDatasetFactory
 from app.coco.schemas import Coco, CocoAnnotation, CocoCategory
+from app.instance_detection.schemas import InstanceDetectionData
 from detectron2.data import DatasetCatalog, MetadataCatalog
 
 T = TypeVar("T", bound="InstanceDetection")
 
 
 @dataclasses.dataclass
-class InstanceDetection(CocoDataset):
+class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
     CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
 
     @classmethod
-    def get_subclasses(cls) -> list[type["InstanceDetection"]]:
-        return [
-            InstanceDetectionV1,
-            InstanceDetectionV1NTUH,
-            InstanceDetectionOdontoAI,
-        ]
-
-    @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
-        logging.info(f"Registering {cls.__name__!s} dataset...")
+        logging.info(f"Registering {cls.__name__} dataset...")
 
         self = cls(root_dir=root_dir)
 
-        categories: list[CocoCategory] | None = None
-        for coco_path in self.coco_paths:
-            _categories = self.get_coco_categories(coco_path)
-
-            if categories is None:
-                categories = _categories
-
-            elif categories != _categories:
-                raise ValueError(
-                    f"Categories from {coco_path!s} do not match previous categories!"
-                )
-
-        if categories is None:
-            raise ValueError(f"No categories found in {self.coco_paths!s}!")
-
-        thing_classes: list[str] = [category.name for category in categories]
-        thing_colors: npt.NDArray[np.uint8] = cls.get_colors(len(thing_classes))
+        thing_classes: list[str] = [category.name for category in self.coco_categories]
+        thing_colors: list[np.ndarray] = cls.get_colors(len(thing_classes))
 
         for split in cls.SPLITS:
-            name: str = f"{cls.PREFIX}_{split}"
+            name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(
-                name, functools.partial(self.get_split, split=split)
+                name, functools.partial(self.get_coco_dataset_as_jsons, split=split)
             )
             MetadataCatalog.get(name).set(
                 thing_classes=thing_classes,
@@ -163,4 +140,15 @@ class InstanceDetectionOdontoAI(InstanceDetection):
         return [
             Path(self.root_dir, "coco", "instance-detection-odontoai-train.json"),
             Path(self.root_dir, "coco", "instance-detection-odontoai-val.json"),
+        ]
+
+
+@dataclasses.dataclass
+class InstanceDetectionFactory(CocoDatasetFactory[InstanceDetection]):
+    @classmethod
+    def get_subclasses(cls) -> list[type[InstanceDetection]]:
+        return [
+            InstanceDetectionV1,
+            InstanceDetectionV1NTUH,
+            InstanceDetectionOdontoAI,
         ]

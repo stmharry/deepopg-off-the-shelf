@@ -7,6 +7,7 @@ from pydantic import parse_obj_as
 from app.instance_detection import (
     InstanceDetection,
     InstanceDetectionData,
+    InstanceDetectionFactory,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
     InstanceDetectionPredictionList,
@@ -28,7 +29,7 @@ FLAGS = flags.FLAGS
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
     if data_driver is None:
