@@ -11,7 +11,7 @@ import pandas as pd
 from absl import logging
 from pydantic import parse_obj_as
 
-from app.schemas import CocoCategory, CocoImage
+from app.coco.schemas import CocoCategory, CocoImage
 from detectron2.data import DatasetCatalog
 from detectron2.data.datasets import load_coco_json
 
@@ -109,11 +109,6 @@ class CocoDataset(metaclass=abc.ABCMeta):
     @property
     def image_dir(self) -> Path:
         return Path(self.root_dir, "images")
-
-    @property
-    @abc.abstractmethod
-    def mask_dir(self) -> Path:
-        return Path(self.root_dir, "masks")
 
     @property
     @abc.abstractmethod

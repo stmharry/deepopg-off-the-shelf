@@ -12,11 +12,11 @@ from absl import app, flags, logging
 from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-from app.instance_detection.types import (
+from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
     EVALUATE_WHEN_NONMISSING_FINDINGS,
 )
-from app.instance_detection.types import InstanceDetectionV1Category as Category
+from app.instance_detection import InstanceDetectionV1Category as Category
 
 plt.rcParams["font.family"] = "Arial"
 

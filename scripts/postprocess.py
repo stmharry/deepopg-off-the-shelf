@@ -9,18 +9,17 @@ import pandas as pd
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import InstanceDetection
-from app.instance_detection.schemas import (
+from app.coco import ID
+from app.instance_detection import (
+    InstanceDetection,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
     InstanceDetectionPredictionList,
 )
-from app.instance_detection.types import InstanceDetectionV1Category as Category
+from app.instance_detection import InstanceDetectionV1Category as Category
 from app.masks import Mask
-from app.schemas import ID
-from app.semantic_segmentation.datasets import SemanticSegmentation
-from app.semantic_segmentation.schemas import SemanticSegmentationData
+from app.semantic_segmentation import SemanticSegmentation, SemanticSegmentationData
 from app.tasks import Task, map_task
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog

@@ -3,8 +3,8 @@ from typing import Any
 
 from absl import app, flags
 
-from app.instance_detection.types import InstanceDetectionV1Category as Category
-from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
+from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
+from app.instance_detection import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string("coco", "./data/raw/NTUH/ntuh-opg-12.json", "Input COCO file path.")
 flags.DEFINE_string(

@@ -9,9 +9,9 @@ import pydicom
 import rich.progress
 from absl import app, flags, logging
 
+from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
 from app.lib.psg import psg_to_npa
 from app.masks import Mask
-from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 from app.tasks import Task, map_task
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")

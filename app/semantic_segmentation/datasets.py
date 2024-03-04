@@ -1,3 +1,4 @@
+import abc
 import dataclasses
 import functools
 import json
@@ -8,8 +9,8 @@ import numpy as np
 import numpy.typing as npt
 from absl import logging
 
-from app.datasets import CocoDataset
-from app.schemas import CocoCategory
+from app.coco.datasets import CocoDataset
+from app.coco.schemas import CocoCategory
 from app.semantic_segmentation.schemas import SemanticSegmentationData
 from detectron2.data import DatasetCatalog, MetadataCatalog
 
@@ -67,7 +68,9 @@ class SemanticSegmentation(CocoDataset):
         return self
 
     @classmethod
-    def get_dataset(cls, self: "CocoDataset", coco_path: Path) -> list[dict[str, Any]]:
+    def get_dataset(
+        cls, self: "SemanticSegmentation", coco_path: Path
+    ) -> list[dict[str, Any]]:
         dataset = super().get_dataset(self=self, coco_path=coco_path)
 
         # to ensure the data is consistent with the schema
@@ -106,6 +109,11 @@ class SemanticSegmentation(CocoDataset):
             json.loads(data_schema.json(exclude_unset=True))
             for data_schema in data_schemas
         ]
+
+    @property
+    @abc.abstractmethod
+    def mask_dir(self) -> Path:
+        ...
 
 
 @dataclasses.dataclass

@@ -1,4 +1,5 @@
 import contextlib
+from collections.abc import Iterable
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -8,10 +9,9 @@ import scipy.ndimage
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import InstanceDetection
-from app.instance_detection.schemas import InstanceDetectionData
+from app.instance_detection import InstanceDetection, InstanceDetectionData
 from app.masks import Mask
-from app.tasks import map_fn
+from app.tasks import Task, map_task
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
@@ -173,18 +173,18 @@ def main(_):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with contextlib.ExitStack() as stack:
-        tasks: list[tuple] = [
-            (
-                data,
-                metadata,
-                output_dir,
+        tasks: Iterable[Task] = (
+            Task(
+                fn=process_data,
+                args=(data,),
+                kwargs={
+                    "metadata": metadata,
+                    "output_dir": output_dir,
+                },
             )
             for data in dataset
-        ]
-
-        for _ in map_fn(
-            process_data, tasks=tasks, stack=stack, num_workers=FLAGS.num_workers
-        ):
+        )
+        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
             ...
 
 

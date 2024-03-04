@@ -7,12 +7,12 @@ from absl import logging
 from pydantic import parse_obj_as
 from requests import Response, Session
 
+from app.coco.schemas import Coco
 from app.coco_annotator.schemas import (
     CocoAnnotatorCategory,
     CocoAnnotatorDataset,
     CocoAnnotatorImage,
 )
-from app.schemas import Coco
 
 
 @dataclasses.dataclass

@@ -5,12 +5,12 @@ from typing import Any
 import pandas as pd
 from absl import app, flags, logging
 
-from app.instance_detection.types import (
+from app.coco import Coco, CocoImage
+from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
     EVALUATE_WHEN_NONMISSING_FINDINGS,
 )
-from app.instance_detection.types import InstanceDetectionV1Category as Category
-from app.schemas import Coco, CocoImage
+from app.instance_detection import InstanceDetectionV1Category as Category
 from app.utils import uns_to_fdi
 
 flags.DEFINE_string(

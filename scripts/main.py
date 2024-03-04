@@ -3,8 +3,8 @@ import warnings
 
 from absl import logging
 
-from app.instance_detection.datasets import InstanceDetection
-from app.semantic_segmentation.datasets import SemanticSegmentation
+from app.instance_detection import InstanceDetection
+from app.semantic_segmentation import SemanticSegmentation
 from detectron2.engine import default_argument_parser, launch
 
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")

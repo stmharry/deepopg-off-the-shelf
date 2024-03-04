@@ -5,8 +5,8 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, parse_file_as
 
+from app.coco.schemas import ID, CocoRLE
 from app.masks import Mask
-from app.schemas import ID, CocoRLE
 from detectron2.structures import BoxMode, Instances
 
 
@@ -63,7 +63,7 @@ class SemanticSegmentationPrediction(BaseModel):
                 BoxMode.convert(mask.bbox_xywh, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
             )
             pred_classes.append(category_id)
-            pred_masks.append(mask.bitmask)
+            pred_masks.append(mask.bitmask.astype(np.uint8))
 
         return Instances(
             image_size=(height, width),

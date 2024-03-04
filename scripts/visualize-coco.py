@@ -6,15 +6,18 @@ import rich.progress
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.coco_annotator.clients import CocoAnnotatorClient
-from app.coco_annotator.schemas import CocoAnnotatorDataset, CocoAnnotatorImage
-from app.instance_detection.datasets import InstanceDetection
-from app.instance_detection.schemas import (
+from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
+from app.coco_annotator import (
+    CocoAnnotatorClient,
+    CocoAnnotatorDataset,
+    CocoAnnotatorImage,
+)
+from app.instance_detection import (
+    InstanceDetection,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
 )
-from app.schemas import Coco, CocoAnnotation, CocoCategory, CocoImage
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")

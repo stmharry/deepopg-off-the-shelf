@@ -4,8 +4,8 @@ import numpy as np
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import InstanceDetection
-from app.instance_detection.schemas import (
+from app.instance_detection import (
+    InstanceDetection,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,

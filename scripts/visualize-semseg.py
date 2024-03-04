@@ -1,4 +1,5 @@
 import contextlib
+from collections.abc import Iterable
 from pathlib import Path
 
 import matplotlib.cm as cm
@@ -6,9 +7,9 @@ import numpy as np
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.schemas import ID
-from app.semantic_segmentation.datasets import SemanticSegmentation
-from app.semantic_segmentation.schemas import (
+from app.coco import ID
+from app.semantic_segmentation import (
+    SemanticSegmentation,
     SemanticSegmentationData,
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
@@ -161,7 +162,7 @@ def main(_):
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
     with contextlib.ExitStack() as stack:
-        tasks: list[Task] = [
+        tasks: Iterable[Task] = (
             Task(
                 fn=visualize_data,
                 kwargs={
@@ -173,7 +174,7 @@ def main(_):
             )
             for data in dataset
             if data.file_name.stem in name_to_prediction
-        ]
+        )
         for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
             ...
 

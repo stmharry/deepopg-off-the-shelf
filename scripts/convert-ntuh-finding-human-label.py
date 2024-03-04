@@ -3,10 +3,10 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from absl import app, flags, logging
+from absl import app, flags
 
-import app as _app  # type: ignore
-from app.instance_detection.types import InstanceDetectionV1Category as Category
+from app.instance_detection import InstanceDetectionV1Category as Category
+from app.logging import absl_logging as logging
 
 flags.DEFINE_string(
     "label_dir",

@@ -6,8 +6,7 @@ import yaml
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import InstanceDetection
-from app.instance_detection.schemas import InstanceDetectionData
+from app.instance_detection import InstanceDetection, InstanceDetectionData
 from app.masks import Mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 

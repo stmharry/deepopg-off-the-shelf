@@ -1,13 +1,14 @@
 import contextlib
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
 from absl import app, flags, logging
 from pydantic import parse_obj_as
 
-from app.instance_detection.datasets import InstanceDetection
-from app.instance_detection.schemas import (
+from app.instance_detection import (
+    InstanceDetection,
     InstanceDetectionData,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
@@ -158,7 +159,7 @@ def main(_):
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
     with contextlib.ExitStack() as stack:
-        tasks: list[Task] = [
+        tasks: Iterable[Task] = (
             Task(
                 fn=visualize_data,
                 kwargs={
@@ -173,9 +174,8 @@ def main(_):
             )
             for data in dataset
             if data.image_id in id_to_prediction
-        ]
-
-        for _ in map_task(tasks=tasks, stack=stack, num_workers=FLAGS.num_workers):
+        )
+        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
             ...
 
 
