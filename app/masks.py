@@ -9,7 +9,7 @@ import scipy.sparse
 import ultralytics.data.converter
 from absl import logging
 
-from app.schemas import CocoRLE
+from app.coco import CocoRLE
 from detectron2.structures import polygons_to_bitmask
 from detectron2.structures.masks import polygon_area
 
