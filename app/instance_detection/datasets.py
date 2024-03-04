@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import re
 from pathlib import Path
 from typing import ClassVar, TypeVar
 
@@ -8,7 +9,7 @@ import numpy.typing as npt
 from absl import logging
 
 from app.coco.datasets import CocoDataset
-from app.coco.schemas import CocoCategory
+from app.coco.schemas import Coco, CocoAnnotation, CocoCategory
 from detectron2.data import DatasetCatalog, MetadataCatalog
 
 T = TypeVar("T", bound="InstanceDetection")
@@ -64,6 +65,53 @@ class InstanceDetection(CocoDataset):
             )
 
         return self
+
+    @classmethod
+    def convert_coco(cls, coco: Coco) -> Coco:
+        if cls.CATEGORY_MAPPING_RE is None:
+            return coco
+
+        category_id_to_converted_name: dict[int, str] = {}
+        for category in coco.categories:
+            converted_category_name: str | None = None
+            for pattern, converted_pattern in cls.CATEGORY_MAPPING_RE.items():
+                match_obj: re.Match | None = re.match(pattern, category.name)
+                if match_obj is None:
+                    continue
+
+                converted_category_name = re.sub(
+                    pattern, converted_pattern, category.name
+                )
+
+            if converted_category_name is None:
+                continue
+
+            assert isinstance(category.id, int)
+            category_id_to_converted_name[category.id] = converted_category_name
+
+        categories: list[CocoCategory] = [
+            CocoCategory(name=name)
+            for name in sorted(set(category_id_to_converted_name.values()))
+        ]
+
+        annotations: list[CocoAnnotation] = []
+        for annotation in coco.annotations:
+            category_name: str | None = category_id_to_converted_name.get(
+                annotation.category_id  # type: ignore
+            )
+            if category_name is None:
+                continue
+
+            annotations.append(
+                annotation.model_copy(update={"category_id": category_name})
+            )
+
+        return Coco.create(
+            categories=categories,
+            images=coco.images,
+            annotations=annotations,
+            sort_category=True,
+        )
 
 
 class InstanceDetectionV1(InstanceDetection):
