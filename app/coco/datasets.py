@@ -157,9 +157,7 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
     def get_coco_dataset_as_jsons(self, split: str | None) -> list[dict[str, Any]]:
         return list(
             self.get_coco_dataset(split=split)
-            | pipe.map(
-                lambda data: json.loads(data.model_dump_json(exclude_unset=True))
-            )
+            | pipe.map(lambda data: json.loads(data.model_dump_json()))
         )
 
 

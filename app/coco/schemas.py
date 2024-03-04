@@ -27,6 +27,9 @@ class CocoImage(BaseModel):
 
 class CocoData(BaseModel):
     file_name: Path
+    height: int
+    width: int
+    image_id: ID
 
 
 class CocoAnnotation(BaseModel):
