@@ -127,3 +127,12 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Custom
+run.sh
+data
+models
+results
+
+pytorch-image-models/
+yolo*.pt
