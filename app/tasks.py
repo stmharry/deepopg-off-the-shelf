@@ -4,7 +4,7 @@ import multiprocessing as mp
 import multiprocessing.context as mp_context
 import warnings
 from collections.abc import Callable, Iterable, Sized
-from typing import Any, Generic, Literal, TypeAlias, TypeVar
+from typing import Any, Generic, Literal, TypeAlias, TypeVar, overload
 
 import rich.progress
 from absl import logging
@@ -49,38 +49,46 @@ def run_task_with_message_suppressed(
     return result
 
 
+@overload
 def map_task(
     tasks: Iterable[Task[T]],
     stack: contextlib.ExitStack,
     num_workers: int = 0,
+    filter_none: Literal[True] = ...,
     method: Literal["fork", "spawn", "forkserver"] | None = "fork",
-) -> Iterable[Result[T]]:
-    if num_workers == 0:
-        return map(run_task, tasks)
-
-    context: mp_context.BaseContext = mp.get_context(method)
-    pool = stack.enter_context(context.Pool(processes=num_workers))
-    results = pool.imap_unordered(run_task_with_message_suppressed, tasks)
-    results = rich.progress.track(
-        results, total=len(tasks) if isinstance(tasks, Sized) else None
-    )
-
-    return results
+) -> Iterable[T]: ...
 
 
-# backwards compatibility
-
-
-def map_fn(
-    fn: TaskFn[T],
-    tasks: list[tuple[Any, ...]],
+@overload
+def map_task(
+    tasks: Iterable[Task[T]],
     stack: contextlib.ExitStack,
     num_workers: int = 0,
+    filter_none: Literal[False] = ...,
     method: Literal["fork", "spawn", "forkserver"] | None = "fork",
-) -> Iterable[Result[T]]:
-    return map_task(
-        [Task(fn, args=task) for task in tasks],
-        stack=stack,
-        num_workers=num_workers,
-        method=method,
-    )
+) -> Iterable[Result[T]]: ...
+
+
+def map_task(
+    tasks: Iterable[Task[T]],
+    stack: contextlib.ExitStack,
+    num_workers: int = 0,
+    filter_none: bool = True,
+    method: Literal["fork", "spawn", "forkserver"] | None = "fork",
+) -> Iterable[Result[T]] | Iterable[T]:
+    if num_workers == 0:
+        results = map(run_task, tasks)
+
+    else:
+        context: mp_context.BaseContext = mp.get_context(method)
+        pool = stack.enter_context(context.Pool(processes=num_workers))
+        results = pool.imap_unordered(run_task_with_message_suppressed, tasks)
+
+        results = rich.progress.track(
+            results, total=len(tasks) if isinstance(tasks, Sized) else None
+        )
+
+    if filter_none:
+        results = filter(None, results)
+
+    return results

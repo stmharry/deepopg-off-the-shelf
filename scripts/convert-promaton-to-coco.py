@@ -5,6 +5,7 @@ from pathlib import Path
 
 import imageio.v3 as iio
 import numpy as np
+import pipe
 import pydicom
 import rich.progress
 from absl import app, flags, logging
@@ -188,83 +189,41 @@ class PSGFile(object):
 def main(_):
     raw_dir: Path = Path(FLAGS.data_dir, "raw")
 
-    category_by_name: dict[str, CocoCategory] = {
-        category.name: category.copy(update={"id": index})
-        for index, category in enumerate(COCO_CATEGORIES, start=1)
-    }
-
     images: list[CocoImage] = []
     with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=DicomFile.to_coco_image,
-                args=(dicom,),
-                kwargs={"image_dir": Path(FLAGS.data_dir, "images")},
+        images = list(
+            (
+                Task(
+                    fn=DicomFile.to_coco_image,
+                    args=(dicom,),
+                    kwargs={"image_dir": Path(FLAGS.data_dir, "images")},
+                )
+                for dicom in DicomFile.list(root_dir=raw_dir)
             )
-            for dicom in DicomFile.list(root_dir=raw_dir)
+            | pipe.Pipe(map_task)(stack=stack, num_workers=FLAGS.num_workers)
         )
-
-        for image in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            if image is None:
-                continue
-
-            if not isinstance(image.id, str):
-                continue
-
-            images.append(image)
-
-    image_by_name: dict[str, CocoImage] = {
-        image.id: image.copy(update={"id": index})  # type: ignore
-        for index, image in enumerate(images, start=1)
-    }
 
     annotations: list[CocoAnnotation] = []
     with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=PSGFile.to_coco_annotation,
-                args=(psg,),
+        annotations = list(
+            (
+                Task(
+                    fn=PSGFile.to_coco_annotation,
+                    args=(psg,),
+                )
+                for psg in PSGFile.list(root_dir=raw_dir)
             )
-            for psg in PSGFile.list(root_dir=raw_dir)
+            | pipe.Pipe(map_task)(stack=stack, num_workers=FLAGS.num_workers)
         )
 
-        for annotation in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            if annotation is None:
-                continue
-
-            category: CocoCategory | None = category_by_name.get(annotation.category_id)  # type: ignore
-            if category is None:
-                logging.warning(
-                    f"Category not found for name: {annotation.category_id}"
-                )
-                continue
-
-            image: CocoImage | None = image_by_name.get(annotation.image_id)  # type: ignore
-            if image is None:
-                logging.warning(f"Image not found: {annotation.image_id}")
-                continue
-
-            annotations.append(
-                annotation.copy(
-                    update={"image_id": image.id, "category_id": category.id}
-                )
-            )
-
-    annotations = [
-        annoation.copy(update={"id": index})
-        for index, annoation in enumerate(annotations, start=1)
-    ]
-
-    coco: Coco = Coco(
-        categories=list(category_by_name.values()),
-        images=list(image_by_name.values()),
-        annotations=annotations,
+    coco: Coco = Coco.create(
+        categories=COCO_CATEGORIES, images=images, annotations=annotations
     )
     coco_path: Path = Path(FLAGS.output_coco)
 
     logging.info(f"Writing COCO to {coco_path}")
     with open(coco_path, "w") as f:
-        f.write(coco.json())
+        f.write(coco.model_dump_json())
 
 
 if __name__ == "__main__":

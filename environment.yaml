@@ -277,6 +277,7 @@ dependencies:
   - pcre2=10.42=hcad00b1_0
   - pillow=9.4.0=py311h6a678d5_1
   - pip=23.3.1=py311h06a4308_0
+  - pipe=2.1=pyhd8ed1ab_0
   - pixman=0.42.2=h59595ed_0
   - platformdirs=4.2.0=pyhd8ed1ab_0
   - ply=3.11=py311h06a4308_0
