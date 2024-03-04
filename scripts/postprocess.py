@@ -7,7 +7,7 @@ import imageio.v3 as iio
 import numpy as np
 import pandas as pd
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.coco import ID
 from app.instance_detection import (
@@ -20,7 +20,11 @@ from app.instance_detection import (
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
 from app.masks import Mask
-from app.semantic_segmentation import SemanticSegmentation, SemanticSegmentationData
+from app.semantic_segmentation import (
+    SemanticSegmentation,
+    SemanticSegmentationData,
+    SemanticSegmentationFactory,
+)
 from app.tasks import Task, map_task
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
@@ -256,7 +260,7 @@ def process_data(
     logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
     df: pd.DataFrame = pd.DataFrame.from_records(
-        [instance.dict() for instance in prediction.instances]
+        [instance.model_dump() for instance in prediction.instances]
     )
     logging.info(f"Original instance count: {len(df)}.")
     if len(df) == 0:
@@ -410,8 +414,9 @@ def process_data(
     output_prediction: InstanceDetectionPrediction | None = None
     if save_predictions:
         df_finding = pd.concat(df_findings, axis=0)
-        instances: list[InstanceDetectionPredictionInstance] = parse_obj_as(
-            list[InstanceDetectionPredictionInstance],
+        instances: list[InstanceDetectionPredictionInstance] = TypeAdapter(
+            list[InstanceDetectionPredictionInstance]
+        ).validate_python(
             df_finding.to_dict(orient="records"),
         )
         output_prediction = InstanceDetectionPrediction(
@@ -432,9 +437,9 @@ def main(_):
     if data_driver is None:
         raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
 
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
-    )
+    dataset: list[InstanceDetectionData] = TypeAdapter(
+        list[InstanceDetectionData]
+    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     predictions: list[InstanceDetectionPrediction]
@@ -457,7 +462,7 @@ def main(_):
     # semantic segmentation
 
     semseg_data_driver: SemanticSegmentation | None = (
-        SemanticSegmentation.register_by_name(
+        SemanticSegmentationFactory.register_by_name(
             dataset_name=FLAGS.semseg_dataset_name, root_dir=FLAGS.data_dir
         )
     )
@@ -468,8 +473,9 @@ def main(_):
 
     id_to_semseg_data: dict[ID, SemanticSegmentationData] = {}
     if FLAGS.use_semseg_gt_as_prob:
-        semseg_dataset: list[SemanticSegmentationData] = parse_obj_as(
-            list[SemanticSegmentationData],
+        semseg_dataset: list[SemanticSegmentationData] = TypeAdapter(
+            list[SemanticSegmentationData]
+        ).validate_python(
             DatasetCatalog.get(FLAGS.semseg_dataset_name),
         )
         id_to_semseg_data = {data.image_id: data for data in semseg_dataset}

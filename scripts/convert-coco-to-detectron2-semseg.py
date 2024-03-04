@@ -7,7 +7,7 @@ import matplotlib.cm as cm
 import numpy as np
 import scipy.ndimage
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.instance_detection import (
     InstanceDetection,
@@ -168,9 +168,9 @@ def main(_):
     if driver is None:
         raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_prefix)
-    )
+    dataset: list[InstanceDetectionData] = TypeAdapter(
+        list[InstanceDetectionData]
+    ).validate_python(DatasetCatalog.get(FLAGS.dataset_prefix))
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_prefix)
 
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)

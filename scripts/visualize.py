@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.instance_detection import (
     InstanceDetection,
@@ -123,9 +123,9 @@ def main(_):
     if data_driver is None:
         raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
 
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
-    )
+    dataset: list[InstanceDetectionData] = TypeAdapter(
+        list[InstanceDetectionData]
+    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     category_re_groups: dict[str | None, str]

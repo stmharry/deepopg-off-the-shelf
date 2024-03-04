@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.cm as cm
 import numpy as np
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.coco import ID
 from app.semantic_segmentation import (
@@ -145,9 +145,9 @@ def main(_):
     if data_driver is None:
         raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
 
-    dataset: list[SemanticSegmentationData] = parse_obj_as(
-        list[SemanticSegmentationData], DatasetCatalog.get(FLAGS.dataset_name)
-    )
+    dataset: list[SemanticSegmentationData] = TypeAdapter(
+        list[SemanticSegmentationData]
+    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     predictions: list[SemanticSegmentationPrediction] = (

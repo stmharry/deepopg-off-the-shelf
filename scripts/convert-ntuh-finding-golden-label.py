@@ -74,7 +74,9 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
 
 def main(_):
     df: pd.DataFrame = pd.read_csv(FLAGS.label_csv, index_col="No.")
-    coco: Coco = Coco.parse_file(FLAGS.coco)
+
+    with open(FLAGS.coco, "r") as f:
+        coco: Coco = Coco.model_validate_json(f.read())
 
     id_to_image: dict = {image.id: image for image in coco.images}
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.instance_detection import (
     InstanceDetection,
@@ -35,9 +35,9 @@ def main(_):
     if data_driver is None:
         raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
 
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
-    )
+    dataset: list[InstanceDetectionData] = TypeAdapter(
+        list[InstanceDetectionData]
+    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
 
     # Assemble predictions
 

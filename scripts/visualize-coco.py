@@ -4,7 +4,7 @@ from pathlib import Path
 
 import rich.progress
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
 from app.coco_annotator import (
@@ -48,9 +48,9 @@ def main(_):
     if data_driver is None:
         raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
 
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
-    )
+    dataset: list[InstanceDetectionData] = TypeAdapter(
+        list[InstanceDetectionData]
+    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     url: str = FLAGS.coco_annotator_url

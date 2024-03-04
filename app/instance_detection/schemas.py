@@ -4,7 +4,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import torch
-from pydantic import BaseModel, parse_obj_as
+from pydantic import BaseModel, TypeAdapter
 
 from app.coco import ID, CocoAnnotation, CocoCategory, CocoData, CocoRLE
 from app.masks import Mask
@@ -117,7 +117,7 @@ class InstanceDetectionPrediction(BaseModel):
                 width=width,
             )
 
-            pred_masks.append(mask.bitmask)
+            pred_masks.append(mask.bitmask.astype(np.uint8))
 
         return Instances(
             image_size=(height, width),
@@ -141,7 +141,9 @@ class InstanceDetectionPredictionList(object):
                 if prediction["image_id"] in image_ids
             ]
 
-        return parse_obj_as(list[InstanceDetectionPrediction], predictions_obj)
+        return TypeAdapter(list[InstanceDetectionPrediction]).validate_python(
+            predictions_obj
+        )
 
     @classmethod
     def to_detectron2_detection_pth(
@@ -150,7 +152,7 @@ class InstanceDetectionPredictionList(object):
         path: Path,
     ) -> None:
         predictions_obj: list[dict[str, Any]] = [
-            instance_detection_prediction.dict()
+            instance_detection_prediction.model_dump()
             for instance_detection_prediction in instance_detection_predictions
         ]
         torch.save(predictions_obj, path)

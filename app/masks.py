@@ -44,7 +44,7 @@ class Mask(object):
             return cls(_rle=obj, _height=height, _width=width)
 
         elif isinstance(obj, dict):
-            return cls(_rle=CocoRLE.parse_obj(obj), _height=height, _width=width)
+            return cls(_rle=CocoRLE.model_validate(obj), _height=height, _width=width)
 
         elif isinstance(obj, list):
             return cls(_polygons=obj, _height=height, _width=width)
@@ -77,7 +77,7 @@ class Mask(object):
 
     @classmethod
     def convert_rle_to_bitmask(cls, rle: CocoRLE) -> npt.NDArray[np.bool_]:
-        rle_obj: dict = rle.dict()
+        rle_obj: dict = rle.model_dump()
         bitmask: npt.NDArray[np.bool_] = pycocotools.mask.decode(rle_obj).astype(  # type: ignore
             np.bool_
         )
@@ -88,7 +88,7 @@ class Mask(object):
         rle_obj: dict = pycocotools.mask.encode(  # type: ignore
             np.asarray(bitmask, dtype=np.uint8, order="F")
         )
-        rle: CocoRLE = CocoRLE.parse_obj(rle_obj)
+        rle: CocoRLE = CocoRLE.model_validate(rle_obj)
         return rle
 
     @classmethod
@@ -198,7 +198,7 @@ class Mask(object):
     @property
     def area(self) -> int:
         if self._rle is not None:
-            return pycocotools.mask.area(self._rle.dict())  # type: ignore
+            return pycocotools.mask.area(self._rle.model_dump())  # type: ignore
 
         if self._bitmask is not None:
             return self._bitmask.sum()
@@ -216,7 +216,7 @@ class Mask(object):
     @property
     def bbox_xywh(self) -> list[int]:
         if self._rle is not None:
-            return pycocotools.mask.toBbox(self._rle.dict())  # type: ignore
+            return pycocotools.mask.toBbox(self._rle.model_dump())  # type: ignore
 
         polygons: list[list[int]] = self.polygons
 
