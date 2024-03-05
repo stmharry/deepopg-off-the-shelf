@@ -1,5 +1,3 @@
-import contextlib
-from collections.abc import Iterable
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -15,7 +13,7 @@ from app.instance_detection import (
     InstanceDetectionFactory,
 )
 from app.masks import Mask
-from app.tasks import Task, map_task
+from app.tasks import Pool, track_progress
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
@@ -176,20 +174,14 @@ def main(_):
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=process_data,
-                args=(data,),
-                kwargs={
-                    "metadata": metadata,
-                    "output_dir": output_dir,
-                },
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | track_progress
+            | pool.parallel_pipe(process_data, allow_unordered=True)(
+                metadata=metadata, output_dir=output_dir
             )
-            for data in dataset
         )
-        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            ...
 
 
 if __name__ == "__main__":

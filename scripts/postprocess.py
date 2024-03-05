@@ -1,4 +1,3 @@
-import contextlib
 import enum
 from pathlib import Path
 from typing import Any
@@ -6,6 +5,7 @@ from typing import Any
 import imageio.v3 as iio
 import numpy as np
 import pandas as pd
+import pipe
 from absl import app, flags, logging
 from pydantic import TypeAdapter
 
@@ -25,7 +25,7 @@ from app.semantic_segmentation import (
     SemanticSegmentationData,
     SemanticSegmentationFactory,
 )
-from app.tasks import Task, map_task
+from app.tasks import Pool, filter_none, track_progress
 from app.utils import calculate_iom_bbox, calculate_iom_mask
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 
@@ -247,11 +247,12 @@ def calculate_score(
 
 def process_data(
     data: InstanceDetectionData,
-    file_name: str,
+    semseg_data: SemanticSegmentationData | None,
     prediction: InstanceDetectionPrediction,
+    file_name: str,
+    *,
     metadata: Metadata,
     semseg_metadata: Metadata,
-    semseg_data: SemanticSegmentationData | None,
     semseg_result_dir: Path | None,
     min_score: float,
     min_area: float,
@@ -485,54 +486,37 @@ def main(_):
 
     #
 
-    output_predictions: list[InstanceDetectionPrediction] = []
-    df_results: list[pd.DataFrame] = []
-    with contextlib.ExitStack() as stack:
-        tasks: list[Task] = [
-            Task(
-                fn=process_data,
-                kwargs={
-                    "data": data,
-                    "file_name": (
-                        Path(data.file_name).relative_to(data_driver.image_dir).stem
-                    ),
-                    "prediction": id_to_prediction[data.image_id],
-                    "metadata": metadata,
-                    "semseg_data": id_to_semseg_data.get(data.image_id),
-                    "semseg_metadata": semseg_metadata,
-                    "semseg_result_dir": (
-                        Path(FLAGS.semseg_result_dir)
-                        if FLAGS.semseg_result_dir
-                        else None
-                    ),
-                    "min_score": FLAGS.min_score,
-                    "min_area": FLAGS.min_area,
-                    "min_iom": FLAGS.min_iom,
-                    "missing_scoring_method": ScoringMethod[
-                        FLAGS.missing_scoring_method
-                    ],
-                    "finding_scoring_method": ScoringMethod[
-                        FLAGS.finding_scoring_method
-                    ],
-                    "save_predictions": FLAGS.save_predictions,
-                },
+    output_predictions: list[InstanceDetectionPrediction]
+    df_results: list[pd.DataFrame]
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        output_predictions, df_results = list(
+            dataset
+            | track_progress
+            | pipe.filter(lambda data: data.image_id in id_to_prediction)
+            | pipe.map(
+                lambda data: (
+                    data,
+                    id_to_semseg_data.get(data.image_id),
+                    id_to_prediction[data.image_id],
+                    Path(data.file_name).relative_to(data_driver.image_dir).stem,
+                )
             )
-            for data in dataset
-            if data.image_id in id_to_prediction
-        ]
-
-        for result in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            if result is None:
-                continue
-
-            _output_prediction: InstanceDetectionPrediction | None
-            _df_result: pd.DataFrame
-            _output_prediction, _df_result = result
-
-            if _output_prediction is not None:
-                output_predictions.append(_output_prediction)
-
-            df_results.append(_df_result)
+            | pool.parallel_pipe(process_data, unpack_input=True, allow_unordered=True)(
+                metadata=metadata,
+                semseg_metadata=semseg_metadata,
+                semseg_result_dir=(
+                    Path(FLAGS.semseg_result_dir) if FLAGS.semseg_result_dir else None
+                ),
+                min_score=FLAGS.min_score,
+                min_area=FLAGS.min_area,
+                min_iom=FLAGS.min_iom,
+                missing_scoring_method=ScoringMethod[FLAGS.missing_scoring_method],
+                finding_scoring_method=ScoringMethod[FLAGS.finding_scoring_method],
+                save_predictions=FLAGS.save_predictions,
+            )
+            | filter_none
+            | pipe.transpose
+        )
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 

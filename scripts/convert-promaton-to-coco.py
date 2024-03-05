@@ -1,4 +1,3 @@
-import contextlib
 import dataclasses
 from collections.abc import Iterable
 from pathlib import Path
@@ -7,13 +6,12 @@ import imageio.v3 as iio
 import numpy as np
 import pipe
 import pydicom
-import rich.progress
 from absl import app, flags, logging
 
 from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
 from app.lib.psg import psg_to_npa
 from app.masks import Mask
-from app.tasks import Task, map_task
+from app.tasks import Pool, filter_none, track_progress
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("output_coco", "./data/coco/promaton.json", "Output COCO file.")
@@ -74,21 +72,18 @@ class DicomFile(object):
     image_name: str = dataclasses.field(init=False)
 
     @classmethod
-    def list(cls, root_dir: Path, verbose: bool = False) -> Iterable["DicomFile"]:
-        study_dirs: Iterable[Path] = Path(root_dir, "PROMATON").iterdir()
-        if verbose:
-            study_dirs = rich.progress.track(
-                list(study_dirs), description="Iterating studies"
+    def iterdir(cls, root_dir: Path) -> Iterable["DicomFile"]:
+        return (
+            list(Path(root_dir, "PROMATON").iterdir())
+            | track_progress(description="Dicom Files")
+            | pipe.filter(Path.is_dir)
+            | pipe.map(
+                lambda study_dir: cls(
+                    path=Path(study_dir, "scan", f"{study_dir.stem}.dcm"),
+                    root_path=root_dir,
+                )
             )
-
-        for study_dir in study_dirs:
-            if not study_dir.is_dir():
-                continue
-
-            yield cls(
-                path=Path(study_dir, "scan", f"{study_dir.stem}.dcm"),
-                root_path=root_dir,
-            )
+        )
 
     def __post_init__(self):
         if not self.path.exists():
@@ -137,19 +132,19 @@ class PSGFile(object):
     category_name: str = dataclasses.field(init=False)
 
     @classmethod
-    def list(cls, root_dir: Path, verbose: bool = False) -> Iterable["PSGFile"]:
-        study_dirs: Iterable[Path] = Path(root_dir, "PROMATON").iterdir()
-        if verbose:
-            study_dirs = rich.progress.track(
-                list(study_dirs), description="Iterating studies"
+    def iterdir(cls, root_dir: Path) -> Iterable["PSGFile"]:
+        return (
+            list(Path(root_dir, "PROMATON").iterdir())
+            | track_progress(description="PSG Files")
+            | pipe.filter(Path.is_dir)
+            | pipe.map(
+                lambda study_dir: (
+                    cls(path=psg_path, root_path=root_dir)
+                    for psg_path in Path(study_dir, "output").glob("**/*.psg")
+                )
             )
-
-        for study_dir in study_dirs:
-            if not study_dir.is_dir():
-                continue
-
-            for psg_path in Path(study_dir, "output").glob("**/*.psg"):
-                yield cls(path=psg_path, root_path=root_dir)
+            | pipe.chain
+        )
 
     def __post_init__(self):
         if not self.path.exists():
@@ -190,30 +185,20 @@ def main(_):
     raw_dir: Path = Path(FLAGS.data_dir, "raw")
 
     images: list[CocoImage] = []
-    with contextlib.ExitStack() as stack:
+    annotations: list[CocoAnnotation] = []
+    with Pool(num_workers=FLAGS.num_workers) as pool:
         images = list(
-            (
-                Task(
-                    fn=DicomFile.to_coco_image,
-                    args=(dicom,),
-                    kwargs={"image_dir": Path(FLAGS.data_dir, "images")},
-                )
-                for dicom in DicomFile.list(root_dir=raw_dir)
+            DicomFile.iterdir(root_dir=raw_dir)
+            | pool.parallel_pipe(DicomFile.to_coco_image, allow_unordered=True)(
+                image_dir=Path(FLAGS.data_dir, "images")
             )
-            | pipe.Pipe(map_task)(stack=stack, num_workers=FLAGS.num_workers)
+            | filter_none
         )
 
-    annotations: list[CocoAnnotation] = []
-    with contextlib.ExitStack() as stack:
         annotations = list(
-            (
-                Task(
-                    fn=PSGFile.to_coco_annotation,
-                    args=(psg,),
-                )
-                for psg in PSGFile.list(root_dir=raw_dir)
-            )
-            | pipe.Pipe(map_task)(stack=stack, num_workers=FLAGS.num_workers)
+            PSGFile.iterdir(root_dir=raw_dir)
+            | pool.parallel_pipe(PSGFile.to_coco_annotation, allow_unordered=True)
+            | filter_none
         )
 
     coco: Coco = Coco.create(

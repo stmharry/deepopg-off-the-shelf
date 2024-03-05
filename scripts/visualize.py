@@ -1,9 +1,8 @@
-import contextlib
 import re
-from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
+import pipe
 from absl import app, flags, logging
 from pydantic import TypeAdapter
 
@@ -14,7 +13,7 @@ from app.instance_detection import (
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
 )
-from app.tasks import Task, map_task
+from app.tasks import Pool, track_progress
 from app.utils import read_image
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -162,25 +161,22 @@ def main(_):
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
-    with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=visualize_data,
-                kwargs={
-                    "data": data,
-                    "prediction": id_to_prediction[data.image_id],
-                    "metadata": metadata,
-                    "category_re_groups": category_re_groups,
-                    "visualize_dir": visualize_dir,
-                    "ignore_scores": FLAGS.use_gt_as_prediction,
-                    "extension": "jpg",
-                },
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | track_progress
+            | pipe.filter(lambda data: data.image_id in id_to_prediction)
+            | pipe.map(lambda data: (data, id_to_prediction[data.image_id]))
+            | pool.parallel_pipe(
+                visualize_data, unpack_input=True, allow_unordered=True
+            )(
+                metadata=metadata,
+                category_re_groups=category_re_groups,
+                visualize_dir=visualize_dir,
+                ignore_scores=FLAGS.use_gt_as_prediction,
+                extension="jpg",
             )
-            for data in dataset
-            if data.image_id in id_to_prediction
         )
-        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            ...
 
 
 if __name__ == "__main__":

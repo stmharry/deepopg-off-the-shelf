@@ -105,6 +105,7 @@ def main(_):
                         "finding": FINDING_MAPPING[str(finding)],
                     }
                 )
+
     df_output: pd.DataFrame = (
         pd.DataFrame(output_rows)
         .groupby(["file_name", "fdi"], as_index=False, group_keys=False)

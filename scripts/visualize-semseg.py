@@ -3,7 +3,6 @@ from pathlib import Path
 import matplotlib.cm as cm
 import numpy as np
 import pipe
-import rich.progress
 from absl import app, flags, logging
 from pydantic import TypeAdapter
 
@@ -15,7 +14,7 @@ from app.semantic_segmentation import (
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
 )
-from app.tasks import Pool
+from app.tasks import Pool, track_progress
 from app.utils import read_image
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -167,10 +166,12 @@ def main(_):
     with Pool(num_workers=FLAGS.num_workers) as pool:
         list(
             dataset
+            | track_progress
             | pipe.filter(lambda data: data.file_name.stem in name_to_prediction)
             | pipe.map(lambda data: (data, name_to_prediction[data.file_name.stem]))
-            | pool.pipe(visualize_data)(metadata=metadata, visualize_dir=visualize_dir)
-            | pipe.Pipe(rich.progress.track)(total=len(dataset))
+            | pool.parallel_pipe(
+                visualize_data, unpack_input=True, allow_unordered=True
+            )(metadata=metadata, visualize_dir=visualize_dir)
         )
 
 

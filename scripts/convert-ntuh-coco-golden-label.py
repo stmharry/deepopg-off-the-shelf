@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Any
 
 from absl import app, flags
 
 from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
+from app.coco.schemas import ID
 from app.instance_detection import InstanceDetectionV1Category as Category
 
 flags.DEFINE_string("coco", "./data/raw/NTUH/ntuh-opg-12.json", "Input COCO file path.")
@@ -58,61 +58,61 @@ CATEGORY_MAPPING: dict[str, str] = {
 
 
 def main(_):
-    coco: Coco = Coco.parse_file(FLAGS.coco)
+    with open(FLAGS.coco, "r") as f:
+        coco: Coco = Coco.model_validate_json(f.read())
+
+    raw_category_id_to_name: dict[ID, str] = {}
+    for raw_category in coco.categories:
+        category_name: str | None = CATEGORY_MAPPING.get(raw_category.name)
+
+        if category_name is None:
+            raise ValueError(f"Unknown category: {raw_category.name}")
+
+        if raw_category.id is None:
+            raise ValueError(f"Category id is None: {raw_category}")
+
+        raw_category_id_to_name[raw_category.id] = category_name
 
     categories: list[CocoCategory] = [
-        CocoCategory(id=i, name=name)
-        for i, name in enumerate(CATEGORY_MAPPING.values(), start=1)
+        CocoCategory(name=name) for name in raw_category_id_to_name.values()
     ]
-    category_by_name: dict[str, CocoCategory] = {
-        category.name: category for category in categories
-    }
-    category_id_mapping: dict[Any, Any] = {
-        category.id: category_by_name[CATEGORY_MAPPING[category.name]].id
-        for category in coco.categories
-    }
 
-    images: list[CocoImage] = []
-    for image in coco.images:
-        file_name: str = Path(image.file_name).stem
-
-        _image: CocoImage = image.copy(
-            update={
-                "id": image.id,
-                "file_name": f"NTUH/{file_name}.jpg",
-            }
-        )
-        images.append(_image)
+    images: list[CocoImage] = [
+        image.model_copy(update={"file_name": f"NTUH/{Path(image.file_name).stem}.jpg"})
+        for image in coco.images
+    ]
 
     annotations: list[CocoAnnotation] = []
     for annotation in coco.annotations:
-        _annotation: CocoAnnotation
-
-        _annotation = annotation.copy(
-            update={
-                "id": len(annotations) + 1,
-                "category_id": category_id_mapping[annotation.category_id],
-                "metadata": None,
-            }
-        )
-        annotations.append(_annotation)
-
-        # root remnants are not labeled as category but as metadata, so we need to add them manually
-        metadata: dict[str, Any] = annotation.metadata or {}
-        if metadata.get("RR") == "Y":
-            _annotation = annotation.copy(
+        annotations.append(
+            annotation.model_copy(
                 update={
-                    "id": len(annotations) + 1,
-                    "category_id": category_by_name[Category.ROOT_REMNANTS].id,
+                    "category_id": raw_category_id_to_name[annotation.category_id],
                     "metadata": None,
                 }
             )
-            annotations.append(_annotation)
+        )
 
-    coco: Coco = Coco(categories=categories, images=images, annotations=annotations)
-    json_str: str = coco.json(indent=2)
+        match annotation.metadata:
+            # root remnants are not labeled as category but as metadata, so we need to add them manually
+            case {"RR": "Y"}:
+                annotations.append(
+                    annotation.model_copy(
+                        update={
+                            "category_id": Category.ROOT_REMNANTS,
+                            "metadata": None,
+                        }
+                    )
+                )
+
+    coco: Coco = Coco.create(
+        categories=categories,
+        images=images,
+        annotations=annotations,
+        sort_category=True,
+    )
     with open(FLAGS.output_coco, "w") as f:
-        f.write(json_str)
+        f.write(coco.model_dump_json())
 
 
 if __name__ == "__main__":

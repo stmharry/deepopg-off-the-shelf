@@ -95,6 +95,7 @@ CPROFILE_OUT ?= profile.out
 
 ifneq ($(DEBUG),false)
 	CPUS = 0
+	VERBOSITY = 1
 endif
 
 ifeq ($(DEBUG),pdb)
@@ -139,7 +140,7 @@ convert-promaton-to-coco: check-RAW_DIR
 convert-promaton-to-coco:
 	$(RUN_SCRIPT) \
 		--data_dir "$(DATA_DIR)" \
-		--output_coco "$(DATA_DIR)/coco/promaton.json" \
+		--output_coco "$(DATA_DIR)/coco/promaton.1.json" \
 		--num_workers $(CPUS) \
 		--verbosity $(VERBOSITY)
 
