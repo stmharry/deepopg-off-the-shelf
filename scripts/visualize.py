@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 import pipe
 from absl import app, flags, logging
-from pydantic import TypeAdapter
 
 from app.instance_detection import (
     InstanceDetection,
@@ -15,7 +14,7 @@ from app.instance_detection import (
 )
 from app.tasks import Pool, track_progress
 from app.utils import read_image
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import ColorMode, VisImage, Visualizer
 
@@ -51,6 +50,7 @@ FLAGS = flags.FLAGS
 def visualize_data(
     data: InstanceDetectionData,
     prediction: InstanceDetectionPrediction,
+    *,
     metadata: Metadata,
     category_re_groups: dict[str | None, str],
     visualize_dir: Path,
@@ -119,15 +119,12 @@ def visualize_data(
 
 
 def main(_):
-    data_driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
-
-    dataset: list[InstanceDetectionData] = TypeAdapter(
-        list[InstanceDetectionData]
-    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
+    )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     category_re_groups: dict[str | None, str]

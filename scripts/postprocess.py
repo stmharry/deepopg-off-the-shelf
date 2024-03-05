@@ -27,7 +27,7 @@ from app.semantic_segmentation import (
 )
 from app.tasks import Pool, filter_none, track_progress
 from app.utils import calculate_iom_bbox, calculate_iom_mask
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 
 
 class ScoringMethod(enum.Flag):
@@ -435,15 +435,12 @@ def process_data(
 def main(_):
     # instance detection
 
-    data_driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
-
-    dataset: list[InstanceDetectionData] = TypeAdapter(
-        list[InstanceDetectionData]
-    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
+    )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     predictions: list[InstanceDetectionPrediction]
@@ -465,23 +462,19 @@ def main(_):
 
     # semantic segmentation
 
-    semseg_data_driver: SemanticSegmentation | None = (
+    semseg_data_driver: SemanticSegmentation = (
         SemanticSegmentationFactory.register_by_name(
             dataset_name=FLAGS.semseg_dataset_name, root_dir=FLAGS.data_dir
         )
     )
-    if semseg_data_driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.semseg_dataset_name}")
-
     semseg_metadata: Metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
 
     id_to_semseg_data: dict[ID, SemanticSegmentationData] = {}
     if FLAGS.use_semseg_gt_as_prob:
-        semseg_dataset: list[SemanticSegmentationData] = TypeAdapter(
-            list[SemanticSegmentationData]
-        ).validate_python(
-            DatasetCatalog.get(FLAGS.semseg_dataset_name),
+        semseg_dataset: list[SemanticSegmentationData] = (
+            semseg_data_driver.get_coco_dataset(dataset_name=FLAGS.semseg_dataset_name)
         )
+
         id_to_semseg_data = {data.image_id: data for data in semseg_dataset}
 
     #

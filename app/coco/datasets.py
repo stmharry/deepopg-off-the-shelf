@@ -40,6 +40,18 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
         return f"{cls.PREFIX}_{split}"
 
     @classmethod
+    def get_split_name(cls, dataset_name: str) -> str | None:
+        if dataset_name == cls.PREFIX:
+            return None
+
+        match dataset_name.rsplit("_", maxsplit=1):
+            case [cls.PREFIX, split]:
+                return split
+
+            case _:
+                raise ValueError(f"Invalid dataset name: {dataset_name}")
+
+    @classmethod
     def available_dataset_names(cls) -> list[str]:
         return list((None, *cls.SPLITS) | pipe.map(cls.get_dataset_name))
 
@@ -139,18 +151,20 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
             | pipe.map(TypeAdapter(DATA_T).validate_python)
         )
 
-    def get_file_names(self, split: str) -> list[str]:
-        dataset_name: str = self.get_dataset_name(split=split)
+    def get_file_names(self, dataset_name: str) -> list[str]:
         split_path: Path = Path(self.split_dir, f"{dataset_name}.txt")
+
+        if not split_path.exists():
+            raise ValueError(f"Split file does not exist: {split_path}")
 
         with open(split_path, "r") as f:
             return list(f | pipe.map(str.rstrip))
 
-    def get_coco_dataset(self, split: str | None) -> list[DATA_T]:
-        if split is None:
+    def get_coco_dataset(self, dataset_name: str) -> list[DATA_T]:
+        if dataset_name == self.PREFIX:
             return self.coco_dataset
 
-        names: set[str] = set(self.get_file_names(split=split))
+        names: set[str] = set(self.get_file_names(dataset_name=dataset_name))
 
         return list(
             self.coco_dataset
@@ -162,9 +176,9 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
             )
         )
 
-    def get_coco_dataset_as_jsons(self, split: str | None) -> list[dict[str, Any]]:
+    def get_coco_dataset_as_jsons(self, dataset_name: str) -> list[dict[str, Any]]:
         return list(
-            self.get_coco_dataset(split=split)
+            self.get_coco_dataset(dataset_name=dataset_name)
             | pipe.map(lambda data: json.loads(data.model_dump_json()))
         )
 
@@ -176,7 +190,7 @@ class CocoDatasetFactory(Generic[DRIVER_T]):
     def get_subclasses(cls) -> list[type[DRIVER_T]]: ...
 
     @classmethod
-    def register_by_name(cls, dataset_name: str, root_dir: Path) -> DRIVER_T | None:
+    def register_by_name(cls, dataset_name: str, root_dir: Path) -> DRIVER_T:
         data_driver: DRIVER_T | None = None
 
         subclass: type[DRIVER_T]
@@ -189,6 +203,9 @@ class CocoDatasetFactory(Generic[DRIVER_T]):
                 continue
 
             data_driver = subclass.register(root_dir=root_dir)
+
+        if data_driver is None:
+            raise ValueError(f"Dataset {dataset_name} not found.")
 
         return data_driver
 

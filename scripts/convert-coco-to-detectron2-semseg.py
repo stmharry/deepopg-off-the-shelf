@@ -5,7 +5,6 @@ import matplotlib.cm as cm
 import numpy as np
 import scipy.ndimage
 from absl import app, flags, logging
-from pydantic import TypeAdapter
 
 from app.instance_detection import (
     InstanceDetection,
@@ -14,7 +13,7 @@ from app.instance_detection import (
 )
 from app.masks import Mask
 from app.tasks import Pool, track_progress
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_enum("dataset_prefix", "pano", ["pano", "pano_ntuh"], "Dataset prefix.")
@@ -62,6 +61,7 @@ CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
 
 def process_data(
     data: InstanceDetectionData,
+    *,
     metadata: Metadata,
     output_dir: Path,
 ) -> InstanceDetectionData | None:
@@ -160,15 +160,12 @@ def main(_):
         case _:
             raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
-    driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_prefix, root_dir=FLAGS.data_dir
     )
-    if driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
-
-    dataset: list[InstanceDetectionData] = TypeAdapter(
-        list[InstanceDetectionData]
-    ).validate_python(DatasetCatalog.get(FLAGS.dataset_prefix))
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_prefix
+    )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_prefix)
 
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)

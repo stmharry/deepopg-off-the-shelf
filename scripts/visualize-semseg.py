@@ -4,7 +4,6 @@ import matplotlib.cm as cm
 import numpy as np
 import pipe
 from absl import app, flags, logging
-from pydantic import TypeAdapter
 
 from app.coco import ID
 from app.semantic_segmentation import (
@@ -16,7 +15,7 @@ from app.semantic_segmentation import (
 )
 from app.tasks import Pool, track_progress
 from app.utils import read_image
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
 
@@ -136,17 +135,12 @@ def visualize_data(
 
 
 def main(_):
-    data_driver: SemanticSegmentation | None = (
-        SemanticSegmentationFactory.register_by_name(
-            dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
-        )
+    data_driver: SemanticSegmentation = SemanticSegmentationFactory.register_by_name(
+        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
-
-    dataset: list[SemanticSegmentationData] = TypeAdapter(
-        list[SemanticSegmentationData]
-    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
+    dataset: list[SemanticSegmentationData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
+    )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
     predictions: list[SemanticSegmentationPrediction] = (

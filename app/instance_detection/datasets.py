@@ -29,12 +29,15 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
         thing_colors: list[np.ndarray] = cls.get_colors(len(thing_classes))
 
         for split in cls.SPLITS:
-            name: str = cls.get_dataset_name(split)
+            dataset_name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(
-                name, functools.partial(self.get_coco_dataset_as_jsons, split=split)
+                dataset_name,
+                functools.partial(
+                    self.get_coco_dataset_as_jsons, dataset_name=dataset_name
+                ),
             )
-            MetadataCatalog.get(name).set(
+            MetadataCatalog.get(dataset_name).set(
                 thing_classes=thing_classes,
                 thing_colors=thing_colors,
                 json_file=self.coco_path,

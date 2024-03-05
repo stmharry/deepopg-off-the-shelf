@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 from absl import app, flags, logging
-from pydantic import TypeAdapter
 
 from app.instance_detection import (
     InstanceDetection,
@@ -13,7 +12,6 @@ from app.instance_detection import (
     InstanceDetectionPredictionList,
 )
 from app.masks import Mask
-from detectron2.data import DatasetCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
@@ -32,15 +30,12 @@ FLAGS = flags.FLAGS
 def main(_):
     logging.set_verbosity(logging.INFO)
 
-    data_driver: InstanceDetection | None = InstanceDetectionFactory.register_by_name(
+    driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
-
-    dataset: list[InstanceDetectionData] = TypeAdapter(
-        list[InstanceDetectionData]
-    ).validate_python(DatasetCatalog.get(FLAGS.dataset_name))
+    dataset: list[InstanceDetectionData] = driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
+    )
 
     # Assemble predictions
 
