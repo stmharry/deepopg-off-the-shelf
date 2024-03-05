@@ -18,7 +18,10 @@ from detectron2.data import DatasetCatalog
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
 flags.DEFINE_enum(
-    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+    "dataset_name",
+    "pano",
+    InstanceDetectionFactory.available_dataset_names(),
+    "Dataset name.",
 )
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
@@ -96,8 +99,7 @@ def main(_):
             instances.append(instance)
 
         prediction: InstanceDetectionPrediction = InstanceDetectionPrediction(
-            image_id=data.image_id,
-            instances=instances,
+            image_id=data.image_id, instances=instances
         )
         predictions.append(prediction)
 

@@ -216,7 +216,7 @@ class Mask(object):
     @property
     def bbox_xywh(self) -> list[int]:
         if self._rle is not None:
-            return pycocotools.mask.toBbox(self._rle.model_dump())  # type: ignore
+            return list(pycocotools.mask.toBbox(self._rle.model_dump()).astype(int))  # type: ignore
 
         polygons: list[list[int]] = self.polygons
 

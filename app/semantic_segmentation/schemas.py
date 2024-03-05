@@ -3,7 +3,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from pydantic import BaseModel, parse_file_as
+from pydantic import BaseModel, TypeAdapter
 
 from app.coco.schemas import ID, CocoData, CocoRLE
 from app.masks import Mask
@@ -107,9 +107,10 @@ class SemanticSegmentationPredictionList(object):
     def from_detectron2_semseg_output_json(
         cls, path: Path, file_name_to_image_id: dict[Any, ID]
     ) -> list[SemanticSegmentationPrediction]:
-        instances: list[SemanticSegmentationPredictionInstance] = parse_file_as(
-            list[SemanticSegmentationPredictionInstance], path
-        )
+        with open(path, "r") as f:
+            instances: list[SemanticSegmentationPredictionInstance] = TypeAdapter(
+                list[SemanticSegmentationPredictionInstance]
+            ).validate_json(f.read())
 
         file_name: Path | None = None
         image_id: ID | None = None

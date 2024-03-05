@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
 import ijson
-import matplotlib.cm as cm
 import numpy as np
 import pipe
 from absl import logging
+from matplotlib import colormaps, colors
 from pydantic import TypeAdapter
 
 from app.coco.schemas import CocoCategory, CocoData, CocoImage
@@ -41,7 +41,7 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
 
     @classmethod
     def available_dataset_names(cls) -> list[str]:
-        return [cls.get_dataset_name(split) for split in [None, *cls.SPLITS]]
+        return list((None, *cls.SPLITS) | pipe.map(cls.get_dataset_name))
 
     #
 
@@ -64,13 +64,21 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
 
     @classmethod
     def get_colors(cls, num_classes: int) -> list[np.ndarray]:
+        cmap: colors.Colormap = colormaps.get_cmap("gist_rainbow")
+
         return list(
-            np.r_[
-                [(0, 0, 0)],
-                cm.gist_rainbow(np.arange(num_classes - 1))[:, :3],  # type: ignore
-            ]
-            .__mul__(255)
-            .astype(np.uint8)
+            (
+                # background color
+                (np.asarray((0, 0, 0), dtype=np.uint8),),
+                # foreground colors
+                (
+                    range(num_classes - 1)
+                    | pipe.map(
+                        lambda i: np.asarray(cmap(i)[:3]).__mul__(255).astype(np.uint8)
+                    )
+                ),
+            )
+            | pipe.chain
         )
 
     #
@@ -136,7 +144,7 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
         split_path: Path = Path(self.split_dir, f"{dataset_name}.txt")
 
         with open(split_path, "r") as f:
-            return list(f)
+            return list(f | pipe.map(str.rstrip))
 
     def get_coco_dataset(self, split: str | None) -> list[DATA_T]:
         if split is None:
@@ -187,6 +195,7 @@ class CocoDatasetFactory(Generic[DRIVER_T]):
     @classmethod
     def available_dataset_names(cls) -> list[str]:
         return list(
-            (subclass.available_dataset_names() for subclass in cls.get_subclasses())
+            cls.get_subclasses()
+            | pipe.map(lambda subclass: subclass.available_dataset_names())
             | pipe.chain
         )
