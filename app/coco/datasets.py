@@ -3,7 +3,7 @@ import dataclasses
 import functools
 import json
 from pathlib import Path
-from typing import Any, ClassVar, Generic, TypeVar, get_args
+from typing import Any, ClassVar, Generic, Literal, TypeVar, get_args, overload
 
 import ijson
 import numpy as np
@@ -193,8 +193,22 @@ class CocoDatasetFactory(Generic[DRIVER_T]):
     @abc.abstractmethod
     def get_subclasses(cls) -> list[type[DRIVER_T]]: ...
 
+    @overload
     @classmethod
-    def register_by_name(cls, dataset_name: str, root_dir: Path) -> DRIVER_T:
+    def register_by_name(
+        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[False] = ...
+    ) -> DRIVER_T: ...
+
+    @overload
+    @classmethod
+    def register_by_name(
+        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[True]
+    ) -> DRIVER_T | None: ...
+
+    @classmethod
+    def register_by_name(
+        cls, dataset_name: str, root_dir: Path, allow_missing: bool = False
+    ) -> DRIVER_T | None:
         data_driver: DRIVER_T | None = None
 
         subclass: type[DRIVER_T]
@@ -208,7 +222,7 @@ class CocoDatasetFactory(Generic[DRIVER_T]):
 
             data_driver = subclass.register(root_dir=root_dir)
 
-        if data_driver is None:
+        if (not allow_missing) and (data_driver is None):
             raise ValueError(f"Dataset {dataset_name} not found.")
 
         return data_driver

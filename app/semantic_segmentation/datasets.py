@@ -1,12 +1,13 @@
 import abc
 import dataclasses
 import functools
+import json
 from pathlib import Path
-from typing import ClassVar, TypeVar
+from typing import Any, ClassVar, TypeVar
 
 import numpy as np
+import pipe
 from absl import logging
-from pydantic.fields import _Unset
 
 from app.coco.datasets import CocoDatasetDriver, CocoDatasetFactory
 from app.semantic_segmentation.schemas import SemanticSegmentationData
@@ -29,12 +30,15 @@ class SemanticSegmentation(CocoDatasetDriver[SemanticSegmentationData]):
         stuff_colors: list[np.ndarray] = cls.get_colors(len(stuff_classes))
 
         for split in cls.SPLITS:
-            name: str = cls.get_dataset_name(split)
+            dataset_name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(
-                name, functools.partial(self.get_coco_dataset_as_jsons, split=split)
+                dataset_name,
+                functools.partial(
+                    self.get_coco_dataset_as_jsons, dataset_name=dataset_name
+                ),
             )
-            MetadataCatalog.get(name).set(
+            MetadataCatalog.get(dataset_name).set(
                 stuff_classes=stuff_classes,
                 stuff_colors=stuff_colors,
                 ignore_label=0,
@@ -51,23 +55,32 @@ class SemanticSegmentation(CocoDatasetDriver[SemanticSegmentationData]):
     @functools.cached_property
     def coco_dataset(self) -> list[SemanticSegmentationData]:
         dataset: list[SemanticSegmentationData] = []
+
         for data in super().coco_dataset:
             sem_seg_file_name: Path = Path(
                 self.mask_dir,
                 Path(data.file_name).relative_to(self.image_dir).with_suffix(".png"),
             )
-            if not sem_seg_file_name.exists():
-                data = data.model_copy(update={"sem_seg_file_name": _Unset})
+            if sem_seg_file_name.exists():
+                data = data.model_copy(update={"sem_seg_file_name": sem_seg_file_name})
 
             dataset.append(data)
 
         return dataset
 
+    # per https://detectron2.readthedocs.io/en/latest/tutorials/datasets.html,
+    # `sem_seg_file_name` cannot be included when not present
+    def get_coco_dataset_as_jsons(self, dataset_name: str) -> list[dict[str, Any]]:
+        return list(
+            self.get_coco_dataset(dataset_name=dataset_name)
+            | pipe.map(lambda data: json.loads(data.model_dump_json(exclude_none=True)))
+        )
+
 
 @dataclasses.dataclass
 class SemanticSegmentationV4(SemanticSegmentation):
     PREFIX: ClassVar[str] = "pano_semseg_v4"
-    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "debug"]
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "test_v2", "debug"]
 
     @property
     def mask_dir(self) -> Path:

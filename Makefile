@@ -73,7 +73,7 @@ VERBOSITY ?= 0
 CPUS ?= 4
 
 MIN_SCORE ?= 0.0001
-MIN_IOU ?= 0.5
+MIN_IOU ?= 1.0
 MAX_OBJS ?= 300
 
 YOLO_DIR ?= yolo
@@ -123,7 +123,7 @@ default:
 check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
 
---check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_NAME
+--check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_FILE
 --check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME check-VERBOSITY
 --check-COCO: check-COCO_ANNOTATOR_URL check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 

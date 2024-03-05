@@ -23,9 +23,11 @@ def main():
     logging.info(f"Command Line Args: {args!s}")
 
     for dataset_name in args.dataset_name.split(","):
-        InstanceDetectionFactory.register_by_name(dataset_name, root_dir=args.data_dir)
+        InstanceDetectionFactory.register_by_name(
+            dataset_name, root_dir=args.data_dir, allow_missing=True
+        )
         SemanticSegmentationFactory.register_by_name(
-            dataset_name, root_dir=args.data_dir
+            dataset_name, root_dir=args.data_dir, allow_missing=True
         )
 
     (module, name) = args.main_app.split(":")

@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+import pipe
 import torch
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, RootModel
 
 from app.coco import ID, CocoAnnotation, CocoCategory, CocoData, CocoRLE
 from app.masks import Mask
@@ -128,31 +128,20 @@ class InstanceDetectionPrediction(BaseModel):
         )
 
 
-class InstanceDetectionPredictionList(object):
+class InstanceDetectionPredictionList(RootModel[list[InstanceDetectionPrediction]]):
     @classmethod
     def from_detectron2_detection_pth(
         cls, path: Path, image_ids: set[ID] | None = None
-    ) -> list[InstanceDetectionPrediction]:
-        predictions_obj = torch.load(path)
+    ) -> "InstanceDetectionPredictionList":
+        predictions = torch.load(path)
+
         if image_ids is not None:
-            predictions_obj = [
-                prediction
-                for prediction in predictions_obj
-                if prediction["image_id"] in image_ids
-            ]
+            predictions = list(
+                predictions
+                | pipe.filter(lambda prediction: prediction["image_id"] in image_ids)
+            )
 
-        return TypeAdapter(list[InstanceDetectionPrediction]).validate_python(
-            predictions_obj
-        )
+        return cls.model_validate(predictions)
 
-    @classmethod
-    def to_detectron2_detection_pth(
-        cls,
-        instance_detection_predictions: list[InstanceDetectionPrediction],
-        path: Path,
-    ) -> None:
-        predictions_obj: list[dict[str, Any]] = [
-            instance_detection_prediction.model_dump()
-            for instance_detection_prediction in instance_detection_predictions
-        ]
-        torch.save(predictions_obj, path)
+    def to_detectron2_detection_pth(self, path: Path) -> None:
+        torch.save(self.model_dump, path)
