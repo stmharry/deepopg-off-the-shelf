@@ -3,7 +3,7 @@ import dataclasses
 import functools
 import json
 from pathlib import Path
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar, get_args
 
 import ijson
 import numpy as np
@@ -27,6 +27,10 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
     SPLITS: ClassVar[list[str]] = []
 
     root_dir: Path
+    _type_T: type[DATA_T] = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        self._type_T = get_args(self.__orig_bases__[0])[0]  # type: ignore
 
     @classmethod
     @abc.abstractmethod
@@ -148,7 +152,7 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
                 for coco_path in self.coco_paths
             )
             | pipe.chain
-            | pipe.map(TypeAdapter(DATA_T).validate_python)
+            | pipe.map(TypeAdapter(self._type_T).validate_python)
         )
 
     def get_file_names(self, dataset_name: str) -> list[str]:
