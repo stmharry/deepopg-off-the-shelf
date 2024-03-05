@@ -11,13 +11,45 @@ from app.instance_detection import (
     InstanceDetectionFactory,
 )
 from app.masks import Mask
+from app.tasks import Pool, track_progress
 from detectron2.data import Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_enum("dataset_prefix", "pano", ["pano", "pano_ntuh"], "Dataset prefix.")
 flags.DEFINE_string("yolo_dir", "yolo", "Yolo directory (relative to `data_dir`.")
-
+flags.DEFINE_boolean("force", False, "Overwrite existing files.")
+flags.DEFINE_integer("num_workers", 0, "Number of processes to use.")
 FLAGS = flags.FLAGS
+
+
+def process_data(
+    data: InstanceDetectionData,
+    *,
+    label_dir: Path,
+) -> None:
+    label_path: Path = Path(label_dir, f"{data.file_name.stem}.txt")
+    if (not FLAGS.force) and label_path.exists():
+        logging.info(f"Skip writing to {label_path!s}...")
+        return
+
+    lines: list[str] = []
+    for annotation in data.annotations:
+        mask: Mask = Mask.from_obj(
+            annotation.segmentation, width=data.width, height=data.height
+        )
+        polygon: list[int] | None = mask.polygon
+        if polygon is None:
+            continue
+
+        polygon_array: np.ndarray = np.array(polygon).reshape(-1, 2) / np.array(
+            [data.width, data.height]
+        )
+        line: str = " ".join(map("{:.4f}".format, polygon_array.flatten()))
+
+        lines.append(f"{annotation.category_id} {line}")
+
+    with open(label_path, "w") as f:
+        f.write("\n".join(lines))
 
 
 def main(_):
@@ -62,26 +94,14 @@ def main(_):
     label_dir: Path = Path(FLAGS.data_dir, "labels", directory_name)
     label_dir.mkdir(parents=True, exist_ok=True)
 
-    for data in dataset:
-        label_path: Path = Path(label_dir, data.file_name.stem + ".txt")
-
-        logging.info(f"Converting '{data.file_name.stem}' into {label_path!s}...")
-
-        with open(label_path, "w") as f:
-            for annotation in data.annotations:
-                mask: Mask = Mask.from_obj(
-                    annotation.segmentation, width=data.width, height=data.height
-                )
-                polygon: list[int] | None = mask.polygon
-                if polygon is None:
-                    continue
-
-                polygon_array: np.ndarray = np.array(polygon).reshape(-1, 2) / np.array(
-                    [data.width, data.height]
-                )
-                line: str = " ".join(map("{:.4f}".format, polygon_array.flatten()))
-
-                f.write(f"{annotation.category_id} {line}\n")
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | track_progress
+            | pool.parallel_pipe(process_data, allow_unordered=True)(
+                label_dir=label_dir
+            )
+        )
 
     if FLAGS.dataset_prefix != "pano":
         logging.info(f"Skip writing metadata.yaml for dataset: {FLAGS.dataset_prefix}")

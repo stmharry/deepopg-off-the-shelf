@@ -301,6 +301,8 @@ convert-coco-to-yolo:
 		--data_dir $(DATA_DIR) \
 		--dataset_prefix $(DATASET_NAME) \
 		--yolo_dir $(YOLO_DIR) \
+		--noforce \
+		--num_workers $(CPUS) \
 		--verbosity $(VERBOSITY)
 
 convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION
