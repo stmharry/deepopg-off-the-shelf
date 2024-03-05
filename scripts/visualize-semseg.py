@@ -1,9 +1,9 @@
-import contextlib
-from collections.abc import Iterable
 from pathlib import Path
 
 import matplotlib.cm as cm
 import numpy as np
+import pipe
+import rich.progress
 from absl import app, flags, logging
 from pydantic import TypeAdapter
 
@@ -15,7 +15,7 @@ from app.semantic_segmentation import (
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
 )
-from app.tasks import Task, map_task
+from app.tasks import Pool
 from app.utils import read_image
 from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
 from detectron2.structures import Instances
@@ -26,7 +26,7 @@ flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_enum(
     "dataset_name",
     "pano_semseg_v4",
-    SemanticSegmentation.available_dataset_names(),
+    SemanticSegmentationFactory.available_dataset_names(),
     "Dataset name.",
 )
 flags.DEFINE_string(
@@ -164,22 +164,14 @@ def main(_):
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
-    with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=visualize_data,
-                kwargs={
-                    "data": data,
-                    "prediction": name_to_prediction[data.file_name.stem],
-                    "metadata": metadata,
-                    "visualize_dir": visualize_dir,
-                },
-            )
-            for data in dataset
-            if data.file_name.stem in name_to_prediction
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | pipe.filter(lambda data: data.file_name.stem in name_to_prediction)
+            | pipe.map(lambda data: (data, name_to_prediction[data.file_name.stem]))
+            | pool.pipe(visualize_data)(metadata=metadata, visualize_dir=visualize_dir)
+            | pipe.Pipe(rich.progress.track)(total=len(dataset))
         )
-        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            ...
 
 
 if __name__ == "__main__":
