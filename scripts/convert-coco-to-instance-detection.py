@@ -106,7 +106,7 @@ def main(_):
 
     convert_to_coco(
         coco,
-        category_id_to_mappings=category_id_to_mappings,
+        category_id_to_mapped=category_id_to_mapped,
         coco_path=Path(data_driver.coco_path),
     )
 
