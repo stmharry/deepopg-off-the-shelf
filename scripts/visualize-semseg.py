@@ -1,22 +1,21 @@
-import contextlib
-from collections.abc import Iterable
 from pathlib import Path
 
 import matplotlib.cm as cm
 import numpy as np
+import pipe
 from absl import app, flags, logging
-from pydantic import parse_obj_as
 
 from app.coco import ID
 from app.semantic_segmentation import (
     SemanticSegmentation,
     SemanticSegmentationData,
+    SemanticSegmentationFactory,
     SemanticSegmentationPrediction,
     SemanticSegmentationPredictionList,
 )
-from app.tasks import Task, map_task
+from app.tasks import Pool, track_progress
 from app.utils import read_image
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import VisImage, Visualizer
 
@@ -25,7 +24,7 @@ flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_enum(
     "dataset_name",
     "pano_semseg_v4",
-    SemanticSegmentation.available_dataset_names(),
+    SemanticSegmentationFactory.available_dataset_names(),
     "Dataset name.",
 )
 flags.DEFINE_string(
@@ -136,14 +135,11 @@ def visualize_data(
 
 
 def main(_):
-    data_driver: SemanticSegmentation | None = SemanticSegmentation.register_by_name(
+    data_driver: SemanticSegmentation = SemanticSegmentationFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
-
-    dataset: list[SemanticSegmentationData] = parse_obj_as(
-        list[SemanticSegmentationData], DatasetCatalog.get(FLAGS.dataset_name)
+    dataset: list[SemanticSegmentationData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
@@ -151,32 +147,26 @@ def main(_):
         SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
             Path(FLAGS.result_dir, FLAGS.prediction),
             file_name_to_image_id={data.file_name: data.image_id for data in dataset},
-        )
+        ).root
     )
 
-    name_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore
-        prediction.file_name.stem: prediction for prediction in predictions
+    id_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore
+        prediction.image_id: prediction for prediction in predictions
     }
 
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
-    with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=visualize_data,
-                kwargs={
-                    "data": data,
-                    "prediction": name_to_prediction[data.file_name.stem],
-                    "metadata": metadata,
-                    "visualize_dir": visualize_dir,
-                },
-            )
-            for data in dataset
-            if data.file_name.stem in name_to_prediction
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | track_progress
+            | pipe.filter(lambda data: data.image_id in id_to_prediction)
+            | pipe.map(lambda data: (data, id_to_prediction[data.image_id]))
+            | pool.parallel_pipe(
+                visualize_data, unpack_input=True, allow_unordered=True
+            )(metadata=metadata, visualize_dir=visualize_dir)
         )
-        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            ...
 
 
 if __name__ == "__main__":

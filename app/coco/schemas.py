@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, TypeAlias
 
 from absl import logging
@@ -22,6 +23,13 @@ class CocoImage(BaseModel):
     file_name: str
     width: int
     height: int
+
+
+class CocoData(BaseModel):
+    file_name: Path
+    height: int
+    width: int
+    image_id: ID
 
 
 class CocoAnnotation(BaseModel):

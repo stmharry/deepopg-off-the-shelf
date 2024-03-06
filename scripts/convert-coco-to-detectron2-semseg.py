@@ -1,5 +1,3 @@
-import contextlib
-from collections.abc import Iterable
 from pathlib import Path
 
 import imageio.v3 as iio
@@ -7,12 +5,15 @@ import matplotlib.cm as cm
 import numpy as np
 import scipy.ndimage
 from absl import app, flags, logging
-from pydantic import parse_obj_as
 
-from app.instance_detection import InstanceDetection, InstanceDetectionData
+from app.instance_detection import (
+    InstanceDetection,
+    InstanceDetectionData,
+    InstanceDetectionFactory,
+)
 from app.masks import Mask
-from app.tasks import Task, map_task
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from app.tasks import Pool, track_progress
+from detectron2.data import Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_enum("dataset_prefix", "pano", ["pano", "pano_ntuh"], "Dataset prefix.")
@@ -60,6 +61,7 @@ CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
 
 def process_data(
     data: InstanceDetectionData,
+    *,
     metadata: Metadata,
     output_dir: Path,
 ) -> InstanceDetectionData | None:
@@ -148,7 +150,7 @@ def process_data(
 
 def main(_):
     directory_name: str
-    match FLAGS.dataset_name:
+    match FLAGS.dataset_prefix:
         case "pano":
             directory_name = "PROMATON"
 
@@ -158,34 +160,25 @@ def main(_):
         case _:
             raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
 
-    driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_prefix, root_dir=FLAGS.data_dir
     )
-    if driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_prefix}")
-
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_prefix)
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_prefix
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_prefix)
 
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=process_data,
-                args=(data,),
-                kwargs={
-                    "metadata": metadata,
-                    "output_dir": output_dir,
-                },
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | track_progress
+            | pool.parallel_pipe(process_data, allow_unordered=True)(
+                metadata=metadata, output_dir=output_dir
             )
-            for data in dataset
         )
-        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            ...
 
 
 if __name__ == "__main__":

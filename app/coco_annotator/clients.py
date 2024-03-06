@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from absl import logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 from requests import Response, Session
 
 from app.coco.schemas import Coco
@@ -67,7 +67,7 @@ class CocoAnnotatorClient(object):
             params={"name": name, "categories": categories},
         )
 
-        return CocoAnnotatorDataset.parse_obj(r.json())
+        return TypeAdapter(CocoAnnotatorDataset).validate_python(r.json())
 
     def get_datasets(self) -> list[CocoAnnotatorDataset]:
         r: Response = self._fetch(
@@ -75,7 +75,7 @@ class CocoAnnotatorClient(object):
             path="/dataset",
         )
 
-        return parse_obj_as(list[CocoAnnotatorDataset], r.json())
+        return TypeAdapter(list[CocoAnnotatorDataset]).validate_python(r.json())
 
     def get_dataset_by_name(self, name: str) -> CocoAnnotatorDataset | None:
         datasets: list[CocoAnnotatorDataset] = self.get_datasets()
@@ -114,7 +114,7 @@ class CocoAnnotatorClient(object):
             path="/category",
         )
 
-        return parse_obj_as(list[CocoAnnotatorCategory], r.json())
+        return TypeAdapter(list[CocoAnnotatorCategory]).validate_python(r.json())
 
     # images
 
@@ -144,7 +144,7 @@ class CocoAnnotatorClient(object):
             params={"per_page": per_page},
         )
 
-        return parse_obj_as(list[CocoAnnotatorImage], r.json()["images"])
+        return TypeAdapter(list[CocoAnnotatorImage]).validate_python(r.json()["images"])
 
     # coco
 
@@ -152,7 +152,7 @@ class CocoAnnotatorClient(object):
         r: Response = self._fetch(
             method="POST",
             path=f"/dataset/{dataset_id}/coco",
-            files={"coco": ("coco.json", coco.json(), "application/json")},
+            files={"coco": ("coco.json", coco.model_dump_json(), "application/json")},
         )
 
         return r.json()

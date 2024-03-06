@@ -73,7 +73,7 @@ VERBOSITY ?= 0
 CPUS ?= 4
 
 MIN_SCORE ?= 0.0001
-MIN_IOU ?= 0.5
+MIN_IOU ?= 1.0
 MAX_OBJS ?= 300
 
 YOLO_DIR ?= yolo
@@ -95,6 +95,7 @@ CPROFILE_OUT ?= profile.out
 
 ifneq ($(DEBUG),false)
 	CPUS = 0
+	VERBOSITY = 1
 endif
 
 ifeq ($(DEBUG),pdb)
@@ -122,7 +123,7 @@ default:
 check-%:
 	@if [ -z '${${*}}' ]; then echo 'Environment variable $* not set' && exit 1; fi
 
---check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_NAME
+--check-MAIN: check-ROOT_DIR check-MAIN_APP check-CONFIG_FILE
 --check-COMMON: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME check-VERBOSITY
 --check-COCO: check-COCO_ANNOTATOR_URL check-COCO_ANNOTATOR_USERNAME check-COCO_ANNOTATOR_PASSWORD
 
@@ -139,7 +140,7 @@ convert-promaton-to-coco: check-RAW_DIR
 convert-promaton-to-coco:
 	$(RUN_SCRIPT) \
 		--data_dir "$(DATA_DIR)" \
-		--output_coco "$(DATA_DIR)/coco/promaton.json" \
+		--output_coco "$(DATA_DIR)/coco/promaton.1.json" \
 		--num_workers $(CPUS) \
 		--verbosity $(VERBOSITY)
 
@@ -300,13 +301,18 @@ convert-coco-to-yolo:
 		--data_dir $(DATA_DIR) \
 		--dataset_prefix $(DATASET_NAME) \
 		--yolo_dir $(YOLO_DIR) \
+		--noforce \
+		--num_workers $(CPUS) \
 		--verbosity $(VERBOSITY)
 
 convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION
+convert-yolo-labels-to-detectron2-prediction-pt: POSTFIX =
 convert-yolo-labels-to-detectron2-prediction-pt:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		--prediction $(PREDICTION)
+		--prediction $(PREDICTION) \
+		--num_workers $(CPUS) \
+		--verbosity $(VERBOSITY)
 
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest
@@ -343,6 +349,7 @@ test-yolo:
 		conf=$(MIN_SCORE) \
 		iou=$(MIN_IOU) \
 		max_det=$(MAX_OBJS) \
+		save=False \
 		save_txt=True \
 		save_conf=True
 
@@ -375,7 +382,6 @@ coco-annotator:
 --check-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME
 
 postprocess: --check-postprocess
-postprocess: PREDICTION = $(RESULT_DIR)/$(RESULT_NAME).json
 postprocess:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \

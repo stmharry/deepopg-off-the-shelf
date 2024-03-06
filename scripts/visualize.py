@@ -1,28 +1,30 @@
-import contextlib
 import re
-from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
+import pipe
 from absl import app, flags, logging
-from pydantic import parse_obj_as
 
 from app.instance_detection import (
     InstanceDetection,
     InstanceDetectionData,
+    InstanceDetectionFactory,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
 )
-from app.tasks import Task, map_task
+from app.tasks import Pool, track_progress
 from app.utils import read_image
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 from detectron2.structures import Instances
 from detectron2.utils.visualizer import ColorMode, VisImage, Visualizer
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_enum(
-    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+    "dataset_name",
+    "pano",
+    InstanceDetectionFactory.available_dataset_names(),
+    "Dataset name.",
 )
 flags.DEFINE_string("visualize_dir", "visualize", "Visualizer directory.")
 flags.DEFINE_string(
@@ -48,6 +50,7 @@ FLAGS = flags.FLAGS
 def visualize_data(
     data: InstanceDetectionData,
     prediction: InstanceDetectionPrediction,
+    *,
     metadata: Metadata,
     category_re_groups: dict[str | None, str],
     visualize_dir: Path,
@@ -116,14 +119,11 @@ def visualize_data(
 
 
 def main(_):
-    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
-
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
@@ -149,7 +149,7 @@ def main(_):
     else:
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
             Path(FLAGS.result_dir, FLAGS.prediction)
-        )
+        ).root
 
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
@@ -158,25 +158,22 @@ def main(_):
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
     visualize_dir.mkdir(parents=True, exist_ok=True)
 
-    with contextlib.ExitStack() as stack:
-        tasks: Iterable[Task] = (
-            Task(
-                fn=visualize_data,
-                kwargs={
-                    "data": data,
-                    "prediction": id_to_prediction[data.image_id],
-                    "metadata": metadata,
-                    "category_re_groups": category_re_groups,
-                    "visualize_dir": visualize_dir,
-                    "ignore_scores": FLAGS.use_gt_as_prediction,
-                    "extension": "jpg",
-                },
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        list(
+            dataset
+            | track_progress
+            | pipe.filter(lambda data: data.image_id in id_to_prediction)
+            | pipe.map(lambda data: (data, id_to_prediction[data.image_id]))
+            | pool.parallel_pipe(
+                visualize_data, unpack_input=True, allow_unordered=True
+            )(
+                metadata=metadata,
+                category_re_groups=category_re_groups,
+                visualize_dir=visualize_dir,
+                ignore_scores=FLAGS.use_gt_as_prediction,
+                extension="jpg",
             )
-            for data in dataset
-            if data.image_id in id_to_prediction
         )
-        for _ in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            ...
 
 
 if __name__ == "__main__":

@@ -6,11 +6,10 @@ from pathlib import Path
 from typing import Any, ClassVar, TypeVar
 
 import numpy as np
-import numpy.typing as npt
+import pipe
 from absl import logging
 
-from app.coco.datasets import CocoDataset
-from app.coco.schemas import CocoCategory
+from app.coco.datasets import CocoDatasetDriver, CocoDatasetFactory
 from app.semantic_segmentation.schemas import SemanticSegmentationData
 from detectron2.data import DatasetCatalog, MetadataCatalog
 
@@ -18,46 +17,28 @@ T = TypeVar("T", bound="SemanticSegmentation")
 
 
 @dataclasses.dataclass
-class SemanticSegmentation(CocoDataset):
-    @classmethod
-    def get_subclasses(cls) -> list[type["SemanticSegmentation"]]:
-        return [
-            SemanticSegmentationV4,
-            SemanticSegmentationV4NTUH,
-        ]
-
+class SemanticSegmentation(CocoDatasetDriver[SemanticSegmentationData]):
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
-        logging.info(f"Registering {cls.__name__!s} dataset...")
+        logging.info(f"Registering {cls.__name__} dataset...")
+
         self = cls(root_dir=root_dir)
 
-        categories: list[CocoCategory] | None = None
-        for coco_path in self.coco_paths:
-            _categories = self.get_coco_categories(coco_path)
-
-            if categories is None:
-                categories = _categories
-
-            elif categories != _categories:
-                raise ValueError(
-                    f"Categories from {coco_path!s} do not match previous categories!"
-                )
-
-        if categories is None:
-            raise ValueError(f"No categories found in {self.coco_paths!s}!")
-
         stuff_classes: list[str] = ["BACKGROUND"] + [
-            category.name for category in categories
+            category.name for category in self.coco_categories
         ]
-        stuff_colors: npt.NDArray[np.uint8] = cls.get_colors(len(stuff_classes))
+        stuff_colors: list[np.ndarray] = cls.get_colors(len(stuff_classes))
 
-        for split in cls.SPLITS:
-            name: str = f"{cls.PREFIX}_{split}"
+        for split in [None, *cls.SPLITS]:
+            dataset_name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(
-                name, functools.partial(self.get_split, split=split)
+                dataset_name,
+                functools.partial(
+                    self.get_coco_dataset_as_jsons, dataset_name=dataset_name
+                ),
             )
-            MetadataCatalog.get(name).set(
+            MetadataCatalog.get(dataset_name).set(
                 stuff_classes=stuff_classes,
                 stuff_colors=stuff_colors,
                 ignore_label=0,
@@ -67,59 +48,39 @@ class SemanticSegmentation(CocoDataset):
 
         return self
 
-    @classmethod
-    def get_dataset(
-        cls, self: "SemanticSegmentation", coco_path: Path
-    ) -> list[dict[str, Any]]:
-        dataset = super().get_dataset(self=self, coco_path=coco_path)
-
-        # to ensure the data is consistent with the schema
-        data_schemas: list[SemanticSegmentationData] = []
-        for data in dataset:
-            sem_seg_file_name: Path = Path(
-                self.mask_dir,
-                (
-                    Path(data["file_name"])
-                    .relative_to(self.image_dir)
-                    .with_suffix(".png")
-                ),
-            )
-
-            if sem_seg_file_name.exists():
-                data_schemas.append(
-                    SemanticSegmentationData(
-                        file_name=data["file_name"],
-                        height=data["height"],
-                        width=data["width"],
-                        image_id=data["image_id"],
-                        sem_seg_file_name=sem_seg_file_name,
-                    )
-                )
-            else:
-                data_schemas.append(
-                    SemanticSegmentationData(
-                        file_name=data["file_name"],
-                        height=data["height"],
-                        width=data["width"],
-                        image_id=data["image_id"],
-                    )
-                )
-
-        return [
-            json.loads(data_schema.json(exclude_unset=True))
-            for data_schema in data_schemas
-        ]
-
     @property
     @abc.abstractmethod
-    def mask_dir(self) -> Path:
-        ...
+    def mask_dir(self) -> Path: ...
+
+    @functools.cached_property
+    def coco_dataset(self) -> list[SemanticSegmentationData]:
+        dataset: list[SemanticSegmentationData] = []
+
+        for data in super().coco_dataset:
+            sem_seg_file_name: Path = Path(
+                self.mask_dir,
+                Path(data.file_name).relative_to(self.image_dir).with_suffix(".png"),
+            )
+            if sem_seg_file_name.exists():
+                data = data.model_copy(update={"sem_seg_file_name": sem_seg_file_name})
+
+            dataset.append(data)
+
+        return dataset
+
+    # per https://detectron2.readthedocs.io/en/latest/tutorials/datasets.html,
+    # `sem_seg_file_name` cannot be included when not present
+    def get_coco_dataset_as_jsons(self, dataset_name: str) -> list[dict[str, Any]]:
+        return list(
+            self.get_coco_dataset(dataset_name=dataset_name)
+            | pipe.map(lambda data: json.loads(data.model_dump_json(exclude_none=True)))
+        )
 
 
 @dataclasses.dataclass
 class SemanticSegmentationV4(SemanticSegmentation):
     PREFIX: ClassVar[str] = "pano_semseg_v4"
-    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "debug"]
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "test_v2", "debug"]
 
     @property
     def mask_dir(self) -> Path:
@@ -142,3 +103,13 @@ class SemanticSegmentationV4NTUH(SemanticSegmentationV4):
     @property
     def coco_path(self) -> Path:
         return Path(self.root_dir, "coco", "semantic-segmentation-v4-ntuh.json")
+
+
+@dataclasses.dataclass
+class SemanticSegmentationFactory(CocoDatasetFactory[SemanticSegmentation]):
+    @classmethod
+    def get_subclasses(cls) -> list[type[SemanticSegmentation]]:
+        return [
+            SemanticSegmentationV4,
+            SemanticSegmentationV4NTUH,
+        ]

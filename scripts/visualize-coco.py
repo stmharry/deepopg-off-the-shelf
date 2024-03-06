@@ -4,7 +4,6 @@ from pathlib import Path
 
 import rich.progress
 from absl import app, flags, logging
-from pydantic import parse_obj_as
 
 from app.coco import Coco, CocoAnnotation, CocoCategory, CocoImage
 from app.coco_annotator import (
@@ -15,15 +14,19 @@ from app.coco_annotator import (
 from app.instance_detection import (
     InstanceDetection,
     InstanceDetectionData,
+    InstanceDetectionFactory,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionList,
 )
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_enum(
-    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+    "dataset_name",
+    "pano",
+    InstanceDetectionFactory.available_dataset_names(),
+    "Dataset name.",
 )
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
@@ -41,14 +44,11 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Dataset {FLAGS.dataset_name} not found.")
-
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 

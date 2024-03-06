@@ -1,4 +1,3 @@
-import contextlib
 import enum
 from pathlib import Path
 from typing import Any
@@ -6,23 +5,29 @@ from typing import Any
 import imageio.v3 as iio
 import numpy as np
 import pandas as pd
+import pipe
 from absl import app, flags, logging
-from pydantic import parse_obj_as
+from pydantic import TypeAdapter
 
 from app.coco import ID
 from app.instance_detection import (
     InstanceDetection,
     InstanceDetectionData,
+    InstanceDetectionFactory,
     InstanceDetectionPrediction,
     InstanceDetectionPredictionInstance,
     InstanceDetectionPredictionList,
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
 from app.masks import Mask
-from app.semantic_segmentation import SemanticSegmentation, SemanticSegmentationData
-from app.tasks import Task, map_task
+from app.semantic_segmentation import (
+    SemanticSegmentation,
+    SemanticSegmentationData,
+    SemanticSegmentationFactory,
+)
+from app.tasks import Pool, filter_none, track_progress
 from app.utils import calculate_iom_bbox, calculate_iom_mask
-from detectron2.data import DatasetCatalog, Metadata, MetadataCatalog
+from detectron2.data import Metadata, MetadataCatalog
 
 
 class ScoringMethod(enum.Flag):
@@ -84,7 +89,10 @@ class ScoringMethod(enum.Flag):
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_enum(
-    "dataset_name", "pano", InstanceDetection.available_dataset_names(), "Dataset name."
+    "dataset_name",
+    "pano",
+    InstanceDetectionFactory.available_dataset_names(),
+    "Dataset name.",
 )
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
@@ -101,7 +109,7 @@ flags.DEFINE_string(
 flags.DEFINE_enum(
     "semseg_dataset_name",
     "pano_semseg_v4",
-    SemanticSegmentation.available_dataset_names(),
+    SemanticSegmentationFactory.available_dataset_names(),
     "Semantic segmentation dataset name.",
 )
 flags.DEFINE_bool(
@@ -239,11 +247,12 @@ def calculate_score(
 
 def process_data(
     data: InstanceDetectionData,
-    file_name: str,
+    semseg_data: SemanticSegmentationData | None,
     prediction: InstanceDetectionPrediction,
+    file_name: str,
+    *,
     metadata: Metadata,
     semseg_metadata: Metadata,
-    semseg_data: SemanticSegmentationData | None,
     semseg_result_dir: Path | None,
     min_score: float,
     min_area: float,
@@ -255,7 +264,7 @@ def process_data(
     logging.info(f"Processing {data.file_name} with image id {data.image_id}.")
 
     df: pd.DataFrame = pd.DataFrame.from_records(
-        [instance.dict() for instance in prediction.instances]
+        [instance.model_dump() for instance in prediction.instances]
     )
     logging.info(f"Original instance count: {len(df)}.")
     if len(df) == 0:
@@ -409,8 +418,9 @@ def process_data(
     output_prediction: InstanceDetectionPrediction | None = None
     if save_predictions:
         df_finding = pd.concat(df_findings, axis=0)
-        instances: list[InstanceDetectionPredictionInstance] = parse_obj_as(
-            list[InstanceDetectionPredictionInstance],
+        instances: list[InstanceDetectionPredictionInstance] = TypeAdapter(
+            list[InstanceDetectionPredictionInstance]
+        ).validate_python(
             df_finding.to_dict(orient="records"),
         )
         output_prediction = InstanceDetectionPrediction(
@@ -425,14 +435,11 @@ def process_data(
 def main(_):
     # instance detection
 
-    data_driver: InstanceDetection | None = InstanceDetection.register_by_name(
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    if data_driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.dataset_name}")
-
-    dataset: list[InstanceDetectionData] = parse_obj_as(
-        list[InstanceDetectionData], DatasetCatalog.get(FLAGS.dataset_name)
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_name)
 
@@ -447,7 +454,7 @@ def main(_):
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
             Path(FLAGS.result_dir, FLAGS.prediction),
             image_ids=set(data.image_id for data in dataset),
-        )
+        ).root
 
     id_to_prediction: dict[ID, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
@@ -455,74 +462,54 @@ def main(_):
 
     # semantic segmentation
 
-    semseg_data_driver: SemanticSegmentation | None = (
-        SemanticSegmentation.register_by_name(
+    semseg_data_driver: SemanticSegmentation = (
+        SemanticSegmentationFactory.register_by_name(
             dataset_name=FLAGS.semseg_dataset_name, root_dir=FLAGS.data_dir
         )
     )
-    if semseg_data_driver is None:
-        raise ValueError(f"Unknown dataset name: {FLAGS.semseg_dataset_name}")
-
     semseg_metadata: Metadata = MetadataCatalog.get(FLAGS.semseg_dataset_name)
 
     id_to_semseg_data: dict[ID, SemanticSegmentationData] = {}
     if FLAGS.use_semseg_gt_as_prob:
-        semseg_dataset: list[SemanticSegmentationData] = parse_obj_as(
-            list[SemanticSegmentationData],
-            DatasetCatalog.get(FLAGS.semseg_dataset_name),
+        semseg_dataset: list[SemanticSegmentationData] = (
+            semseg_data_driver.get_coco_dataset(dataset_name=FLAGS.semseg_dataset_name)
         )
+
         id_to_semseg_data = {data.image_id: data for data in semseg_dataset}
 
     #
 
-    output_predictions: list[InstanceDetectionPrediction] = []
-    df_results: list[pd.DataFrame] = []
-    with contextlib.ExitStack() as stack:
-        tasks: list[Task] = [
-            Task(
-                fn=process_data,
-                kwargs={
-                    "data": data,
-                    "file_name": (
-                        Path(data.file_name).relative_to(data_driver.image_dir).stem
-                    ),
-                    "prediction": id_to_prediction[data.image_id],
-                    "metadata": metadata,
-                    "semseg_data": id_to_semseg_data.get(data.image_id),
-                    "semseg_metadata": semseg_metadata,
-                    "semseg_result_dir": (
-                        Path(FLAGS.semseg_result_dir)
-                        if FLAGS.semseg_result_dir
-                        else None
-                    ),
-                    "min_score": FLAGS.min_score,
-                    "min_area": FLAGS.min_area,
-                    "min_iom": FLAGS.min_iom,
-                    "missing_scoring_method": ScoringMethod[
-                        FLAGS.missing_scoring_method
-                    ],
-                    "finding_scoring_method": ScoringMethod[
-                        FLAGS.finding_scoring_method
-                    ],
-                    "save_predictions": FLAGS.save_predictions,
-                },
+    output_predictions: list[InstanceDetectionPrediction]
+    df_results: list[pd.DataFrame]
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        output_predictions, df_results = (
+            dataset
+            | track_progress
+            | pipe.filter(lambda data: data.image_id in id_to_prediction)
+            | pipe.map(
+                lambda data: (
+                    data,
+                    id_to_semseg_data.get(data.image_id),
+                    id_to_prediction[data.image_id],
+                    Path(data.file_name).relative_to(data_driver.image_dir).stem,
+                )
             )
-            for data in dataset
-            if data.image_id in id_to_prediction
-        ]
-
-        for result in map_task(tasks, stack=stack, num_workers=FLAGS.num_workers):
-            if result is None:
-                continue
-
-            _output_prediction: InstanceDetectionPrediction | None
-            _df_result: pd.DataFrame
-            _output_prediction, _df_result = result
-
-            if _output_prediction is not None:
-                output_predictions.append(_output_prediction)
-
-            df_results.append(_df_result)
+            | pool.parallel_pipe(process_data, unpack_input=True, allow_unordered=True)(
+                metadata=metadata,
+                semseg_metadata=semseg_metadata,
+                semseg_result_dir=(
+                    Path(FLAGS.semseg_result_dir) if FLAGS.semseg_result_dir else None
+                ),
+                min_score=FLAGS.min_score,
+                min_area=FLAGS.min_area,
+                min_iom=FLAGS.min_iom,
+                missing_scoring_method=ScoringMethod[FLAGS.missing_scoring_method],
+                finding_scoring_method=ScoringMethod[FLAGS.finding_scoring_method],
+                save_predictions=FLAGS.save_predictions,
+            )
+            | filter_none
+            | pipe.transpose
+        )
 
     Path(FLAGS.result_dir).mkdir(parents=True, exist_ok=True)
 
@@ -530,9 +517,9 @@ def main(_):
         detection_path: Path = Path(FLAGS.result_dir, FLAGS.output_prediction)
         logging.info(f"Saving predictions to {detection_path}")
 
-        InstanceDetectionPredictionList.to_detectron2_detection_pth(
-            output_predictions, path=detection_path
-        )
+        InstanceDetectionPredictionList.model_validate(
+            output_predictions
+        ).to_detectron2_detection_pth(path=detection_path)
 
     df_result: pd.DataFrame = pd.concat(df_results, axis=0).sort_values(
         ["file_name", "fdi", "finding"], ascending=True

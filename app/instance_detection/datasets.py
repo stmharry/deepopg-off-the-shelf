@@ -5,59 +5,39 @@ from pathlib import Path
 from typing import ClassVar, TypeVar
 
 import numpy as np
-import numpy.typing as npt
 from absl import logging
 
-from app.coco.datasets import CocoDataset
-from app.coco.schemas import Coco, CocoAnnotation, CocoCategory
+from app.coco.datasets import CocoDatasetDriver, CocoDatasetFactory
+from app.coco.schemas import CocoCategory
+from app.instance_detection.schemas import InstanceDetectionData
 from detectron2.data import DatasetCatalog, MetadataCatalog
 
 T = TypeVar("T", bound="InstanceDetection")
 
 
 @dataclasses.dataclass
-class InstanceDetection(CocoDataset):
-    CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
-
-    @classmethod
-    def get_subclasses(cls) -> list[type["InstanceDetection"]]:
-        return [
-            InstanceDetectionV1,
-            InstanceDetectionV1NTUH,
-            InstanceDetectionOdontoAI,
-        ]
+class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
+    CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = None
 
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
-        logging.info(f"Registering {cls.__name__!s} dataset...")
+        logging.info(f"Registering {cls.__name__} dataset...")
 
         self = cls(root_dir=root_dir)
 
-        categories: list[CocoCategory] | None = None
-        for coco_path in self.coco_paths:
-            _categories = self.get_coco_categories(coco_path)
+        thing_classes: list[str] = [category.name for category in self.coco_categories]
+        thing_colors: list[np.ndarray] = cls.get_colors(len(thing_classes))
 
-            if categories is None:
-                categories = _categories
-
-            elif categories != _categories:
-                raise ValueError(
-                    f"Categories from {coco_path!s} do not match previous categories!"
-                )
-
-        if categories is None:
-            raise ValueError(f"No categories found in {self.coco_paths!s}!")
-
-        thing_classes: list[str] = [category.name for category in categories]
-        thing_colors: npt.NDArray[np.uint8] = cls.get_colors(len(thing_classes))
-
-        for split in cls.SPLITS:
-            name: str = f"{cls.PREFIX}_{split}"
+        for split in [None, *cls.SPLITS]:
+            dataset_name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(
-                name, functools.partial(self.get_split, split=split)
+                dataset_name,
+                functools.partial(
+                    self.get_coco_dataset_as_jsons, dataset_name=dataset_name
+                ),
             )
-            MetadataCatalog.get(name).set(
+            MetadataCatalog.get(dataset_name).set(
                 thing_classes=thing_classes,
                 thing_colors=thing_colors,
                 json_file=self.coco_path,
@@ -67,67 +47,87 @@ class InstanceDetection(CocoDataset):
         return self
 
     @classmethod
-    def convert_coco(cls, coco: Coco) -> Coco:
-        if cls.CATEGORY_MAPPING_RE is None:
-            return coco
+    def map_categories(
+        cls, categories: list[CocoCategory]
+    ) -> dict[int, dict[str, str]]:
+        if cls.CATEGORY_NAME_TO_MAPPINGS is None:
+            return {}
 
-        category_id_to_converted_name: dict[int, str] = {}
-        for category in coco.categories:
-            converted_category_name: str | None = None
-            for pattern, converted_pattern in cls.CATEGORY_MAPPING_RE.items():
-                match_obj: re.Match | None = re.match(pattern, category.name)
-                if match_obj is None:
-                    continue
+        pattern_to_mappings: dict[re.Pattern, dict[str, str]] = {
+            re.compile(pattern): mappings
+            for pattern, mappings in cls.CATEGORY_NAME_TO_MAPPINGS.items()
+        }
 
-                converted_category_name = re.sub(
-                    pattern, converted_pattern, category.name
-                )
+        category_id_to_mapped: dict[int, dict[str, str]] = {}
+        for category in categories:
+            if category.id is None:
+                raise ValueError(f"Category {category.name} has no id!")
 
-            if converted_category_name is None:
+            pattern: re.Pattern
+            for pattern in pattern_to_mappings.keys():
+                match_obj = pattern.match(category.name)
+
+                if match_obj is not None:
+                    break
+
+            else:
+                # no match found for this category
                 continue
 
-            assert isinstance(category.id, int)
-            category_id_to_converted_name[category.id] = converted_category_name
+            mappings: dict[str, str] = pattern_to_mappings[pattern]
+            category_id_to_mapped[category.id] = {
+                key: pattern.sub(to_pattern, category.name)
+                for key, to_pattern in mappings.items()
+            }
 
-        categories: list[CocoCategory] = [
-            CocoCategory(name=name)
-            for name in sorted(set(category_id_to_converted_name.values()))
-        ]
-
-        annotations: list[CocoAnnotation] = []
-        for annotation in coco.annotations:
-            category_name: str | None = category_id_to_converted_name.get(
-                annotation.category_id  # type: ignore
-            )
-            if category_name is None:
-                continue
-
-            annotations.append(
-                annotation.model_copy(update={"category_id": category_name})
-            )
-
-        return Coco.create(
-            categories=categories,
-            images=coco.images,
-            annotations=annotations,
-            sort_category=True,
-        )
+        return category_id_to_mapped
 
 
+@dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
     PREFIX: ClassVar[str] = "pano"
-    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "debug"]
-    CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
-        r"TOOTH_(\d+)": r"TOOTH_\1",
-        r"DENTAL_IMPLANT_(\d+)": "IMPLANT",
-        r"ROOT_REMNANTS_(\d+)": "ROOT_REMNANTS",
-        r"METAL_CROWN_(\d+)": "CROWN_BRIDGE",
-        r"NON_METAL_CROWN_(\d+)": "CROWN_BRIDGE",
-        r"METAL_FILLING_(\d+)": "FILLING",
-        r"NON_METAL_FILLING_(\d+)": "FILLING",
-        r"ROOT_CANAL_FILLING_(\d+)": "ENDO",
-        r"CARIES_(\d+)": "CARIES",
-        r"PERIAPICAL_RADIOLUCENT_(\d+)": "PERIAPICAL_RADIOLUCENT",
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "test_v2", "debug"]
+    CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = {
+        r"TOOTH_(?P<fdi>\d+)": {
+            "category": r"TOOTH_\g<fdi>",
+            "fdi": r"\g<fdi>",
+        },
+        r"DENTAL_IMPLANT_(?P<fdi>\d+)": {
+            "category": "IMPLANT",
+            "fdi": r"\g<fdi>",
+        },
+        r"ROOT_REMNANTS_(?P<fdi>\d+)": {
+            "category": "ROOT_REMNANTS",
+            "fdi": r"\g<fdi>",
+        },
+        r"METAL_CROWN_(?P<fdi>\d+)": {
+            "category": "CROWN_BRIDGE",
+            "fdi": r"\g<fdi>",
+        },
+        r"NON_METAL_CROWN_(?P<fdi>\d+)": {
+            "category": "CROWN_BRIDGE",
+            "fdi": r"\g<fdi>",
+        },
+        r"METAL_FILLING_(?P<fdi>\d+)": {
+            "category": "FILLING",
+            "fdi": r"\g<fdi>",
+        },
+        r"NON_METAL_FILLING_(?P<fdi>\d+)": {
+            "category": "FILLING",
+            "fdi": r"\g<fdi>",
+        },
+        r"ROOT_CANAL_FILLING_(?P<fdi>\d+)": {
+            "category": "ENDO",
+            "fdi": r"\g<fdi>",
+        },
+        r"CARIES_(?P<fdi>\d+)": {
+            "category": "CARIES",
+            "fdi": r"\g<fdi>",
+        },
+        r"PERIAPICAL_RADIOLUCENT_(?P<fdi>\d+)": {
+            "category": "PERIAPICAL_RADIOLUCENT",
+            "fdi": r"\g<fdi>",
+        },
     }
 
     @property
@@ -163,4 +163,15 @@ class InstanceDetectionOdontoAI(InstanceDetection):
         return [
             Path(self.root_dir, "coco", "instance-detection-odontoai-train.json"),
             Path(self.root_dir, "coco", "instance-detection-odontoai-val.json"),
+        ]
+
+
+@dataclasses.dataclass
+class InstanceDetectionFactory(CocoDatasetFactory[InstanceDetection]):
+    @classmethod
+    def get_subclasses(cls) -> list[type[InstanceDetection]]:
+        return [
+            InstanceDetectionV1,
+            InstanceDetectionV1NTUH,
+            InstanceDetectionOdontoAI,
         ]
