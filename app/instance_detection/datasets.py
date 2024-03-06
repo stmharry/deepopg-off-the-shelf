@@ -8,7 +8,7 @@ import numpy as np
 from absl import logging
 
 from app.coco.datasets import CocoDatasetDriver, CocoDatasetFactory
-from app.coco.schemas import Coco, CocoAnnotation, CocoCategory
+from app.coco.schemas import CocoCategory
 from app.instance_detection.schemas import InstanceDetectionData
 from detectron2.data import DatasetCatalog, MetadataCatalog
 
@@ -17,7 +17,7 @@ T = TypeVar("T", bound="InstanceDetection")
 
 @dataclasses.dataclass
 class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
-    CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = None
+    CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = None
 
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
@@ -47,67 +47,87 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
         return self
 
     @classmethod
-    def convert_coco(cls, coco: Coco) -> Coco:
-        if cls.CATEGORY_MAPPING_RE is None:
-            return coco
+    def map_categories(
+        cls, categories: list[CocoCategory]
+    ) -> dict[int, dict[str, str]]:
+        if cls.CATEGORY_NAME_TO_MAPPINGS is None:
+            return {}
 
-        category_id_to_converted_name: dict[int, str] = {}
-        for category in coco.categories:
-            converted_category_name: str | None = None
-            for pattern, converted_pattern in cls.CATEGORY_MAPPING_RE.items():
-                match_obj: re.Match | None = re.match(pattern, category.name)
-                if match_obj is None:
-                    continue
+        pattern_to_mappings: dict[re.Pattern, dict[str, str]] = {
+            re.compile(pattern): mappings
+            for pattern, mappings in cls.CATEGORY_NAME_TO_MAPPINGS.items()
+        }
 
-                converted_category_name = re.sub(
-                    pattern, converted_pattern, category.name
-                )
+        category_id_to_mapped: dict[int, dict[str, str]] = {}
+        for category in categories:
+            if category.id is None:
+                raise ValueError(f"Category {category.name} has no id!")
 
-            if converted_category_name is None:
+            pattern: re.Pattern
+            for pattern in pattern_to_mappings.keys():
+                match_obj = pattern.match(category.name)
+
+                if match_obj is not None:
+                    break
+
+            else:
+                # no match found for this category
                 continue
 
-            assert isinstance(category.id, int)
-            category_id_to_converted_name[category.id] = converted_category_name
+            mappings: dict[str, str] = pattern_to_mappings[pattern]
+            category_id_to_mapped[category.id] = {
+                key: pattern.sub(to_pattern, category.name)
+                for key, to_pattern in mappings.items()
+            }
 
-        categories: list[CocoCategory] = [
-            CocoCategory(name=name)
-            for name in sorted(set(category_id_to_converted_name.values()))
-        ]
-
-        annotations: list[CocoAnnotation] = []
-        for annotation in coco.annotations:
-            category_name: str | None = category_id_to_converted_name.get(
-                annotation.category_id  # type: ignore
-            )
-            if category_name is None:
-                continue
-
-            annotations.append(
-                annotation.model_copy(update={"category_id": category_name})
-            )
-
-        return Coco.create(
-            categories=categories,
-            images=coco.images,
-            annotations=annotations,
-            sort_category=True,
-        )
+        return category_id_to_mapped
 
 
+@dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
     PREFIX: ClassVar[str] = "pano"
     SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "test_v2", "debug"]
-    CATEGORY_MAPPING_RE: ClassVar[dict[str, str] | None] = {
-        r"TOOTH_(\d+)": r"TOOTH_\1",
-        r"DENTAL_IMPLANT_(\d+)": "IMPLANT",
-        r"ROOT_REMNANTS_(\d+)": "ROOT_REMNANTS",
-        r"METAL_CROWN_(\d+)": "CROWN_BRIDGE",
-        r"NON_METAL_CROWN_(\d+)": "CROWN_BRIDGE",
-        r"METAL_FILLING_(\d+)": "FILLING",
-        r"NON_METAL_FILLING_(\d+)": "FILLING",
-        r"ROOT_CANAL_FILLING_(\d+)": "ENDO",
-        r"CARIES_(\d+)": "CARIES",
-        r"PERIAPICAL_RADIOLUCENT_(\d+)": "PERIAPICAL_RADIOLUCENT",
+    CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = {
+        r"TOOTH_(?P<fdi>\d+)": {
+            "category": r"TOOTH_\g<fdi>",
+            "fdi": r"\g<fdi>",
+        },
+        r"DENTAL_IMPLANT_(?P<fdi>\d+)": {
+            "category": "IMPLANT",
+            "fdi": r"\g<fdi>",
+        },
+        r"ROOT_REMNANTS_(?P<fdi>\d+)": {
+            "category": "ROOT_REMNANTS",
+            "fdi": r"\g<fdi>",
+        },
+        r"METAL_CROWN_(?P<fdi>\d+)": {
+            "category": "CROWN_BRIDGE",
+            "fdi": r"\g<fdi>",
+        },
+        r"NON_METAL_CROWN_(?P<fdi>\d+)": {
+            "category": "CROWN_BRIDGE",
+            "fdi": r"\g<fdi>",
+        },
+        r"METAL_FILLING_(?P<fdi>\d+)": {
+            "category": "FILLING",
+            "fdi": r"\g<fdi>",
+        },
+        r"NON_METAL_FILLING_(?P<fdi>\d+)": {
+            "category": "FILLING",
+            "fdi": r"\g<fdi>",
+        },
+        r"ROOT_CANAL_FILLING_(?P<fdi>\d+)": {
+            "category": "ENDO",
+            "fdi": r"\g<fdi>",
+        },
+        r"CARIES_(?P<fdi>\d+)": {
+            "category": "CARIES",
+            "fdi": r"\g<fdi>",
+        },
+        r"PERIAPICAL_RADIOLUCENT_(?P<fdi>\d+)": {
+            "category": "PERIAPICAL_RADIOLUCENT",
+            "fdi": r"\g<fdi>",
+        },
     }
 
     @property
