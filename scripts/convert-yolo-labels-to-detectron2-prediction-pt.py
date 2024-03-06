@@ -1,6 +1,7 @@
+import itertools
+from collections.abc import Iterator
 from pathlib import Path
 
-import numpy as np
 from absl import app, flags, logging
 
 from app.instance_detection import (
@@ -12,6 +13,7 @@ from app.instance_detection import (
     InstanceDetectionPredictionList,
 )
 from app.masks import Mask
+from app.tasks import Pool, filter_none, track_progress
 
 flags.DEFINE_string("data_dir", None, "Data directory.")
 flags.DEFINE_string("result_dir", None, "Result directory.")
@@ -24,65 +26,73 @@ flags.DEFINE_enum(
 flags.DEFINE_string(
     "prediction", "instances_predictions.pth", "Input prediction file name."
 )
+flags.DEFINE_integer("num_workers", 0, "Number of workers.")
 FLAGS = flags.FLAGS
 
 
-def main(_):
-    logging.set_verbosity(logging.INFO)
+def process_data(
+    data: InstanceDetectionData,
+) -> InstanceDetectionPrediction:
+    image_name: str = data.file_name.stem
+    label_file_path: Path = Path(FLAGS.result_dir, "labels", f"{image_name}.txt")
 
-    driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
-        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
-    )
-    dataset: list[InstanceDetectionData] = driver.get_coco_dataset(
-        dataset_name=FLAGS.dataset_name
-    )
+    instances: list[InstanceDetectionPredictionInstance] = []
+    with open(label_file_path, "r") as f:
+        for line in f:
+            iterator: Iterator[str] = iter(line.strip().split())
 
-    # Assemble predictions
+            category_id: int = int(next(iterator))
 
-    predictions: list[InstanceDetectionPrediction] = []
-    for data in dataset:
-        image_name: str = data.file_name.stem
+            polygon: list[int] = []
+            score: float | None = None
+            while batch := tuple(itertools.islice(iterator, 2)):
+                match batch:
+                    case (x_str, y_str):
+                        polygon.append(int(float(x_str) * data.width))
+                        polygon.append(int(float(y_str) * data.height))
 
-        label_file_path: Path = Path(FLAGS.result_dir, "labels", f"{image_name}.txt")
-        with open(label_file_path, "r") as f:
-            lines = f.readlines()
+                    case (score_str,):
+                        score = float(score_str)
+                        break
 
-        instances: list[InstanceDetectionPredictionInstance] = []
-        for line in lines:
-            items: list[str] = line.split()
+                    case _:
+                        raise ValueError(
+                            f"Invalid line from {label_file_path!s}: {line.strip()}"
+                        )
 
-            try:
-                category_id: int = int(items[0])
-                score: float = float(items[-1])
-                polygon: np.ndarray = np.fromiter(
-                    items[1:-1],  # type: ignore
-                    dtype=np.float32,
-                ).reshape(-1, 2) * np.array([data.width, data.height])
-
-                if polygon.size == 0:
-                    raise ValueError("Empty segmentation")
-
-                mask: Mask = Mask.from_obj(
-                    [polygon.flatten().tolist()],
-                    height=data.height,
-                    width=data.width,
-                )
-
-                bbox: list[int] = mask.bbox_xywh
-                if bbox[0] >= data.width or bbox[1] >= data.height:
-                    raise ValueError("bbox out of bound")
-
-                if bbox[2] <= 0 or bbox[3] <= 0:
-                    raise ValueError("bbox has zero or negative size")
-
-            except ValueError as e:
-                logging.warning(
-                    f"Error when parsing line from {label_file_path!s}:"
-                    f" {line.strip()} due to '{e}', skipping..."
+            # three points are needed to form a polygon
+            if len(polygon) < 6:
+                logging.info(
+                    f"No polygon found in line from {label_file_path!s}:"
+                    f" {line.strip()}"
                 )
                 continue
 
-            instance: InstanceDetectionPredictionInstance = (
+            if score is None:
+                logging.warning(
+                    f"Score not found in line from {label_file_path!s}:"
+                    f" {line.strip()}, setting to 1.0"
+                )
+                score = 1.0
+
+            mask: Mask = Mask.from_obj([polygon], height=data.height, width=data.width)
+
+            bbox: list[int] = mask.bbox_xywh
+            if bbox[0] >= data.width or bbox[1] >= data.height:
+                logging.info(
+                    f"bbox out of bound in line from {label_file_path!s}:"
+                    f" {line.strip()}, skipping instance"
+                )
+                continue
+
+            if bbox[2] <= 0 or bbox[3] <= 0:
+                logging.info(
+                    f"bbox has zero or negative size in line from {label_file_path!s}:"
+                    f" {line.strip()}, skipping instance"
+                )
+                continue
+
+            instances.append(
                 InstanceDetectionPredictionInstance(
                     image_id=data.image_id,
                     bbox=bbox,
@@ -91,19 +101,32 @@ def main(_):
                     score=score,
                 )
             )
-            instances.append(instance)
 
-        prediction: InstanceDetectionPrediction = InstanceDetectionPrediction(
-            image_id=data.image_id, instances=instances
+    return InstanceDetectionPrediction(image_id=data.image_id, instances=instances)
+
+
+def main(_):
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
+        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
+    )
+    dataset: list[InstanceDetectionData] = data_driver.get_coco_dataset(
+        dataset_name=FLAGS.dataset_name
+    )
+
+    with Pool(num_workers=FLAGS.num_workers) as pool:
+        predictions: list[InstanceDetectionPrediction] = list(
+            dataset
+            | track_progress
+            | pool.parallel_pipe(process_data, allow_unordered=True)
+            | filter_none
         )
-        predictions.append(prediction)
 
     predictions_path: Path = Path(FLAGS.result_dir, FLAGS.prediction)
     logging.info(f"Saving predictions to {predictions_path}")
 
-    InstanceDetectionPredictionList.to_detectron2_detection_pth(
-        predictions, path=predictions_path
-    )
+    InstanceDetectionPredictionList.model_validate(
+        predictions
+    ).to_detectron2_detection_pth(path=predictions_path)
 
 
 if __name__ == "__main__":

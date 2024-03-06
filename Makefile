@@ -306,10 +306,13 @@ convert-coco-to-yolo:
 		--verbosity $(VERBOSITY)
 
 convert-yolo-labels-to-detectron2-prediction-pt: --check-COMMON check-PREDICTION
+convert-yolo-labels-to-detectron2-prediction-pt: POSTFIX =
 convert-yolo-labels-to-detectron2-prediction-pt:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		--prediction $(PREDICTION)
+		--prediction $(PREDICTION) \
+		--num_workers $(CPUS) \
+		--verbosity $(VERBOSITY)
 
 # when passing `cfg`, all other arguments will be ignored,
 # so we dump the config to a temp file and append the rest

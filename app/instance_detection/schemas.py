@@ -144,4 +144,4 @@ class InstanceDetectionPredictionList(RootModel[list[InstanceDetectionPrediction
         return cls.model_validate(predictions)
 
     def to_detectron2_detection_pth(self, path: Path) -> None:
-        torch.save(self.model_dump, path)
+        torch.save(self.model_dump(), path)
