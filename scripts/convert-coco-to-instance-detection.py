@@ -35,9 +35,8 @@ def convert_to_coco(
         if annotation.category_id not in category_id_to_mapped:
             continue
 
-        category_name: str = category_id_to_mapped[annotation.category_id][
-            "category_name"
-        ]
+        mapped: dict[str, str] = category_id_to_mapped[annotation.category_id]
+        category_name: str = mapped["category"]
         annotations.append(annotation.model_copy(update={"category_id": category_name}))
 
     coco = Coco.create(
