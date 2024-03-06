@@ -454,7 +454,7 @@ def main(_):
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
             Path(FLAGS.result_dir, FLAGS.prediction),
             image_ids=set(data.image_id for data in dataset),
-        )
+        ).root
 
     id_to_prediction: dict[ID, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions
@@ -482,7 +482,7 @@ def main(_):
     output_predictions: list[InstanceDetectionPrediction]
     df_results: list[pd.DataFrame]
     with Pool(num_workers=FLAGS.num_workers) as pool:
-        output_predictions, df_results = list(
+        output_predictions, df_results = (
             dataset
             | track_progress
             | pipe.filter(lambda data: data.image_id in id_to_prediction)
@@ -517,9 +517,9 @@ def main(_):
         detection_path: Path = Path(FLAGS.result_dir, FLAGS.output_prediction)
         logging.info(f"Saving predictions to {detection_path}")
 
-        InstanceDetectionPredictionList.to_detectron2_detection_pth(
-            output_predictions, path=detection_path
-        )
+        InstanceDetectionPredictionList.model_validate(
+            output_predictions
+        ).to_detectron2_detection_pth(path=detection_path)
 
     df_result: pd.DataFrame = pd.concat(df_results, axis=0).sort_values(
         ["file_name", "fdi", "finding"], ascending=True

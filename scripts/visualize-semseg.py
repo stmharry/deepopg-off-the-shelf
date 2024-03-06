@@ -147,11 +147,11 @@ def main(_):
         SemanticSegmentationPredictionList.from_detectron2_semseg_output_json(
             Path(FLAGS.result_dir, FLAGS.prediction),
             file_name_to_image_id={data.file_name: data.image_id for data in dataset},
-        )
+        ).root
     )
 
-    name_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore
-        prediction.file_name.stem: prediction for prediction in predictions
+    id_to_prediction: dict[ID, SemanticSegmentationPrediction] = {  # type: ignore
+        prediction.image_id: prediction for prediction in predictions
     }
 
     visualize_dir: Path = Path(FLAGS.result_dir, FLAGS.visualize_dir)
@@ -161,8 +161,8 @@ def main(_):
         list(
             dataset
             | track_progress
-            | pipe.filter(lambda data: data.file_name.stem in name_to_prediction)
-            | pipe.map(lambda data: (data, name_to_prediction[data.file_name.stem]))
+            | pipe.filter(lambda data: data.image_id in id_to_prediction)
+            | pipe.map(lambda data: (data, id_to_prediction[data.image_id]))
             | pool.parallel_pipe(
                 visualize_data, unpack_input=True, allow_unordered=True
             )(metadata=metadata, visualize_dir=visualize_dir)

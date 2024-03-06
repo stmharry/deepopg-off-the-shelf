@@ -3,7 +3,8 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from pydantic import BaseModel, TypeAdapter
+import pipe
+from pydantic import BaseModel, RootModel, TypeAdapter
 
 from app.coco.schemas import ID, CocoData, CocoRLE
 from app.masks import Mask
@@ -102,43 +103,29 @@ class SemanticSegmentationPrediction(BaseModel):
         return semseg_mask
 
 
-class SemanticSegmentationPredictionList(object):
+class SemanticSegmentationPredictionList(
+    RootModel[list[SemanticSegmentationPrediction]]
+):
     @classmethod
     def from_detectron2_semseg_output_json(
         cls, path: Path, file_name_to_image_id: dict[Any, ID]
-    ) -> list[SemanticSegmentationPrediction]:
+    ) -> "SemanticSegmentationPredictionList":
         with open(path, "r") as f:
             instances: list[SemanticSegmentationPredictionInstance] = TypeAdapter(
                 list[SemanticSegmentationPredictionInstance]
             ).validate_json(f.read())
 
-        file_name: Path | None = None
-        image_id: ID | None = None
-        _instances: list[SemanticSegmentationPredictionInstance] = []
-
-        predictions: list[SemanticSegmentationPrediction] = []
-        for instance in instances:
-            if instance.file_name != file_name:
-                image_id = file_name_to_image_id.get(file_name, None)
-
-                if file_name is not None:
-                    predictions.append(
-                        SemanticSegmentationPrediction(
-                            image_id=image_id, file_name=file_name, instances=_instances
-                        )
-                    )
-
-                file_name = instance.file_name
-                _instances = []
-
-            _instances.append(instance.model_copy(update={"image_id": image_id}))
-
-        image_id = file_name_to_image_id.get(file_name, None)
-        if file_name is not None:
-            predictions.append(
-                SemanticSegmentationPrediction(
-                    image_id=image_id, file_name=file_name, instances=_instances
+        predictions: list[SemanticSegmentationPrediction] = list(
+            instances
+            | pipe.groupby(lambda instance: instance.file_name)
+            | pipe.filter(lambda kv: kv[0] in file_name_to_image_id)
+            | pipe.map(
+                lambda kv: SemanticSegmentationPrediction(
+                    image_id=file_name_to_image_id[kv[0]],
+                    file_name=kv[0],
+                    instances=kv[1],
                 )
             )
+        )
 
-        return predictions
+        return cls.model_validate(predictions)
