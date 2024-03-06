@@ -149,7 +149,7 @@ def main(_):
     else:
         predictions = InstanceDetectionPredictionList.from_detectron2_detection_pth(
             Path(FLAGS.result_dir, FLAGS.prediction)
-        )
+        ).root
 
     id_to_prediction: dict[str | int, InstanceDetectionPrediction] = {
         prediction.image_id: prediction for prediction in predictions

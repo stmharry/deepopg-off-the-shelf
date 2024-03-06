@@ -85,6 +85,7 @@ class ParallelPipe(Generic[T]):
 @dataclasses.dataclass
 class Pool(object):
     num_workers: int = 0
+    maxtasksperchild: int | None = 16
     method: Literal["fork", "spawn", "forkserver"] | None = "fork"
 
     _mp_pool: mp_pool.Pool | None = dataclasses.field(init=False, default=None)
@@ -92,7 +93,9 @@ class Pool(object):
     def __post_init__(self):
         if self.num_workers > 0:
             context: mp_context.BaseContext = mp.get_context(self.method)
-            self._mp_pool = context.Pool(processes=self.num_workers)
+            self._mp_pool = context.Pool(
+                processes=self.num_workers, maxtasksperchild=self.maxtasksperchild
+            )
 
     def __enter__(self) -> "Pool":
         return self

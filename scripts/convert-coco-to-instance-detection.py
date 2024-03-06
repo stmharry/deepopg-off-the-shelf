@@ -12,7 +12,7 @@ flags.DEFINE_enum("dataset_prefix", "pano", ["pano"], "Dataset prefix.")
 flags.DEFINE_string("coco", "./data/coco/promaton.json", "Input coco json file.")
 flags.DEFINE_string(
     "output_golden_label",
-    "./data/csvs/pano_golden_label.csv",
+    "./data/csvs/promaton-category-labels.csv",
     "Output golden label csv file path.",
 )
 FLAGS = flags.FLAGS

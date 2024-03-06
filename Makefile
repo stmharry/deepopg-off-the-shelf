@@ -349,6 +349,7 @@ test-yolo:
 		conf=$(MIN_SCORE) \
 		iou=$(MIN_IOU) \
 		max_det=$(MAX_OBJS) \
+		save=False \
 		save_txt=True \
 		save_conf=True
 
@@ -381,7 +382,6 @@ coco-annotator:
 --check-postprocess: --check-COMMON check-SEMSEG_RESULT_NAME check-SEMSEG_DATASET_NAME
 
 postprocess: --check-postprocess
-postprocess: PREDICTION = $(RESULT_DIR)/$(RESULT_NAME).json
 postprocess:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
