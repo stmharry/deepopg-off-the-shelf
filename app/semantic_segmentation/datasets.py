@@ -29,7 +29,7 @@ class SemanticSegmentation(CocoDatasetDriver[SemanticSegmentationData]):
         ]
         stuff_colors: list[np.ndarray] = cls.get_colors(len(stuff_classes))
 
-        for split in cls.SPLITS:
+        for split in [None, *cls.SPLITS]:
             dataset_name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(

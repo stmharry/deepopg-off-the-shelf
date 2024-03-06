@@ -28,7 +28,7 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
         thing_classes: list[str] = [category.name for category in self.coco_categories]
         thing_colors: list[np.ndarray] = cls.get_colors(len(thing_classes))
 
-        for split in cls.SPLITS:
+        for split in [None, *cls.SPLITS]:
             dataset_name: str = cls.get_dataset_name(split)
 
             DatasetCatalog.register(
