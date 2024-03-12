@@ -15,12 +15,21 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
     EVALUATE_WHEN_NONMISSING_FINDINGS,
+    InstanceDetection,
+    InstanceDetectionFactory,
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
 
 plt.rcParams["font.family"] = "Arial"
 
+flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
+flags.DEFINE_enum(
+    "dataset_name",
+    "pano",
+    InstanceDetectionFactory.available_dataset_names(),
+    "Dataset name.",
+)
 flags.DEFINE_string("csv", "result.csv", "Result file name.")
 flags.DEFINE_string(
     "golden_csv_path", "./data/csvs/pano_ntuh_golden_label.csv", "Golden csv file path."
@@ -93,8 +102,9 @@ def plot_roc_curve(
         nrows=num_rows,
         ncols=num_columns,
         sharey=True,
-        figsize=(FLAGS.plot_size * num_columns, FLAGS.plot_size * num_rows),
+        figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 0.5) * num_rows),
         layout="constrained",
+        dpi=300,
     )
 
     for num, finding in enumerate(Category):
@@ -247,7 +257,7 @@ def plot_roc_curve(
             ax.set_ylabel("Senstivity")
 
         ax.set_title(
-            f"{metadata['title']} (AUC = {roc_auc:.1%})",
+            f"{metadata['title']}\n(N = {len(df_finding)}, AUC = {roc_auc:.1%})",
             fontsize="medium",
         )
 
@@ -268,22 +278,28 @@ def plot_roc_curve(
     )
 
     if FLAGS.title:
-        fig.suptitle(FLAGS.title, fontsize="large")
+        fig.suptitle(f"{FLAGS.title}", fontsize="large")
 
     return fig
 
 
 def main(_):
-    logging.set_verbosity(logging.INFO)
     warnings.simplefilter(action="ignore", category=FutureWarning)
+
+    data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
+        dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
+    )
+
+    file_names: set[str] = set(
+        Path(file_name).stem
+        for file_name in data_driver.get_file_names(FLAGS.dataset_name)
+    )
+    logging.info(f"Found {len(file_names)} file names in dataset {FLAGS.dataset_name}.")
 
     # reading the data
 
     df_pred: pd.DataFrame = pd.read_csv(Path(FLAGS.result_dir, FLAGS.csv))
     df_golden: pd.DataFrame = pd.read_csv(Path(FLAGS.golden_csv_path))
-
-    golden_file_names = set(df_golden["file_name"])
-    pred_file_names = set(df_pred["file_name"])
 
     df_human_by_tag: dict[str, pd.DataFrame] = {}
     if FLAGS.human_csv_path:
@@ -293,26 +309,10 @@ def main(_):
 
             logging.info(
                 f"Human prediction file {tag} has"
-                f" {df_human['file_name'].nunique()} file names."
+                f" {df_human['file_name'].nunique()} file names. Note that it does not"
+                " mean we don't cover all files in the dataset, since there can be"
+                " files without any findings, which we will not count here."
             )
-            pred_file_names = pred_file_names.intersection(df_human["file_name"])
-
-    if not pred_file_names.issubset(golden_file_names):
-        common_file_names: set[str] = pred_file_names.intersection(golden_file_names)
-
-        logging.warning(
-            f"Only {len(common_file_names)} file names from the prediction file are in"
-            f" the golden file, while there are {len(pred_file_names)} file names in"
-            " the prediction files. Setting the prediction file names to the"
-            " intersection of both."
-        )
-        pred_file_names = common_file_names
-
-    if pred_file_names != golden_file_names:
-        logging.warning(
-            f"We only have {len(pred_file_names)} file names in the prediction files, "
-            f"but {len(golden_file_names)} file names in the golden file."
-        )
 
     # assemble the resulting data
 
@@ -321,7 +321,7 @@ def main(_):
 
     index_names = ["file_name", "fdi", "finding"]
     s_index = pd.MultiIndex.from_product(
-        [pred_file_names, fdis, findings], names=index_names
+        [file_names, fdis, findings], names=index_names
     )
 
     df = (
@@ -355,12 +355,12 @@ def main(_):
 
     #
 
-    fig: Figure
-    fig = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
+    fig: Figure = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
 
-    fig_path: Path = Path(evaluation_dir, "roc-curve.pdf")
-    logging.info(f"Saving the ROC curve to {fig_path}.")
-    fig.savefig(fig_path)
+    for extension in ["pdf", "png"]:
+        fig_path: Path = Path(evaluation_dir, f"roc-curve.{extension}")
+        logging.info(f"Saving the ROC curve to {fig_path}.")
+        fig.savefig(fig_path)
 
     evaluation_csv_path: Path = Path(evaluation_dir, "evaluation.csv")
     logging.info(f"Saving the evaluation to {evaluation_csv_path}.")

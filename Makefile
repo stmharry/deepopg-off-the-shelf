@@ -470,26 +470,23 @@ visualize-coco:
 		--prediction $(PREDICTION) \
 		--coco_annotator_url $(COCO_ANNOTATOR_URL)
 
-evaluate-auroc: check-ROOT_DIR
+evaluate-auroc: --check-COMMON
 evaluate-auroc:
 	$(RUN_SCRIPT) \
-		--result_dir $(RESULT_DIR) \
+		$(COMMON_ARGS) \
 		--csv $(RESULT_CSV) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
-		--title "$(DATASET_TITLE)" \
-		--verbosity $(VERBOSITY)
+		--title "$(DATASET_TITLE)"
 
-evaluate-auroc.with-human: check-ROOT_DIR
+evaluate-auroc.with-human: --check-COMMON
 evaluate-auroc.with-human:
 	$(RUN_SCRIPT) \
-		--result_dir $(RESULT_DIR) \
-		--csv $(RESULT_CSV) \
+		$(COMMON_ARGS) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
 		--human_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
-		--title "$(DATASET_TITLE)" \
-		--verbosity $(VERBOSITY)
+		--title "$(DATASET_TITLE)"
 
 compare: IMAGE_HEIGHT ?= 800
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
