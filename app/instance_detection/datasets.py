@@ -21,7 +21,7 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
 
     @classmethod
     def register(cls: type[T], root_dir: Path) -> T:
-        logging.info(f"Registering {cls.__name__} dataset...")
+        logging.info(f"Registering {cls.__name__} dataset driver...")
 
         self = cls(root_dir=root_dir)
 
@@ -30,6 +30,8 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
 
         for split in [None, *cls.SPLITS]:
             dataset_name: str = cls.get_dataset_name(split)
+
+            logging.info(f"Registering '{dataset_name}' dataset into catalogs")
 
             DatasetCatalog.register(
                 dataset_name,

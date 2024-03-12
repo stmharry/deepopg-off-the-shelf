@@ -108,7 +108,7 @@ class DicomFile(object):
 
         image_meta: dict = iio.immeta(image_path)
         match image_meta:
-            case {"shape": (width, height), **kwargs}:
+            case {"shape": (int() as width, int() as height)}:
                 pass
 
             case _:
