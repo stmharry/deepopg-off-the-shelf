@@ -35,8 +35,10 @@ repos:
     hooks:
       - id: black
         args:
-          - --line-length=88
           - --preview
+          - --enable-unstable-feature=string_processing
+          - --enable-unstable-feature=hug_parens_with_braces_and_square_brackets
+          - --line-length=88
 
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v3.16.0
