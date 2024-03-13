@@ -475,7 +475,7 @@ evaluate-auroc:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
 		--csv $(RESULT_CSV) \
-		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
+		--golden_csv_path "$(DATA_DIR)/csvs/$(GOLDEN_CSV_NAME)" \
 		--evaluation_dir $(EVALUATION_DIR) \
 		--title "$(DATASET_TITLE)"
 
@@ -483,7 +483,7 @@ evaluate-auroc.with-human: --check-COMMON
 evaluate-auroc.with-human:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
-		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_golden_label.csv" \
+		--golden_csv_path "$(DATA_DIR)/csvs/$(GOLDEN_CSV_NAME)" \
 		--human_csv_path "$(DATA_DIR)/csvs/$(DATASET_NAME)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
 		--title "$(DATASET_TITLE)"

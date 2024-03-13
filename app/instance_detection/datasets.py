@@ -88,7 +88,14 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
 @dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
     PREFIX: ClassVar[str] = "pano"
-    SPLITS: ClassVar[list[str]] = ["train", "eval", "test", "test_v2", "debug"]
+    SPLITS: ClassVar[list[str]] = [
+        "train",
+        "eval",
+        "eval_v2",
+        "test",
+        "test_v2",
+        "debug",
+    ]
     CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = {
         r"TOOTH_(?P<fdi>\d+)": {
             "category": r"TOOTH_\g<fdi>",
@@ -144,7 +151,7 @@ class InstanceDetectionV1(InstanceDetection):
 @dataclasses.dataclass
 class InstanceDetectionV1NTUH(InstanceDetectionV1):
     PREFIX: ClassVar[str] = "pano_ntuh"
-    SPLITS: ClassVar[list[str]] = ["test", "debug"]
+    SPLITS: ClassVar[list[str]] = ["test", "test_v2", "debug"]
 
     @property
     def coco_path(self) -> Path:

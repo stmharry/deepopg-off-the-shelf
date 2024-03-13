@@ -95,6 +95,7 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
 def plot_roc_curve(
     df: pd.DataFrame,
     human_tags: list[str],
+    num_images: int,
 ) -> Figure:
     num_columns: int = FLAGS.plots_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
@@ -258,7 +259,7 @@ def plot_roc_curve(
 
         ax.set_title(
             f"{metadata['title']}\n(N = {len(df_finding)}, AUC = {roc_auc:.1%})",
-            fontsize="medium",
+            fontsize="large",
         )
 
         logging.info(
@@ -278,7 +279,7 @@ def plot_roc_curve(
     )
 
     if FLAGS.title:
-        fig.suptitle(f"{FLAGS.title}", fontsize="large")
+        fig.suptitle(f"{FLAGS.title} (N = {num_images})", fontsize="x-large")
 
     return fig
 
@@ -355,7 +356,9 @@ def main(_):
 
     #
 
-    fig: Figure = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
+    fig: Figure = plot_roc_curve(
+        df, human_tags=list(df_human_by_tag.keys()), num_images=len(file_names)
+    )
 
     for extension in ["pdf", "png"]:
         fig_path: Path = Path(evaluation_dir, f"roc-curve.{extension}")
