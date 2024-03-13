@@ -151,7 +151,7 @@ class InstanceDetectionV1(InstanceDetection):
 @dataclasses.dataclass
 class InstanceDetectionV1NTUH(InstanceDetectionV1):
     PREFIX: ClassVar[str] = "pano_ntuh"
-    SPLITS: ClassVar[list[str]] = ["test", "test_v2", "debug"]
+    SPLITS: ClassVar[list[str]] = ["test", "test_v2", "test_v2_1", "debug"]
 
     @property
     def coco_path(self) -> Path:
