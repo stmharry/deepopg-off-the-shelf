@@ -26,7 +26,7 @@ flags.DEFINE_string("csv_name", "result.csv", "Result file name.")
 flags.DEFINE_string("golden_csv_path", None, "Golden csv file path.")
 flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
-flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
+flags.DEFINE_integer("plots_per_row", 2, "Number of plots per row.")
 flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
 
 FLAGS = flags.FLAGS
@@ -209,44 +209,41 @@ def plot_roc_curve(
 
         ax: plt.axes.Axes = axes.flatten()[num]
         inset_ax: plt.axes.Axes = inset_axes(
-            ax, width="60%", height="60%", loc="lower right", borderpad=1.1
+            ax,
+            width="60%",
+            height="60%",
+            loc="lower right",
+            bbox_to_anchor=(-0.07, 0.11, 1, 1),
+            bbox_transform=ax.transAxes,
+            borderpad=0,
         )
 
-        for i in range(len(fprs)):
-            inset_ax.scatter(
-                fpr[min_distance_index[i]],
-                tpr[min_distance_index[i]],
-                color="b",
-                marker="x",
-                s=6,
-                linewidths=0.5,
-            )
-            inset_ax.plot(
-                [fprs[i], fpr[min_distance_index[i]]],
-                [tprs[i], tpr[min_distance_index[i]]],
-                linestyle="--",
-                color="b",
-                linewidth=0.5,
-            )
+        # for i in range(len(fprs)):
+        #     inset_ax.scatter(
+        #         fpr[min_distance_index[i]],
+        #         tpr[min_distance_index[i]],
+        #         color="b",
+        #         marker="x",
+        #         s=6,
+        #         linewidths=0.5,
+        #     )
+        #     inset_ax.plot(
+        #         [fprs[i], fpr[min_distance_index[i]]],
+        #         [tprs[i], tpr[min_distance_index[i]]],
+        #         linestyle="--",
+        #         color="b",
+        #         linewidth=0.5,
+        #     )
 
-        min_width = 0.025
-        min_height = 0.025
         padding = 0.025
-
-        width = max(min_width, max_fpr - min_fpr)
-        height = max(min_height, max_tpr - min_tpr)
+        width = 0.04
+        height = 0.25
 
         bounds = [
-            max((min_fpr + max_fpr) / 2 - width / 2 - padding, 0),
-            max(
-                (min_fpr + max_fpr) / 2 + width / 2 + padding,
-                max_min_distance_fpr + padding,
-            ),
-            max((min_tpr + max_tpr) / 2 - height / 2 - padding, 0),
-            max(
-                (min_tpr + max_tpr) / 2 + height / 2 + padding,
-                max_min_distance_tpr + padding,
-            ),
+            max((min_fpr + max_fpr) / 2 - width - padding, 0.0 - padding),
+            (min_fpr + max_fpr) / 2 + width + padding,
+            (min_tpr + max_tpr) / 2 - height - padding,
+            min((min_tpr + max_tpr) / 2 + height + padding, 1.0 + padding),
         ]
 
         inset_ax.set_xlim(
@@ -257,7 +254,7 @@ def plot_roc_curve(
             bounds[2],
             bounds[3],
         )
-        inset_ax.tick_params(axis="both", which="major", labelsize=4)
+        # inset_ax.tick_params(axis="both", which="major", labelsize=4)
 
         ax.add_patch(
             patches.Rectangle(
@@ -422,7 +419,7 @@ def main(_):
     )
 
     # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
-    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-02-21/")
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-03-13/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
     fig: Figure
     fig, ax_kappa = plot_roc_curve(df, human_tags=list(df_human_by_tag.keys()))
