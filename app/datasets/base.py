@@ -79,7 +79,7 @@ class BaseDatasetFactory(Generic[DRIVER_T]):
     @overload
     @classmethod
     def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[True]
+        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[True] = ...
     ) -> DRIVER_T | None: ...
 
     @classmethod
@@ -94,8 +94,7 @@ class BaseDatasetFactory(Generic[DRIVER_T]):
                 continue
 
             if dataset_name in DatasetCatalog.list():
-                logging.info(f"Dataset {dataset_name!s} already registered!")
-                continue
+                logging.warning(f"Dataset {dataset_name!s} already registered!")
 
             data_driver = subclass.register(root_dir=root_dir)
 

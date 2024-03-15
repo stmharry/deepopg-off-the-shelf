@@ -1,6 +1,9 @@
 from app.finding_summary.datasets import (  # type: ignore
     FindingSummary,
-    FindingSummaryNTUH,
+    FindingSummaryFactory,
+    FindingSummaryV1,
+    FindingSummaryV1NTUH,
+    FindingSummaryV1Promaton,
 )
 from app.finding_summary.schemas import (  # type: ignore
     FindingLabel,
