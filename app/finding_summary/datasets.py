@@ -1,7 +1,7 @@
 import abc
 import dataclasses
 from pathlib import Path
-from typing import ClassVar, Literal, TypeVar, overload
+from typing import ClassVar, TypeVar
 
 import pandas as pd
 import pipe
@@ -28,34 +28,17 @@ class FindingSummary(BaseDatasetDriver[FindingLabel]):
     def golden_csv_path(self) -> Path: ...
 
     def get_file_names(self, dataset_name: str) -> list[str]:
-        return (
+        return list(
             super().get_file_names(dataset_name)
             # in the golden label csv, the file names are without the parent directory
             | pipe.map(lambda file_name: Path(file_name).stem)
         )
 
-    @overload
-    def get_dataset_as_dataframe(
-        self,
-        dataset_name: str,
-        reindex: bool = ...,
-        squeeze: Literal[True] = ...,
-    ) -> pd.Series: ...
-
-    @overload
-    def get_dataset_as_dataframe(
-        self,
-        dataset_name: str,
-        reindex: bool = ...,
-        squeeze: Literal[False] = ...,
-    ) -> pd.DataFrame: ...
-
     def get_dataset_as_dataframe(
         self,
         dataset_name: str,
         reindex: bool = True,
-        squeeze: bool = True,
-    ) -> pd.Series | pd.DataFrame:
+    ) -> pd.DataFrame:
         index_names: list[str] = ["file_name", "fdi", "finding"]
 
         file_names: list[str] = self.get_file_names(dataset_name)
@@ -79,15 +62,10 @@ class FindingSummary(BaseDatasetDriver[FindingLabel]):
             )
             df = df.reindex(index=s_index, fill_value=0)
 
-        if squeeze:
-            return df.squeeze(axis=1)  # type: ignore
-
         return df
 
     def get_dataset(self, dataset_name: str) -> list[FindingLabel]:
-        df: pd.DataFrame = self.get_dataset_as_dataframe(
-            dataset_name, reindex=False, squeeze=False
-        )
+        df: pd.DataFrame = self.get_dataset_as_dataframe(dataset_name, reindex=False)
 
         return [
             FindingLabel(file_name=row.file_name, fdi=row.fdi, finding=row.finding)

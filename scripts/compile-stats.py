@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 import pandas as pd
 import pipe
 import pydicom
-from absl import app, flags
+from absl import app, flags, logging
 from pydantic import BaseModel, BeforeValidator, ValidationError, computed_field
 from rich.console import Console
 from rich.table import Table
@@ -57,6 +57,10 @@ def process_dicom(file_name: Path) -> DicomInfo | None:
 
     dicom_path: Path = Path(FLAGS.dicom_dir, file_name).with_suffix(".dcm")
 
+    if not dicom_path.exists():
+        logging.warning(f"Dicom file does not exist: {dicom_path!s}")
+        return None
+
     ds: pydicom.Dataset
     with pydicom.dcmread(dicom_path) as ds:
         try:
@@ -67,7 +71,8 @@ def process_dicom(file_name: Path) -> DicomInfo | None:
                 patient_birth_date=ds.PatientBirthDate,
             )
 
-        except (ValidationError, TypeError):
+        except (ValidationError, TypeError) as e:
+            logging.warning(f"Failed to process {dicom_path!s}: {e}")
             return None
 
 
@@ -82,6 +87,10 @@ def process_demographic_stats(
         | pipe.map(process_dicom)
         | filter_none
     )
+    if len(dicom_infos) == 0:
+        logging.warning("No dicom files found!")
+        return {}
+
     df_dicom: pd.DataFrame = pd.DataFrame(
         [dicom_info.model_dump() for dicom_info in dicom_infos]
     )
@@ -123,12 +132,12 @@ def process_finding_stats() -> dict[str, dict[str, str]]:
     finding_summary_driver: FindingSummary = FindingSummaryFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
     )
-    s: pd.Series = finding_summary_driver.get_dataset_as_dataframe(
+    df: pd.DataFrame = finding_summary_driver.get_dataset_as_dataframe(
         dataset_name=FLAGS.dataset_name
     )
 
-    total_count: int = len(s)
-    finding_counts: pd.Series = s.groupby("finding").sum()  # type: ignore
+    total_count: int = len(df)
+    finding_counts: pd.Series = df.groupby("finding")["label"].sum()  # type: ignore
 
     return {
         "Findings, n (prevalence %)": (
@@ -158,8 +167,6 @@ def main(_):
         | process_finding_stats()
     )
 
-    #
-
     table: Table = Table(title="Dataset Statistics")
     table.add_column("")
     table.add_column(f"{FLAGS.dataset_name} (n = {len(dataset)})")
@@ -173,8 +180,6 @@ def main(_):
 
     console = Console()
     console.print(table)
-
-    breakpoint()
 
 
 if __name__ == "__main__":
