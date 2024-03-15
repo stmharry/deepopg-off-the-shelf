@@ -73,8 +73,8 @@ VERBOSITY ?= 0
 CPUS ?= 4
 
 MIN_SCORE ?= 0.0001
-MIN_IOU ?= 1.0
-MAX_OBJS ?= 300
+MIN_IOU ?= 0.7
+MAX_OBJS ?= 500
 
 YOLO_DIR ?= yolo
 
@@ -496,4 +496,11 @@ compare: check-ROOT_DIR check-IMAGE_PATTERNS
 		--image_patterns $(IMAGE_PATTERNS) \
 		--output_html $(HTML_PATH) \
 		--height $(IMAGE_HEIGHT) \
+		--verbosity $(VERBOSITY)
+
+compile-stats:
+	$(RUN_SCRIPT) \
+		--data_dir $(DATA_DIR) \
+		--dicom_dir $(RAW_DIR)/data/dicoms \
+		--dataset_name $(DATASET_NAME) \
 		--verbosity $(VERBOSITY)
