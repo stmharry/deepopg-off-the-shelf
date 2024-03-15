@@ -3,7 +3,7 @@ import dataclasses
 import functools
 import json
 from pathlib import Path
-from typing import Any, ClassVar, Generic, Literal, TypeVar, get_args, overload
+from typing import Any, Generic, TypeVar
 
 import ijson
 import numpy as np
@@ -13,54 +13,18 @@ from matplotlib import colormaps, colors
 from pydantic import TypeAdapter
 
 from app.coco.schemas import CocoCategory, CocoData, CocoImage
+from app.datasets.base import BaseDatasetDriver, BaseDatasetFactory
 from app.types import PathLike
-from detectron2.data import DatasetCatalog
 from detectron2.data.datasets import load_coco_json
 
 DATA_T = TypeVar("DATA_T", bound="CocoData")
 DRIVER_T = TypeVar("DRIVER_T", bound="CocoDatasetDriver")
 
 
-@dataclasses.dataclass  # type: ignore
-class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
-    PREFIX: ClassVar[str]
-    SPLITS: ClassVar[list[str]] = []
-
-    root_dir: Path
-    _type_T: type[DATA_T] = dataclasses.field(init=False)
-
-    def __post_init__(self):
-        self._type_T = get_args(self.__orig_bases__[0])[0]  # type: ignore
-
-    @classmethod
-    @abc.abstractmethod
-    def register(cls: type[DRIVER_T], root_dir: Path) -> DRIVER_T: ...
-
-    @classmethod
-    def get_dataset_name(cls, split: str | None) -> str:
-        if split is None:
-            return cls.PREFIX
-
-        return f"{cls.PREFIX}_{split}"
-
-    @classmethod
-    def get_split_name(cls, dataset_name: str) -> str | None:
-        if dataset_name == cls.PREFIX:
-            return None
-
-        match dataset_name.rsplit("_", maxsplit=1):
-            case [cls.PREFIX, split]:
-                return split
-
-            case _:
-                raise ValueError(f"Invalid dataset name: {dataset_name}")
-
-    @classmethod
-    def available_dataset_names(cls) -> list[str]:
-        return list((None, *cls.SPLITS) | pipe.map(cls.get_dataset_name))
-
-    #
-
+@dataclasses.dataclass
+class CocoDatasetDriver(
+    BaseDatasetDriver[DATA_T], Generic[DATA_T], metaclass=abc.ABCMeta
+):
     @classmethod
     def get_coco_categories(cls, coco_path: PathLike) -> list[CocoCategory]:
         with open(coco_path) as f:
@@ -97,15 +61,9 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
             | pipe.chain
         )
 
-    #
-
     @property
     def image_dir(self) -> Path:
         return Path(self.root_dir, "images")
-
-    @property
-    @abc.abstractmethod
-    def split_dir(self) -> Path: ...
 
     @property
     def coco_path(self) -> Path | None:
@@ -155,15 +113,6 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
             | pipe.map(TypeAdapter(self._type_T).validate_python)
         )
 
-    def get_file_names(self, dataset_name: str) -> list[str]:
-        split_path: Path = Path(self.split_dir, f"{dataset_name}.txt")
-
-        if not split_path.exists():
-            raise ValueError(f"Split file does not exist: {split_path}")
-
-        with open(split_path, "r") as f:
-            return list(f | pipe.map(str.rstrip))
-
     def get_coco_dataset(self, dataset_name: str) -> list[DATA_T]:
         if dataset_name == self.PREFIX:
             return self.coco_dataset
@@ -188,49 +137,4 @@ class CocoDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
 
 
 @dataclasses.dataclass
-class CocoDatasetFactory(Generic[DRIVER_T]):
-    @classmethod
-    @abc.abstractmethod
-    def get_subclasses(cls) -> list[type[DRIVER_T]]: ...
-
-    @overload
-    @classmethod
-    def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[False] = ...
-    ) -> DRIVER_T: ...
-
-    @overload
-    @classmethod
-    def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[True]
-    ) -> DRIVER_T | None: ...
-
-    @classmethod
-    def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: bool = False
-    ) -> DRIVER_T | None:
-        data_driver: DRIVER_T | None = None
-
-        subclass: type[DRIVER_T]
-        for subclass in cls.get_subclasses():
-            if dataset_name not in subclass.available_dataset_names():
-                continue
-
-            if dataset_name in DatasetCatalog.list():
-                logging.info(f"Dataset {dataset_name!s} already registered!")
-                continue
-
-            data_driver = subclass.register(root_dir=root_dir)
-
-        if (not allow_missing) and (data_driver is None):
-            raise ValueError(f"Dataset {dataset_name} not found.")
-
-        return data_driver
-
-    @classmethod
-    def available_dataset_names(cls) -> list[str]:
-        return list(
-            cls.get_subclasses()
-            | pipe.map(lambda subclass: subclass.available_dataset_names())
-            | pipe.chain
-        )
+class CocoDatasetFactory(BaseDatasetFactory[DRIVER_T], Generic[DRIVER_T]): ...
