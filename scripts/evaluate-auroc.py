@@ -255,7 +255,7 @@ def plot_roc_curve(
 
         ax.set_xlabel("1 - Specificity")
         if num % num_columns == 0:
-            ax.set_ylabel("Senstivity")
+            ax.set_ylabel("Sensitivity")
 
         ax.set_title(
             f"{metadata['title']}\n(N = {len(df_finding)}, AUC = {roc_auc:.1%})",
