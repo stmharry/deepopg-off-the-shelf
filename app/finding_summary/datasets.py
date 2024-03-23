@@ -83,7 +83,14 @@ class FindingSummaryV1(FindingSummary):
 @dataclasses.dataclass
 class FindingSummaryV1Promaton(FindingSummaryV1):
     PREFIX: ClassVar[str] = "pano"
-    SPLITS: ClassVar[list[str]] = ["train", "eval", "eval_v2", "test", "test_v2"]
+    SPLITS: ClassVar[list[str]] = [
+        "train",
+        "eval",
+        "eval_v2",
+        "test",
+        "test_v2",
+        "test_v2_1",
+    ]
 
     @property
     def golden_csv_path(self) -> Path:

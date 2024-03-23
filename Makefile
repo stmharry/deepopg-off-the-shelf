@@ -80,7 +80,7 @@ YOLO_DIR ?= yolo
 
 MISSING_SCORING_METHOD ?= SHARE_NOBG
 FINDING_SCORING_METHOD ?= SCORE_MUL_SHARE_NOBG
-POSTFIX ?= .postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
+POSTFIX ?= .$(DATASET_NAME).postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
 
 RESULT_CSV ?= result$(POSTFIX).csv
 EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))

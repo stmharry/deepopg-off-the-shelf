@@ -94,6 +94,7 @@ class InstanceDetectionV1(InstanceDetection):
         "eval_v2",
         "test",
         "test_v2",
+        "test_v2_1",
         "debug",
     ]
     CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = {
