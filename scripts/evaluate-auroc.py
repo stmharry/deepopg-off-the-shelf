@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TypedDict
 
 import matplotlib as mpl
+import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -20,7 +21,7 @@ from app.instance_detection import (
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
 
-plt.rcParams["font.family"] = "Arial"
+plt.rcParams["font.family"] = "DejaVu Sans"
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
@@ -36,7 +37,7 @@ flags.DEFINE_string(
 )
 flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
-flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
+flags.DEFINE_integer("plots_per_row", 2, "Number of plots per row.")
 flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
 flags.DEFINE_string("title", None, "PlotPlot  ")
 FLAGS = flags.FLAGS
@@ -49,10 +50,10 @@ class HumanMetadata(TypedDict):
 
 
 HUMAN_METADATA: dict[str, HumanMetadata] = {
-    "A": {"color": "blue", "marker": "D", "title": "Expert 1"},
-    "C": {"color": "green", "marker": "s", "title": "Expert 2"},
-    "D": {"color": "red", "marker": "^", "title": "Expert 3"},
-    "E": {"color": "purple", "marker": "v", "title": "Expert 4"},
+    "A": {"color": "blue", "marker": "D", "title": "Reader 1"},
+    "C": {"color": "green", "marker": "s", "title": "Reader 2"},
+    "D": {"color": "red", "marker": "^", "title": "Reader 3"},
+    "E": {"color": "purple", "marker": "v", "title": "Reader 4"},
 }
 
 
@@ -164,13 +165,37 @@ def plot_roc_curve(
         axes_to_plot_data.append(ax)
 
         if len(human_tags):
-            inset_ax: plt.axes.Axes = inset_axes(
-                ax,
-                width="100%",
-                height="100%",
-                bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
-                bbox_transform=ax.transAxes,
-            )
+            if finding.value == "ROOT_REMNANTS":
+                inset_ax: plt.axes.Axes = inset_axes(
+                    ax,
+                    width="55.1%",
+                    height="55.1%",
+                    loc="lower right",
+                    bbox_to_anchor=(-0.07, 0.11, 1, 1),
+                    bbox_transform=ax.transAxes,
+                    borderpad=0,
+                )
+            elif finding.value == "CARIES":
+                inset_ax: plt.axes.Axes = inset_axes(
+                    ax,
+                    width="54%",
+                    height="54%",
+                    loc="lower right",
+                    bbox_to_anchor=(-0.07, 0.11, 1, 1),
+                    bbox_transform=ax.transAxes,
+                    borderpad=0,
+                )
+            else:
+                inset_ax: plt.axes.Axes = inset_axes(
+                    ax,
+                    width="60%",
+                    height="60%",
+                    loc="lower right",
+                    bbox_to_anchor=(-0.07, 0.11, 1, 1),
+                    bbox_transform=ax.transAxes,
+                    borderpad=0,
+                )
+
             axes_to_plot_data.append(inset_ax)
 
             tprs: list[float] = [
@@ -185,20 +210,36 @@ def plot_roc_curve(
             max_fpr: float = max(fprs)
             min_fpr: float = min(fprs)
 
-            min_width = 0.025
-            min_height = 0.025
             padding = 0.025
+            width = 0.04
+            height = 0.25
 
-            width = max(min_width, max_fpr - min_fpr)
-            height = max(min_height, max_tpr - min_tpr)
+            bounds = [
+                max((min_fpr + max_fpr) / 2 - width - padding, 0.0 - padding),
+                (min_fpr + max_fpr) / 2 + width + padding,
+                (min_tpr + max_tpr) / 2 - height - padding,
+                min((min_tpr + max_tpr) / 2 + height + padding, 1.0 + padding),
+            ]
 
             inset_ax.set_xlim(
-                (min_fpr + max_fpr) / 2 - width / 2 - padding,
-                (min_fpr + max_fpr) / 2 + width / 2 + padding,
+                bounds[0],
+                bounds[1],
             )
             inset_ax.set_ylim(
-                (min_tpr + max_tpr) / 2 - height / 2 - padding,
-                (min_tpr + max_tpr) / 2 + height / 2 + padding,
+                bounds[2],
+                bounds[3],
+            )
+
+            ax.add_patch(
+                patches.Rectangle(
+                    (bounds[0], bounds[2]),
+                    bounds[1] - bounds[0],
+                    bounds[3] - bounds[2],
+                    linewidth=0,
+                    alpha=0.1,
+                    color="black",
+                    zorder=-1,
+                ),
             )
 
         ax.grid(
@@ -207,27 +248,27 @@ def plot_roc_curve(
             linestyle="--",
             linewidth=0.5,
         )
-        ax.plot(
-            [0, 1],
-            [0, 1],
-            color="k",
-            linestyle="--",
-            linewidth=0.75,
-        )
+        # ax.plot(
+        #     [0, 1],
+        #     [0, 1],
+        #     color="k",
+        #     linestyle="--",
+        #     linewidth=0.75,
+        # )
 
         for _ax in axes_to_plot_data:
             _ax.fill_between(
                 fpr,
                 tpr_ci_lower,
                 tpr_ci_upper,
-                color=metadata["color"],
-                alpha=0.2,
+                color=(0.4980392156862745, 0.4980392156862745, 0.4980392156862745, 1.0),
+                alpha=0.4,
                 linewidth=0.0,
             )
             _ax.plot(
                 fpr,
                 tpr,
-                color=metadata["color"],
+                color=(0.4980392156862745, 0.4980392156862745, 0.4980392156862745, 1.0),
                 linewidth=0.75,
                 label="AI System",
             )
@@ -255,7 +296,7 @@ def plot_roc_curve(
 
         ax.set_xlabel("1 - Specificity")
         if num % num_columns == 0:
-            ax.set_ylabel("Senstivity")
+            ax.set_ylabel("Sensitivity")
 
         ax.set_title(
             f"{metadata['title']}\n(N = {len(df_finding)}, AUC = {roc_auc:.1%})",
@@ -351,7 +392,8 @@ def main(_):
         .apply(process_per_tooth)
     )
 
-    evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-03-29/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
     #
@@ -361,11 +403,11 @@ def main(_):
     )
 
     for extension in ["pdf", "png"]:
-        fig_path: Path = Path(evaluation_dir, f"roc-curve.{extension}")
+        fig_path: Path = Path(evaluation_dir, f"roc-curve-test.{extension}")
         logging.info(f"Saving the ROC curve to {fig_path}.")
-        fig.savefig(fig_path)
+        fig.savefig(fig_path, dpi=300)
 
-    evaluation_csv_path: Path = Path(evaluation_dir, "evaluation.csv")
+    evaluation_csv_path: Path = Path(evaluation_dir, "evaluation-test.csv")
     logging.info(f"Saving the evaluation to {evaluation_csv_path}.")
     df.sort_values(["finding", "score"], ascending=True).to_csv(
         evaluation_csv_path, index=False
