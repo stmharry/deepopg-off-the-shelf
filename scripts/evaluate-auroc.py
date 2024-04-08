@@ -1,16 +1,18 @@
 import math
 import warnings
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
+import confidenceinterval
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scipy.stats
 import sklearn.metrics
 from absl import app, flags, logging
-from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from statsmodels.stats.proportion import proportion_confint
 
 from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
@@ -92,11 +94,175 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def plot_roc_curve(
+def calculate_roc_metrics(
+    label: pd.Series,
+    score: pd.Series,
+    ci_level: float = 0.95,
+    ci_method: str = "wilson",
+) -> pd.DataFrame:
+    label = label[score.sort_values(ascending=True).index]
+
+    tn = label.eq(0).cumsum()
+    fn = label.eq(1).cumsum()
+    tp = fn.max() - fn
+    fp = tn.max() - tn
+
+    # sensitivity
+    tpr = tp / (tp + fn)
+    tpr_ci_lower, tpr_ci_upper = proportion_confint(
+        tp, tp + fn, alpha=1 - ci_level, method=ci_method
+    )
+
+    # specificity
+    tnr = tn / (tn + fp)
+    tnr_ci_lower, tnr_ci_upper = proportion_confint(
+        tn, tn + fp, alpha=1 - ci_level, method=ci_method
+    )
+
+    ppv = tp / (tp + fp)
+    ppv_ci_lower, ppv_ci_upper = proportion_confint(
+        tp, tp + fp, alpha=1 - ci_level, method=ci_method
+    )
+
+    npv = tn / (tn + fn)
+    npv_ci_lower, npv_ci_upper = proportion_confint(
+        tn, tn + fn, alpha=1 - ci_level, method=ci_method
+    )
+
+    # "takahashi" method
+    # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8936911/#APP1
+
+    f1 = (2 * tp) / (2 * tp + fp + fn)
+    c = np.c_[tn, fp, fn, tp]
+    df1_dc = np.c_[
+        np.zeros_like(f1),
+        -f1 / (2 * tp + fp + fn),
+        -f1 / (2 * tp + fp + fn),
+        2 * (1 - f1) / (2 * tp + fp + fn),
+    ]
+
+    def _calculate_v(c: np.ndarray, df1_dc: np.ndarray) -> np.ndarray:
+        return (
+            np.transpose(df1_dc) @ (np.diag(c) - c * np.transpose(c) / c.sum()) @ df1_dc
+        )
+
+    vf1 = np.vectorize(_calculate_v, signature="(m),(m)->()")(c, df1_dc)
+    alpha = 1 - ci_level
+    z = scipy.stats.norm.ppf(1 - alpha / 2)
+
+    f1_ci_lower = np.maximum(0, f1 - z * np.sqrt(vf1))
+    f1_ci_upper = np.minimum(1, f1 + z * np.sqrt(vf1))
+
+    return pd.DataFrame.from_dict({
+        "tp": tp,
+        "fp": fp,
+        "tn": tn,
+        "fn": fn,
+        "tpr": tpr,
+        "tpr_ci_lower": tpr_ci_lower,
+        "tpr_ci_upper": tpr_ci_upper,
+        "tnr": tnr,
+        "tnr_ci_lower": tnr_ci_lower,
+        "tnr_ci_upper": tnr_ci_upper,
+        "ppv": ppv,
+        "ppv_ci_lower": ppv_ci_lower,
+        "ppv_ci_upper": ppv_ci_upper,
+        "npv": npv,
+        "npv_ci_lower": npv_ci_lower,
+        "npv_ci_upper": npv_ci_upper,
+        "f1": f1,
+        "f1_ci_lower": f1_ci_lower,
+        "f1_ci_upper": f1_ci_upper,
+    })
+
+
+def calculate_basic_metrics(
+    label: pd.Series,
+    score: pd.Series,
+    ci_level: float = 0.95,
+    ci_method: str = "delong",
+) -> dict[str, float | tuple[float, tuple[float, float]]]:
+    p = label.eq(1).sum()
+    n = label.eq(0).sum()
+
+    auc, auc_ci = confidenceinterval.roc_auc_score(
+        label, score, confidence_level=ci_level, method=ci_method
+    )
+    return {
+        "Total Count": p + n,
+        "Positive Count": p,
+        "Negative Count": n,
+        "AUC": (auc, auc_ci),
+    }
+
+
+def compile_binary_metrics(
+    df_roc_metric: pd.DataFrame,
+    thresholds: list[float] = [0.20, 0.40, 0.55, 0.70, 0.85, 0.95, 0.99, 0.995, 0.999],
+) -> dict[str, dict[str, tuple[float, tuple[float, float]]]]:
+    tp, fp, tn, fn = (
+        df_roc_metric["tp"],
+        df_roc_metric["fp"],
+        df_roc_metric["tn"],
+        df_roc_metric["fn"],
+    )
+
+    ppv = tp / (tp + fp)
+    npv = tn / (tn + fn)
+    f1 = (2 * tp) / (2 * tp + fp + fn)
+
+    name_to_index: dict[str, Any] = {}
+
+    for ppv_threshold in thresholds:
+        if ppv[ppv > ppv_threshold].empty:
+            continue
+
+        name_to_index[f"PPV={ppv_threshold:.2%}"] = ppv[ppv > ppv_threshold].index[0]
+
+    for npv_threshold in thresholds:
+        if npv[npv > npv_threshold].empty:
+            continue
+
+        name_to_index[f"NPV={npv_threshold:.2%}"] = npv[npv > npv_threshold].index[-1]
+
+    name_to_index["MAX F1"] = f1.idxmax()
+
+    binary_metrics: dict[str, dict[str, tuple[float, tuple[float, float]]]] = {}
+    for name, index in name_to_index.items():
+        row: pd.Series = df_roc_metric.loc[index]
+
+        binary_metrics[name] = {
+            "Sensitivity": (row["tpr"], (row["tpr_ci_lower"], row["tpr_ci_upper"])),
+            "Specificity": (row["tnr"], (row["tnr_ci_lower"], row["tnr_ci_upper"])),
+            "PPV": (row["ppv"], (row["ppv_ci_lower"], row["ppv_ci_upper"])),
+            "NPV": (row["npv"], (row["npv_ci_lower"], row["npv_ci_upper"])),
+            "F1": (row["f1"], (row["f1_ci_lower"], row["f1_ci_upper"])),
+        }
+
+    return binary_metrics
+
+
+def format_metric(metric: Any) -> str:
+    match metric:
+        case np.integer() as m:
+            return f"{m:d}"
+
+        case np.floating() as m:
+            return f"{m:.1%}"
+
+        case (np.floating() as m, (np.floating() as l, np.floating() as u)):
+            return f"{m:.1%} ({l:.1%}, {u:.1%})"
+
+        case _:
+            return f"{metric}"
+
+
+def evaluate(
     df: pd.DataFrame,
     human_tags: list[str],
     num_images: int,
-) -> Figure:
+    evaluation_dir: Path,
+) -> None:
     num_columns: int = FLAGS.plots_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
     fig, axes = plt.subplots(
@@ -110,41 +276,31 @@ def plot_roc_curve(
 
     for num, finding in enumerate(Category):
         metadata: CategoryMetadata = CATEGORY_METADATA[finding]
-        df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].copy()
-
-        P = df_finding["label"].eq(1).sum()
-        N = df_finding["label"].eq(0).sum()
-
-        fpr, tpr, _ = sklearn.metrics.roc_curve(
-            y_true=df_finding["label"],
-            y_score=df_finding["score"],
-            drop_intermediate=False,
+        df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].sort_values(
+            "score"
         )
 
-        tpr_std_err: np.ndarray = np.sqrt(tpr * (1 - tpr) / P)
-        tpr_ci_lower: np.ndarray = np.maximum(0, tpr - 1.96 * tpr_std_err)
-        tpr_ci_upper: np.ndarray = np.minimum(1, tpr + 1.96 * tpr_std_err)
-
-        # https://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_the_Area_Under_an_ROC_Curve.pdf
-
-        roc_auc: float = sklearn.metrics.roc_auc_score(  # type: ignore
-            y_true=df_finding["label"],
-            y_score=df_finding["score"],
+        df_roc_metric: pd.DataFrame = calculate_roc_metrics(
+            label=df_finding["label"], score=df_finding["score"]
         )
 
-        Q1: float = roc_auc / (2 - roc_auc)
-        Q2: float = 2 * roc_auc**2 / (1 + roc_auc)
-
-        auc_std_err: float = np.sqrt(
-            (
-                roc_auc * (1 - roc_auc)
-                + (P - 1) * (Q1 - roc_auc**2)
-                + (N - 1) * (Q2 - roc_auc**2)
+        basic_metrics: dict[str, float | tuple[float, tuple[float, float]]] = (
+            calculate_basic_metrics(
+                label=df_finding["label"], score=df_finding["score"]
             )
-            / (P * N)
         )
-        roc_auc_ci_lower: float = np.maximum(0, roc_auc - 1.96 * auc_std_err)
-        roc_auc_ci_upper: float = np.minimum(1, roc_auc + 1.96 * auc_std_err)
+        binary_metrics: dict[str, dict[str, tuple[float, tuple[float, float]]]] = (
+            compile_binary_metrics(df_roc_metric)
+        )
+
+        logging.info(f"Finding {finding.value}")
+        for name, metric in basic_metrics.items():
+            logging.info(f"  - {name}: {format_metric(metric)}")
+
+        for criterion, metrics in binary_metrics.items():
+            logging.info(f"  - {criterion}")
+            for name, metric in metrics.items():
+                logging.info(f"    - {name}: {format_metric(metric)}")
 
         report_by_tag: dict[str, dict] = {}
         for tag in human_tags:
@@ -217,16 +373,16 @@ def plot_roc_curve(
 
         for _ax in axes_to_plot_data:
             _ax.fill_between(
-                fpr,
-                tpr_ci_lower,
-                tpr_ci_upper,
+                1 - df_roc_metric["tnr"],
+                df_roc_metric["tpr_ci_lower"],
+                df_roc_metric["tpr_ci_upper"],
                 color=metadata["color"],
                 alpha=0.2,
                 linewidth=0.0,
             )
             _ax.plot(
-                fpr,
-                tpr,
+                1 - df_roc_metric["tnr"],
+                df_roc_metric["tpr"],
                 color=metadata["color"],
                 linewidth=0.75,
                 label="AI System",
@@ -258,16 +414,8 @@ def plot_roc_curve(
             ax.set_ylabel("Sensitivity")
 
         ax.set_title(
-            f"{metadata['title']}\n(N = {len(df_finding)}, AUC = {roc_auc:.1%})",
+            f"{metadata['title']}\n(N = {len(df_finding)})",
             fontsize="large",
-        )
-
-        logging.info(
-            f"Finding {finding.value}\n"
-            f"  - Sample Count: {len(df_finding)}\n"
-            f"  - Positive Count: {P}\n"
-            f"  - Negative Count: {N}\n"
-            f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})"
         )
 
     ax = axes.flatten()[0]
@@ -281,7 +429,10 @@ def plot_roc_curve(
     if FLAGS.title:
         fig.suptitle(f"{FLAGS.title} (N = {num_images})", fontsize="x-large")
 
-    return fig
+    for extension in ["pdf", "png"]:
+        fig_path: Path = Path(evaluation_dir, f"roc-curve.{extension}")
+        logging.info(f"Saving the ROC curve to {fig_path}.")
+        fig.savefig(fig_path)
 
 
 def main(_):
@@ -354,21 +505,17 @@ def main(_):
     evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
-    #
-
-    fig: Figure = plot_roc_curve(
-        df, human_tags=list(df_human_by_tag.keys()), num_images=len(file_names)
-    )
-
-    for extension in ["pdf", "png"]:
-        fig_path: Path = Path(evaluation_dir, f"roc-curve.{extension}")
-        logging.info(f"Saving the ROC curve to {fig_path}.")
-        fig.savefig(fig_path)
-
     evaluation_csv_path: Path = Path(evaluation_dir, "evaluation.csv")
     logging.info(f"Saving the evaluation to {evaluation_csv_path}.")
     df.sort_values(["finding", "score"], ascending=True).to_csv(
         evaluation_csv_path, index=False
+    )
+
+    evaluate(
+        df,
+        human_tags=list(df_human_by_tag.keys()),
+        num_images=len(file_names),
+        evaluation_dir=evaluation_dir,
     )
 
 
