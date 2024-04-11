@@ -11,6 +11,8 @@ import pandas as pd
 import scipy.stats
 import sklearn.metrics
 from absl import app, flags, logging
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from statsmodels.stats.proportion import proportion_confint
 
@@ -66,16 +68,16 @@ class CategoryMetadata(TypedDict):
 CMAP = mpl.colormaps.get_cmap("tab10")
 
 CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
-    Category.MISSING: {"color": CMAP(0), "title": "Missing Teeth"},
-    Category.IMPLANT: {"color": CMAP(2), "title": "Implants"},
-    Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Root Remnants"},
-    Category.CROWN_BRIDGE: {"color": CMAP(3), "title": "Crowns & Bridges"},
-    Category.FILLING: {"color": CMAP(4), "title": "Restorations"},
-    Category.ENDO: {"color": CMAP(5), "title": "Root Fillings"},
+    Category.MISSING: {"color": CMAP(0), "title": "Missing"},
+    Category.IMPLANT: {"color": CMAP(2), "title": "Implant"},
+    Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Residual root"},
+    Category.CROWN_BRIDGE: {"color": CMAP(3), "title": "Crown/bridge"},
+    Category.ENDO: {"color": CMAP(5), "title": "Root canal filling"},
+    Category.FILLING: {"color": CMAP(4), "title": "Filling"},
     Category.CARIES: {"color": CMAP(7), "title": "Caries"},
     Category.PERIAPICAL_RADIOLUCENT: {
         "color": CMAP(8),
-        "title": "Periapical Radiolucencies",
+        "title": "Periapical radiolucency",
     },
 }
 
@@ -100,7 +102,7 @@ def calculate_roc_metrics(
     ci_level: float = 0.95,
     ci_method: str = "wilson",
 ) -> pd.DataFrame:
-    label = label[score.sort_values(ascending=True).index]
+    label = label[score.sort_values(ascending=True).index]  # type: ignore
 
     tn = label.eq(0).cumsum()
     fn = label.eq(1).cumsum()
@@ -164,6 +166,12 @@ def calculate_roc_metrics(
         "tnr": tnr,
         "tnr_ci_lower": tnr_ci_lower,
         "tnr_ci_upper": tnr_ci_upper,
+        "fpr": 1 - tnr,
+        "fpr_ci_lower": 1 - tnr_ci_upper,
+        "fpr_ci_upper": 1 - tnr_ci_lower,
+        "fnr": 1 - tpr,
+        "fnr_ci_lower": 1 - tpr_ci_upper,
+        "fnr_ci_upper": 1 - tpr_ci_lower,
         "ppv": ppv,
         "ppv_ci_lower": ppv_ci_lower,
         "ppv_ci_upper": ppv_ci_upper,
@@ -186,19 +194,30 @@ def calculate_basic_metrics(
     n = label.eq(0).sum()
 
     auc, auc_ci = confidenceinterval.roc_auc_score(
-        label, score, confidence_level=ci_level, method=ci_method
+        label.to_list(), score.to_list(), confidence_level=ci_level, method=ci_method
     )
+
     return {
         "Total Count": p + n,
         "Positive Count": p,
         "Negative Count": n,
-        "AUC": (auc, auc_ci),
+        "AUC": (float(auc), (float(auc_ci[0]), float(auc_ci[1]))),  # type: ignore
     }
 
 
 def compile_binary_metrics(
     df_roc_metric: pd.DataFrame,
-    thresholds: list[float] = [0.20, 0.40, 0.55, 0.70, 0.85, 0.95, 0.99, 0.995, 0.999],
+    thresholds: list[float] = [
+        0.30,
+        0.50,
+        0.70,
+        0.80,
+        0.90,
+        0.95,
+        0.99,
+        0.995,
+        0.999,
+    ],
 ) -> dict[str, dict[str, tuple[float, tuple[float, float]]]]:
     tp, fp, tn, fn = (
         df_roc_metric["tp"],
@@ -232,11 +251,26 @@ def compile_binary_metrics(
         row: pd.Series = df_roc_metric.loc[index]
 
         binary_metrics[name] = {
-            "Sensitivity": (row["tpr"], (row["tpr_ci_lower"], row["tpr_ci_upper"])),
-            "Specificity": (row["tnr"], (row["tnr_ci_lower"], row["tnr_ci_upper"])),
-            "PPV": (row["ppv"], (row["ppv_ci_lower"], row["ppv_ci_upper"])),
-            "NPV": (row["npv"], (row["npv_ci_lower"], row["npv_ci_upper"])),
-            "F1": (row["f1"], (row["f1_ci_lower"], row["f1_ci_upper"])),
+            "Sensitivity": (
+                float(row["tpr"]),
+                (float(row["tpr_ci_lower"]), float(row["tpr_ci_upper"])),
+            ),
+            "Specificity": (
+                float(row["tnr"]),
+                (float(row["tnr_ci_lower"]), float(row["tnr_ci_upper"])),
+            ),
+            "PPV": (
+                float(row["ppv"]),
+                (float(row["ppv_ci_lower"]), float(row["ppv_ci_upper"])),
+            ),
+            "NPV": (
+                float(row["npv"]),
+                (float(row["npv_ci_lower"]), float(row["npv_ci_upper"])),
+            ),
+            "F1": (
+                float(row["f1"]),
+                (float(row["f1_ci_lower"]), float(row["f1_ci_upper"])),
+            ),
         }
 
     return binary_metrics
@@ -257,6 +291,119 @@ def format_metric(metric: Any) -> str:
             return f"{metric}"
 
 
+def plot_metric(
+    df: pd.DataFrame,
+    report_by_tag: dict[str, dict],
+    x: str,
+    y: str,
+    y_ci_lower: str,
+    y_ci_upper: str,
+    color: str | tuple[float, ...],
+    ax: Axes,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
+    title: str | None = None,
+) -> Axes:
+    axes_to_plot_data: list[Axes] = [ax]
+
+    if len(report_by_tag):
+        inset_ax: Axes = inset_axes(
+            ax,
+            width="100%",
+            height="100%",
+            bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
+            bbox_transform=ax.transAxes,
+        )
+        axes_to_plot_data.append(inset_ax)
+
+        x_values: list[float] = [report[x] for report in report_by_tag.values()]
+        x_max: float = max(x_values)
+        x_min: float = min(x_values)
+
+        y_values: list[float] = [report[y] for report in report_by_tag.values()]
+        y_max: float = max(y_values)
+        y_min: float = min(y_values)
+
+        min_width = 0.025
+        min_height = 0.025
+        padding = 0.025
+
+        width = max(min_width, x_max - x_min)
+        height = max(min_height, y_max - y_min)
+
+        inset_ax.set_xlim(
+            (x_min + x_max) / 2 - width / 2 - padding,
+            (x_min + x_max) / 2 + width / 2 + padding,
+        )
+        inset_ax.set_ylim(
+            (y_min + y_max) / 2 - height / 2 - padding,
+            (y_min + y_max) / 2 + height / 2 + padding,
+        )
+
+    ax.grid(
+        visible=True,
+        which="major",
+        linestyle="--",
+        linewidth=0.5,
+    )
+    ax.plot(
+        [0, 1],
+        [0, 1],
+        color="k",
+        linestyle="--",
+        linewidth=0.75,
+    )
+
+    for _ax in axes_to_plot_data:
+        _ax.fill_between(
+            df[x],
+            df[y_ci_lower],
+            df[y_ci_upper],
+            color=color,
+            alpha=0.2,
+            linewidth=0.0,
+        )
+        _ax.plot(
+            df[x],
+            df[y],
+            color=color,
+            linewidth=0.75,
+            label="AI System",
+        )
+
+        for tag, report in report_by_tag.items():
+            human_metadata: HumanMetadata = HUMAN_METADATA[tag]
+
+            _ax.plot(
+                report[x],
+                report[y],
+                color=human_metadata["color"],
+                marker=human_metadata["marker"],
+                markersize=2,
+                linewidth=0.0,
+                label=human_metadata["title"],
+            )
+
+    xticks: np.ndarray = np.linspace(0, 1, 6)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(["{:,.0%}".format(v) for v in xticks])
+
+    yticks: np.ndarray = np.linspace(0, 1, 6)
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(["{:,.0%}".format(v) for v in yticks])
+
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    if title is not None:
+        ax.set_title(title, fontsize="large")
+
+    return ax
+
+
 def evaluate(
     df: pd.DataFrame,
     human_tags: list[str],
@@ -265,29 +412,32 @@ def evaluate(
 ) -> None:
     num_columns: int = FLAGS.plots_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
-    fig, axes = plt.subplots(
-        nrows=num_rows,
-        ncols=num_columns,
-        sharey=True,
-        figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 0.5) * num_rows),
-        layout="constrained",
-        dpi=300,
-    )
 
+    figs: dict[str, Figure] = {}
+    for name in ["roc-curve", "precision-recall-curve"]:
+        fig, _ = plt.subplots(
+            nrows=num_rows,
+            ncols=num_columns,
+            sharey=True,
+            figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 0.5) * num_rows),
+            layout="constrained",
+            dpi=300,
+        )
+        figs[name] = fig
+
+    metrics: list[dict] = []
     for num, finding in enumerate(Category):
         metadata: CategoryMetadata = CATEGORY_METADATA[finding]
         df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].sort_values(
             "score"
         )
 
-        df_roc_metric: pd.DataFrame = calculate_roc_metrics(
-            label=df_finding["label"], score=df_finding["score"]
-        )
+        label: pd.Series = df_finding["label"]  # type: ignore
+        score: pd.Series = df_finding["score"]  # type: ignore
 
+        df_roc_metric: pd.DataFrame = calculate_roc_metrics(label=label, score=score)
         basic_metrics: dict[str, float | tuple[float, tuple[float, float]]] = (
-            calculate_basic_metrics(
-                label=df_finding["label"], score=df_finding["score"]
-            )
+            calculate_basic_metrics(label=label, score=score)
         )
         binary_metrics: dict[str, dict[str, tuple[float, tuple[float, float]]]] = (
             compile_binary_metrics(df_roc_metric)
@@ -297,142 +447,83 @@ def evaluate(
         for name, metric in basic_metrics.items():
             logging.info(f"  - {name}: {format_metric(metric)}")
 
-        for criterion, metrics in binary_metrics.items():
-            logging.info(f"  - {criterion}")
-            for name, metric in metrics.items():
-                logging.info(f"    - {name}: {format_metric(metric)}")
+            metrics.append({
+                "finding": finding.value,
+                "metric": name,
+                "value": format_metric(metric),
+            })
+
+        for criterion, finding_metrics in binary_metrics.items():
+            for name, metric in finding_metrics.items():
+                metrics.append({
+                    "finding": finding.value,
+                    "metric": f"{name} @ {criterion}",
+                    "value": format_metric(metric),
+                })
 
         report_by_tag: dict[str, dict] = {}
         for tag in human_tags:
             report: dict = sklearn.metrics.classification_report(  # type: ignore
-                y_true=df_finding["label"],
+                y_true=label,
                 y_pred=df_finding[f"score_human_{tag}"],
                 output_dict=True,
             )
 
-            report_by_tag[tag] = report
+            report_by_tag[tag] = {
+                "tpr": report["1"]["recall"],
+                "fpr": 1 - report["0"]["recall"],
+                "ppv": report["1"]["precision"],
+                "npv": report["0"]["precision"],
+            }
 
-        # plotting
-
-        axes_to_plot_data: list[plt.axes.Axes] = []
-
-        ax: plt.axes.Axes = axes.flatten()[num]
-        axes_to_plot_data.append(ax)
-
-        if len(human_tags):
-            inset_ax: plt.axes.Axes = inset_axes(
-                ax,
-                width="100%",
-                height="100%",
-                bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
-                bbox_transform=ax.transAxes,
-            )
-            axes_to_plot_data.append(inset_ax)
-
-            tprs: list[float] = [
-                report["1"]["recall"] for report in report_by_tag.values()
-            ]
-            max_tpr: float = max(tprs)
-            min_tpr: float = min(tprs)
-
-            fprs: list[float] = [
-                1 - report["0"]["recall"] for report in report_by_tag.values()
-            ]
-            max_fpr: float = max(fprs)
-            min_fpr: float = min(fprs)
-
-            min_width = 0.025
-            min_height = 0.025
-            padding = 0.025
-
-            width = max(min_width, max_fpr - min_fpr)
-            height = max(min_height, max_tpr - min_tpr)
-
-            inset_ax.set_xlim(
-                (min_fpr + max_fpr) / 2 - width / 2 - padding,
-                (min_fpr + max_fpr) / 2 + width / 2 + padding,
-            )
-            inset_ax.set_ylim(
-                (min_tpr + max_tpr) / 2 - height / 2 - padding,
-                (min_tpr + max_tpr) / 2 + height / 2 + padding,
-            )
-
-        ax.grid(
-            visible=True,
-            which="major",
-            linestyle="--",
-            linewidth=0.5,
-        )
-        ax.plot(
-            [0, 1],
-            [0, 1],
-            color="k",
-            linestyle="--",
-            linewidth=0.75,
+        plot_metric(
+            df=df_roc_metric,
+            report_by_tag=report_by_tag,
+            x="fpr",
+            y="tpr",
+            y_ci_lower="tpr_ci_lower",
+            y_ci_upper="tpr_ci_upper",
+            xlabel="1 - Specificity",
+            ylabel="Sensitivity" if num % num_columns == 0 else None,
+            color=metadata["color"],
+            title=metadata["title"],
+            ax=figs["roc-curve"].axes[num],
         )
 
-        for _ax in axes_to_plot_data:
-            _ax.fill_between(
-                1 - df_roc_metric["tnr"],
-                df_roc_metric["tpr_ci_lower"],
-                df_roc_metric["tpr_ci_upper"],
-                color=metadata["color"],
-                alpha=0.2,
-                linewidth=0.0,
-            )
-            _ax.plot(
-                1 - df_roc_metric["tnr"],
-                df_roc_metric["tpr"],
-                color=metadata["color"],
-                linewidth=0.75,
-                label="AI System",
-            )
-
-            for tag, report in report_by_tag.items():
-                human_metadata: HumanMetadata = HUMAN_METADATA[tag]
-
-                _ax.plot(
-                    1 - report["0"]["recall"],
-                    report["1"]["recall"],
-                    color=human_metadata["color"],
-                    marker=human_metadata["marker"],
-                    markersize=2,
-                    linewidth=0.0,
-                    label=human_metadata["title"],
-                )
-
-        xticks: np.ndarray = np.linspace(0, 1, 6)
-        ax.set_xticks(xticks)
-        ax.set_xticklabels(["{:,.0%}".format(v) for v in xticks])
-
-        yticks: np.ndarray = np.linspace(0, 1, 6)
-        ax.set_yticks(yticks)
-        ax.set_yticklabels(["{:,.0%}".format(v) for v in yticks])
-
-        ax.set_xlabel("1 - Specificity")
-        if num % num_columns == 0:
-            ax.set_ylabel("Sensitivity")
-
-        ax.set_title(
-            f"{metadata['title']}\n(N = {len(df_finding)})",
-            fontsize="large",
+        plot_metric(
+            df=df_roc_metric,
+            report_by_tag=report_by_tag,
+            x="tpr",
+            y="ppv",
+            y_ci_lower="ppv_ci_lower",
+            y_ci_upper="ppv_ci_upper",
+            xlabel="Recall",
+            ylabel="Precision" if num % num_columns == 0 else None,
+            color=metadata["color"],
+            title=metadata["title"],
+            ax=figs["precision-recall-curve"].axes[num],
         )
 
-    ax = axes.flatten()[0]
-    fig.legend(
-        handles=ax.lines,
-        loc="outside lower center",
-        ncols=len(ax.lines),
-        fontsize="small",
-    )
+    for name, fig in figs.items():
+        first_ax: Axes = fig.axes[0]
+        fig.legend(
+            handles=first_ax.lines,
+            loc="outside lower center",
+            ncols=len(first_ax.lines),
+            fontsize="small",
+        )
 
-    if FLAGS.title:
-        fig.suptitle(f"{FLAGS.title} (N = {num_images})", fontsize="x-large")
+        if FLAGS.title:
+            fig.suptitle(f"{FLAGS.title} (N = {num_images})", fontsize="x-large")
 
-    for extension in ["pdf", "png"]:
-        fig_path: Path = Path(evaluation_dir, f"roc-curve.{extension}")
-        logging.info(f"Saving the ROC curve to {fig_path}.")
-        fig.savefig(fig_path)
+        for extension in ["pdf", "png"]:
+            fig_path: Path = Path(evaluation_dir, f"{name}.{extension}")
+            logging.info(f"Saving the ROC curve to {fig_path}.")
+            fig.savefig(fig_path)
+
+    metric_path: Path = Path(evaluation_dir, "metrics.csv")
+    logging.info(f"Saving the metrics to {metric_path}.")
+    pd.DataFrame(metrics).to_csv(metric_path, index=False)
 
 
 def main(_):
