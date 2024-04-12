@@ -303,10 +303,12 @@ def plot_metric(
     xlabel: str | None = None,
     ylabel: str | None = None,
     title: str | None = None,
+    use_inset: bool = False,
+    show_diagnoal: bool = False,
 ) -> Axes:
     axes_to_plot_data: list[Axes] = [ax]
 
-    if len(report_by_tag):
+    if use_inset and len(report_by_tag):
         inset_ax: Axes = inset_axes(
             ax,
             width="100%",
@@ -346,13 +348,14 @@ def plot_metric(
         linestyle="--",
         linewidth=0.5,
     )
-    ax.plot(
-        [0, 1],
-        [0, 1],
-        color="k",
-        linestyle="--",
-        linewidth=0.75,
-    )
+    if show_diagnoal:
+        ax.plot(
+            [0, 1],
+            [0, 1],
+            color="k",
+            linestyle="--",
+            linewidth=0.75,
+        )
 
     for _ax in axes_to_plot_data:
         _ax.fill_between(
@@ -476,6 +479,9 @@ def evaluate(
                 "npv": report["0"]["precision"],
             }
 
+        if finding == Category.IMPLANT:
+            breakpoint()
+
         plot_metric(
             df=df_roc_metric,
             report_by_tag=report_by_tag,
@@ -488,6 +494,7 @@ def evaluate(
             color=metadata["color"],
             title=metadata["title"],
             ax=figs["roc-curve"].axes[num],
+            show_diagnoal=True,
         )
 
         plot_metric(
