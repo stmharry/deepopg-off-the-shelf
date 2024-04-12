@@ -2,6 +2,7 @@ from app.instance_detection.datasets import (  # type: ignore
     InstanceDetection,
     InstanceDetectionFactory,
     InstanceDetectionOdontoAI,
+    InstanceDetectionRaw,
     InstanceDetectionV1,
     InstanceDetectionV1NTUH,
 )
