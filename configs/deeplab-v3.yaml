@@ -1,8 +1,8 @@
 VERSION: 2
 
 DATASETS:
-  TRAIN: ("pano_semseg_v4_train",)
-  TEST: ("pano_semseg_v4_eval",)
+  TRAIN: ("pano_semseg_v5_train",)
+  TEST: ("pano_semseg_v5_eval",)
 
 MODEL:
   META_ARCHITECTURE: "SemanticSegmentor"

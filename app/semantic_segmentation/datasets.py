@@ -66,6 +66,11 @@ class SemanticSegmentation(CocoDatasetDriver[SemanticSegmentationData]):
             if sem_seg_file_name.exists():
                 data = data.model_copy(update={"sem_seg_file_name": sem_seg_file_name})
 
+            else:
+                logging.info(
+                    f"Semantic segmentation mask not found: {sem_seg_file_name}"
+                )
+
             dataset.append(data)
 
         return dataset

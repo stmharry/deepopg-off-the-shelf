@@ -80,10 +80,10 @@ YOLO_DIR ?= yolo
 
 MISSING_SCORING_METHOD ?= SHARE_NOBG
 FINDING_SCORING_METHOD ?= SCORE_MUL_SHARE_NOBG
-POSTFIX ?= .$(DATASET_NAME).postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
+POSTFIX ?= .postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
 
 RESULT_CSV ?= result$(POSTFIX).csv
-EVALUATION_DIR ?= $(subst result,evaluation,$(basename $(RESULT_CSV)))
+EVALUATION_DIR ?= $(subst result,evaluation.$(DATASET_NAME),$(basename $(RESULT_CSV)))
 
 RAW_PREDICTION ?= instances_predictions.pth
 PREDICTION ?= $(RAW_PREDICTION:.pth=$(POSTFIX).pth)
@@ -168,6 +168,13 @@ convert-ntuh-finding-human-label:
 		--label_dir "$(DATA_DIR)/raw/NTUH/human_label" \
 		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
 		--verbosity $(VERBOSITY)
+
+convert-coco-to-detectron2-semseg-v5: MASK_DIR = masks/segmentation-v5
+convert-coco-to-detectron2-semseg-v5: DATASET_NAME = pano_raw
+convert-coco-to-detectron2-semseg-v5:
+	$(MAKE) convert-coco-to-detectron2-semseg \
+		MASK_DIR=$(MASK_DIR) \
+		DATASET_NAME=$(DATASET_NAME)
 
 convert-coco-to-detectron2-semseg: ROOT_DIR = $(RAW_DIR)
 convert-coco-to-detectron2-semseg: MASK_DIR ?= masks/segmentation-v4
@@ -260,7 +267,7 @@ debug-mvitv2:
 # deeplab targets
 
 train-deeplab: MODEL_NAME = $(NEW_NAME)
-train-deeplab: DATASET_NAME = pano_semseg_v4_train,pano_semseg_v4_eval
+train-deeplab: DATASET_NAME = pano_semseg_v5
 train-deeplab: CONFIG_NAME ?= deeplab-v3.yaml
 train-deeplab: --check-MAIN
 train-deeplab:
@@ -489,7 +496,7 @@ evaluate-auroc.with-human:
 		--evaluation_dir $(EVALUATION_DIR).with-human \
 		--title "$(DATASET_TITLE)"
 
-compare: IMAGE_HEIGHT ?= 800
+compare: IMAGE_HEIGHT ?= 400
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
 	$(RUN_SCRIPT) \
