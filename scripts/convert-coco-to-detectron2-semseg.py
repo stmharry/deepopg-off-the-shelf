@@ -16,53 +16,44 @@ from app.tasks import Pool, track_progress
 from detectron2.data import Metadata, MetadataCatalog
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
-flags.DEFINE_enum("dataset_prefix", "pano", ["pano", "pano_ntuh"], "Dataset prefix.")
+# we don't use enum here because we have a match later to check for the value
+flags.DEFINE_string("dataset_prefix", "pano", "Dataset prefix.")
 flags.DEFINE_string(
     "mask_dir", "masks", "Mask directory to save masks to (relative to `data_dir`)."
 )
 flags.DEFINE_integer("num_workers", 0, "Number of processes to use.")
 FLAGS = flags.FLAGS
 
-CATEGORY_NAME_TO_SEMSEG_CLASS_ID: dict[str, int] = {
-    "TOOTH_11": 1,
-    "TOOTH_12": 2,
-    "TOOTH_13": 3,
-    "TOOTH_14": 4,
-    "TOOTH_15": 5,
-    "TOOTH_16": 6,
-    "TOOTH_17": 7,
-    "TOOTH_18": 8,
-    "TOOTH_21": 9,
-    "TOOTH_22": 10,
-    "TOOTH_23": 11,
-    "TOOTH_24": 12,
-    "TOOTH_25": 13,
-    "TOOTH_26": 14,
-    "TOOTH_27": 15,
-    "TOOTH_28": 16,
-    "TOOTH_31": 17,
-    "TOOTH_32": 18,
-    "TOOTH_33": 19,
-    "TOOTH_34": 20,
-    "TOOTH_35": 21,
-    "TOOTH_36": 22,
-    "TOOTH_37": 23,
-    "TOOTH_38": 24,
-    "TOOTH_41": 25,
-    "TOOTH_42": 26,
-    "TOOTH_43": 27,
-    "TOOTH_44": 28,
-    "TOOTH_45": 29,
-    "TOOTH_46": 30,
-    "TOOTH_47": 31,
-    "TOOTH_48": 32,
+CATEGORY_NAME_POSTFIX_TO_SEMSEG_CLASS_ID: dict[str, int] = {
+    f"_{quadrant}{index}": (quadrant - 1) * 8 + index
+    for quadrant in range(1, 5)
+    for index in range(1, 9)
 }
+
+
+def build_category_name_to_semseg_class_id(
+    metadata: Metadata,
+) -> dict[str, int]:
+
+    category_name_to_semseg_class_id: dict[str, int] = {}
+    for _, category_name in enumerate(metadata.thing_classes):
+        for (
+            postfix,
+            semseg_class_id,
+        ) in CATEGORY_NAME_POSTFIX_TO_SEMSEG_CLASS_ID.items():
+
+            if category_name.endswith(postfix):
+                category_name_to_semseg_class_id[category_name] = semseg_class_id
+                break
+
+    return category_name_to_semseg_class_id
 
 
 def process_data(
     data: InstanceDetectionData,
     *,
     metadata: Metadata,
+    category_name_to_semseg_class_id: dict[str, int],
     output_dir: Path,
 ) -> InstanceDetectionData | None:
     logging.info(f"Converting {data.file_name!s}...")
@@ -77,7 +68,7 @@ def process_data(
     for annotation in data.annotations:
         category_name: str = metadata.thing_classes[annotation.category_id]
 
-        semseg_class_id: int | None = CATEGORY_NAME_TO_SEMSEG_CLASS_ID.get(
+        semseg_class_id: int | None = category_name_to_semseg_class_id.get(
             category_name
         )
         if semseg_class_id is None:
@@ -151,7 +142,7 @@ def process_data(
 def main(_):
     directory_name: str
     match FLAGS.dataset_prefix:
-        case "pano":
+        case "pano" | "pano_raw":
             directory_name = "PROMATON"
 
         case "pano_ntuh":
@@ -168,6 +159,13 @@ def main(_):
     )
     metadata: Metadata = MetadataCatalog.get(FLAGS.dataset_prefix)
 
+    category_name_to_semseg_class_id: dict[str, int] = (
+        build_category_name_to_semseg_class_id(metadata)
+    )
+    logging.info(
+        f"Using class name to semseg ID map: {category_name_to_semseg_class_id}"
+    )
+
     output_dir: Path = Path(FLAGS.data_dir, FLAGS.mask_dir, directory_name)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -176,7 +174,9 @@ def main(_):
             dataset
             | track_progress
             | pool.parallel_pipe(process_data, allow_unordered=True)(
-                metadata=metadata, output_dir=output_dir
+                metadata=metadata,
+                category_name_to_semseg_class_id=category_name_to_semseg_class_id,
+                output_dir=output_dir,
             )
         )
 
