@@ -51,10 +51,15 @@ class BaseDatasetDriver(Generic[DATA_T], metaclass=abc.ABCMeta):
         return list((None, *cls.SPLITS) | pipe.map(cls.get_dataset_name))
 
     @property
-    @abc.abstractmethod
-    def split_dir(self) -> Path: ...
+    def split_dir(self) -> Path | None:
+        return None
 
     def get_file_names(self, dataset_name: str) -> list[str]:
+        if self.split_dir is None:
+            raise ValueError(
+                f"Split directory not defined for {self.__class__.__name__}"
+            )
+
         split_path: Path = Path(self.split_dir, f"{dataset_name}.txt")
 
         if not split_path.exists():

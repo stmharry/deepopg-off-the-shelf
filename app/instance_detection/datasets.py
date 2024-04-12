@@ -86,6 +86,16 @@ class InstanceDetection(CocoDatasetDriver[InstanceDetectionData]):
 
 
 @dataclasses.dataclass
+class InstanceDetectionRaw(InstanceDetection):
+    PREFIX: ClassVar[str] = "pano_raw"
+    SPLITS: ClassVar[list[str]] = []
+
+    @property
+    def coco_path(self) -> Path:
+        return Path(self.root_dir, "coco", "promaton.json")
+
+
+@dataclasses.dataclass
 class InstanceDetectionV1(InstanceDetection):
     PREFIX: ClassVar[str] = "pano"
     SPLITS: ClassVar[list[str]] = [
@@ -181,6 +191,7 @@ class InstanceDetectionFactory(CocoDatasetFactory[InstanceDetection]):
     @classmethod
     def get_subclasses(cls) -> list[type[InstanceDetection]]:
         return [
+            InstanceDetectionRaw,
             InstanceDetectionV1,
             InstanceDetectionV1NTUH,
             InstanceDetectionOdontoAI,
