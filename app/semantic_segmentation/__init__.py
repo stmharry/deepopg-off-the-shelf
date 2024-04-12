@@ -3,6 +3,7 @@ from app.semantic_segmentation.datasets import (  # type: ignore
     SemanticSegmentationFactory,
     SemanticSegmentationV4,
     SemanticSegmentationV4NTUH,
+    SemanticSegmentationV5,
 )
 from app.semantic_segmentation.schemas import (  # type: ignore
     SemanticSegmentationData,
