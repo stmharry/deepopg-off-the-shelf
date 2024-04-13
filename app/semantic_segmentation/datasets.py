@@ -131,6 +131,16 @@ class SemanticSegmentationV5(SemanticSegmentation):
 
 
 @dataclasses.dataclass
+class SemanticSegmentationV5NTUH(SemanticSegmentationV5):
+    PREFIX: ClassVar[str] = "pano_semseg_v5_ntuh"
+    SPLITS: ClassVar[list[str]] = ["test"]
+
+    @property
+    def coco_path(self) -> Path:
+        return Path(self.root_dir, "coco", "semantic-segmentation-v5-ntuh.json")
+
+
+@dataclasses.dataclass
 class SemanticSegmentationFactory(CocoDatasetFactory[SemanticSegmentation]):
     @classmethod
     def get_subclasses(cls) -> list[type[SemanticSegmentation]]:
@@ -138,4 +148,5 @@ class SemanticSegmentationFactory(CocoDatasetFactory[SemanticSegmentation]):
             SemanticSegmentationV4,
             SemanticSegmentationV4NTUH,
             SemanticSegmentationV5,
+            SemanticSegmentationV5NTUH,
         ]
