@@ -12,3 +12,6 @@
 	path = coco-annotator
 	url = https://github.com/stmharry/coco-annotator.git
 	branch = master
+[submodule "google-health"]
+	path = google-health
+	url = https://github.com/Google-Health/google-health.git
