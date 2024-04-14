@@ -71,6 +71,18 @@ class ScoringMethod(enum.Flag):
         | _USE_SHARE_WITHOUT_BACKGROUND
         | _USE_MISSING_MULTIPLICATION
     )
+
+    SCORE_MUL_SHARE_BG_NOMUL_MISSING = (
+        _USE_SCORE_MULTIPLICATION
+        | _USE_SHARE_WITH_BACKGROUND
+        | _NOUSE_MISSING_MULTIPLICATION
+    )
+    SCORE_MUL_SHARE_NOBG_NOMUL_MISSING = (
+        _USE_SCORE_MULTIPLICATION
+        | _USE_SHARE_WITHOUT_BACKGROUND
+        | _NOUSE_MISSING_MULTIPLICATION
+    )
+
     SHARE_NOBG_NOMUL_MISSING = (
         _USE_SCORE_CONSTANT_ONE
         | _USE_SHARE_WITHOUT_BACKGROUND
@@ -404,14 +416,12 @@ def process_data(
 
             assert isinstance(category_name, str)
 
-            row_results.append(
-                {
-                    "file_name": file_name,
-                    "fdi": category_name.split("_")[-1],
-                    "finding": finding,
-                    "score": score,
-                }
-            )
+            row_results.append({
+                "file_name": file_name,
+                "fdi": category_name.split("_")[-1],
+                "finding": finding,
+                "score": score,
+            })
 
         df_findings.append(df.loc[is_finding])
 
