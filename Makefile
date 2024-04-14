@@ -79,7 +79,7 @@ MAX_OBJS ?= 500
 YOLO_DIR ?= yolo
 
 MISSING_SCORING_METHOD ?= SHARE_NOBG
-FINDING_SCORING_METHOD ?= SCORE_MUL_SHARE_NOBG
+FINDING_SCORING_METHOD ?= SCORE_MUL_SHARE_NOBG_NOMUL_MISSING
 POSTFIX ?= .postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
 
 RESULT_CSV ?= result$(POSTFIX).csv
@@ -158,7 +158,7 @@ convert-ntuh-finding-golden-label:
 	$(RUN_SCRIPT) \
 		--label_csv "$(DATA_DIR)/raw/NTUH/golden_label/(WIP) NTUH Summary Golden Label - Per-study.csv" \
 		--coco "$(DATA_DIR)/raw/NTUH/ntuh-opg-12.json" \
-		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_golden_label.csv" \
+		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_golden_label.v2.csv" \
 		--verbosity $(VERBOSITY)
 
 convert-ntuh-finding-human-label: ROOT_DIR = $(RAW_DIR)
@@ -496,7 +496,7 @@ evaluate-auroc.with-human:
 		--evaluation_dir $(EVALUATION_DIR).with-human \
 		--title "$(DATASET_TITLE)"
 
-compare: IMAGE_HEIGHT ?= 400
+compare: IMAGE_HEIGHT ?= 600
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
 compare: check-ROOT_DIR check-IMAGE_PATTERNS
 	$(RUN_SCRIPT) \
