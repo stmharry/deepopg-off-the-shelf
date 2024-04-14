@@ -45,7 +45,7 @@ class SemanticSegmentation(CocoDatasetDriver[SemanticSegmentationData]):
                 stuff_colors=stuff_colors,
                 ignore_label=0,
                 json_file=self.coco_path,
-                evaluator_type="sem_seg",
+                evaluator_type=None,
             )
 
         return self
