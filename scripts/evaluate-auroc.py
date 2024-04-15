@@ -102,8 +102,6 @@ def calculate_roc_metrics(
     ci_level: float = 0.95,
     ci_method: str = "wilson",
 ) -> pd.DataFrame:
-    label = label[score.sort_values(ascending=True).index]  # type: ignore
-
     tn = label.eq(0).cumsum()
     fn = label.eq(1).cumsum()
     tp = fn.max() - fn
@@ -156,6 +154,7 @@ def calculate_roc_metrics(
     f1_ci_upper = np.minimum(1, f1 + z * np.sqrt(vf1))
 
     return pd.DataFrame.from_dict({
+        "score": score,
         "tp": tp,
         "fp": fp,
         "tn": tn,
@@ -181,7 +180,7 @@ def calculate_roc_metrics(
         "f1": f1,
         "f1_ci_lower": f1_ci_lower,
         "f1_ci_upper": f1_ci_upper,
-    })
+    }).loc[score.index]
 
 
 def calculate_basic_metrics(
@@ -201,7 +200,13 @@ def calculate_basic_metrics(
         "Total Count": p + n,
         "Positive Count": p,
         "Negative Count": n,
-        "AUC": (float(auc), (float(auc_ci[0]), float(auc_ci[1]))),  # type: ignore
+        "AUC": (
+            float(auc),
+            (
+                max(0, float(auc_ci[0])),  # type: ignore
+                min(1, float(auc_ci[1])),  # type: ignore
+            ),
+        ),
     }
 
 
@@ -218,7 +223,7 @@ def compile_binary_metrics(
         0.995,
         0.999,
     ],
-) -> dict[str, dict[str, tuple[float, tuple[float, float]]]]:
+) -> dict[str, dict[str, float | tuple[float, tuple[float, float]]]]:
     tp, fp, tn, fn = (
         df_roc_metric["tp"],
         df_roc_metric["fp"],
@@ -246,11 +251,12 @@ def compile_binary_metrics(
 
     name_to_index["MAX F1"] = f1.idxmax()
 
-    binary_metrics: dict[str, dict[str, tuple[float, tuple[float, float]]]] = {}
+    binary_metrics: dict[str, dict[str, float | tuple[float, tuple[float, float]]]] = {}
     for name, index in name_to_index.items():
         row: pd.Series = df_roc_metric.loc[index]
 
         binary_metrics[name] = {
+            "Threshold": float(row["score"]),
             "Sensitivity": (
                 float(row["tpr"]),
                 (float(row["tpr_ci_lower"]), float(row["tpr_ci_upper"])),
@@ -432,7 +438,7 @@ def evaluate(
     for num, finding in enumerate(Category):
         metadata: CategoryMetadata = CATEGORY_METADATA[finding]
         df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].sort_values(
-            "score"
+            "score", ascending=True
         )
 
         label: pd.Series = df_finding["label"]  # type: ignore
@@ -442,9 +448,9 @@ def evaluate(
         basic_metrics: dict[str, float | tuple[float, tuple[float, float]]] = (
             calculate_basic_metrics(label=label, score=score)
         )
-        binary_metrics: dict[str, dict[str, tuple[float, tuple[float, float]]]] = (
-            compile_binary_metrics(df_roc_metric)
-        )
+        binary_metrics: dict[
+            str, dict[str, float | tuple[float, tuple[float, float]]]
+        ] = compile_binary_metrics(df_roc_metric)
 
         logging.info(f"Finding {finding.value}")
         for name, metric in basic_metrics.items():
@@ -478,9 +484,6 @@ def evaluate(
                 "ppv": report["1"]["precision"],
                 "npv": report["0"]["precision"],
             }
-
-        if finding == Category.IMPLANT:
-            breakpoint()
 
         plot_metric(
             df=df_roc_metric,
@@ -603,17 +606,17 @@ def main(_):
     evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
-    evaluation_csv_path: Path = Path(evaluation_dir, "evaluation.csv")
-    logging.info(f"Saving the evaluation to {evaluation_csv_path}.")
-    df.sort_values(["finding", "score"], ascending=True).to_csv(
-        evaluation_csv_path, index=False
-    )
-
     evaluate(
         df,
         human_tags=list(df_human_by_tag.keys()),
         num_images=len(file_names),
         evaluation_dir=evaluation_dir,
+    )
+
+    evaluation_csv_path: Path = Path(evaluation_dir, "evaluation.csv")
+    logging.info(f"Saving the evaluation to {evaluation_csv_path}.")
+    df.sort_values(["finding", "score"], ascending=True).to_csv(
+        evaluation_csv_path, index=False
     )
 
 
