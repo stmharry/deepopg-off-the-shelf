@@ -41,6 +41,8 @@ def glob(pattern: Path, root_dir: Path | None = None) -> pd.Series:
 
         id_to_path["-".join(match.groups())] = path
 
+    logging.info(f"Found {len(id_to_path)} images for {pattern}")
+
     return pd.Series(id_to_path, name=str(pattern))
 
 
