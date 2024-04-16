@@ -125,6 +125,7 @@ def html(df: pd.DataFrame) -> str:
 def main(_):
     output_html: Path = Path(FLAGS.output_html)
     output_dir: Path = output_html.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     df: pd.DataFrame = pd.concat(
         [glob(Path(pattern), root_dir=output_dir) for pattern in FLAGS.image_patterns],
