@@ -1,5 +1,6 @@
 name: deepopg
 channels:
+  - anaconda
   - nvidia/label/cuda-12.1.1
   - pytorch
   - nvidia/label/cuda-12.1.0
@@ -26,10 +27,10 @@ dependencies:
   - brotli-python=1.0.9=py311h6a678d5_7
   - bzip2=1.0.8=h7b6447c_0
   - c-ares=1.23.0=hd590300_0
-  - ca-certificates=2024.2.2=hbcca054_0
+  - ca-certificates=2024.3.11=h06a4308_0
   - cachetools=5.3.2=pyhd8ed1ab_0
   - cairo=1.16.0=ha61ee94_1014
-  - certifi=2024.2.2=pyhd8ed1ab_0
+  - certifi=2024.2.2=py311h06a4308_0
   - cffi=1.16.0=py311h5eee18b_0
   - charset-normalizer=2.0.4=pyhd3eb1b0_0
   - click=8.1.7=unix_pyh707e725_0
@@ -329,8 +330,9 @@ dependencies:
   - setuptools=68.0.0=py311h06a4308_0
   - shapely=2.0.2=py311h2032efe_1
   - six=1.16.0=pyh6c4a22f_0
+  - snakeviz=2.2.0=py311h06a4308_0
   - sqlite=3.41.2=h5eee18b_0
-  - statsmodels=0.14.0=py311h1f0f07a_2
+  - statsmodels=0.14.1=py311h1f0f07a_0
   - submitit=1.5.1=pyhd8ed1ab_0
   - svt-av1=1.4.1=hcb278e6_0
   - sympy=1.12=pypyh9d50eac_103
@@ -345,11 +347,12 @@ dependencies:
   - tk=8.6.12=h1ccaba5_0
   - torchtriton=2.1.0=py311
   - torchvision=0.16.2=py311_cu121
+  - tornado=6.3.3=py311h5eee18b_0
   - tqdm=4.66.1=pyhd8ed1ab_0
   - typing-extensions=4.7.1=py311h06a4308_0
   - typing_extensions=4.7.1=py311h06a4308_0
   - tzdata=2023c=h04d1e81_0
-  - ultralytics=8.0.222=pyhf3ec037_0
+  - ultralytics=8.1.47=pyh2965483_0
   - unixodbc=2.3.9=h7b6447c_0
   - urllib3=1.26.18=py311h06a4308_0
   - werkzeug=3.0.1=pyhd8ed1ab_0
@@ -384,5 +387,5 @@ dependencies:
   - zlib=1.2.13=hd590300_5
   - zstd=1.5.5=hc292b87_0
   - pip:
+      - confidenceinterval==1.0.3
       - multiscaledeformableattention==1.0
-prefix: /home/chia/anaconda3/envs/deepopg
