@@ -172,7 +172,7 @@ class InstanceDetectionV1NTUH(InstanceDetectionV1):
 @dataclasses.dataclass
 class InstanceDetectionV2(InstanceDetection):
     PREFIX: ClassVar[str] = "pano_insdet_v2"
-    SPLITS: ClassVar[list[str]] = ["train", "eval_v2", "test_v2_1"]
+    SPLITS: ClassVar[list[str]] = ["train", "eval", "eval_v2", "test_v2_1"]
     CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = {
         r"TOOTH_(?P<fdi>\d+)": {
             "category": r"TOOTH",

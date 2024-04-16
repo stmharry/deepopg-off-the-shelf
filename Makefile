@@ -182,12 +182,11 @@ convert-ntuh-finding-human-label:
 
 # insdet
 
-convert-coco-to-instance-detection.v2: ROOT_DIR = $(RAW_DIR)
-convert-coco-to-instance-detection.v2: DATASET_NAME = pano_insdet_v2
-convert-coco-to-instance-detection.v2:
+convert-coco-to-instance-detection: ROOT_DIR = $(RAW_DIR)
+convert-coco-to-instance-detection:
 	$(RUN_SCRIPT) \
 		--data_dir "$(DATA_DIR)" \
-		--dataset_prefix $(DATASET_NAME) \
+		--dataset_prefix $(DATASET_PREFIX) \
 		--coco "$(DATA_DIR)/coco/promaton.json"
 
 # semseg
@@ -325,12 +324,11 @@ debug-deeplab:
 
 ### yolo targets
 
-convert-coco-to-yolo: check-ROOT_DIR check-DATASET_NAME
+convert-coco-to-yolo: check-ROOT_DIR check-DATASET_PREFIX
 convert-coco-to-yolo:
 	$(RUN_SCRIPT) \
 		--data_dir $(DATA_DIR) \
-		--dataset_prefix $(DATASET_NAME) \
-		--yolo_dir $(YOLO_DIR) \
+		--dataset_prefix $(DATASET_PREFIX) \
 		--noforce \
 		--num_workers $(CPUS) \
 		--verbosity $(VERBOSITY)
@@ -360,7 +358,7 @@ train-yolo:
 			cat $(CONFIG_FILE) > $(TMP_FILE) && \
 			echo \
 				"mode: train" \
-				"\ndata: $(DATA_DIR)/yolo/metadata.yaml" \
+				"\ndata: $(DATA_DIR)/yolo/$(DATASET_PREFIX)/metadata.yaml" \
 				"\nproject: $(MODEL_DIR_ROOT)" \
 				"\nname: ./$(MODEL_NAME)" >> $(TMP_FILE) ; \
 	fi && \
@@ -392,7 +390,7 @@ debug-yolo:
 	$(YOLO_TRAIN) \
 		cfg="$(CONFIG_FILE)" \
 		mode=train \
-		data="$(DATA_DIR)/yolo/metadata.yaml" \
+		data="$(DATA_DIR)/yolo/$(DATASET_PREFIX)/metadata.yaml" \
 		project="$(MODEL_DIR_ROOT)" \
 		name="./$(MODEL_NAME)" \
 		cache=false \
