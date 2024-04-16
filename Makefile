@@ -24,7 +24,7 @@ NEW_NAME ?= $(shell date "+%Y-%m-%d-%H%M%S")
 ### executables
 
 CUDA_VISIBLE_DEVICES ?= 0
-PYTHONPATH ?= ./detectron2:./MaskDINO
+PYTHONPATH ?= ./detectron2:./MaskDINO:./google-health/analysis
 PYTHON ?= python
 PY ?= \
 	CUDA_VISIBLE_DEVICES=$(CUDA_VISIBLE_DEVICES) \
@@ -133,6 +133,15 @@ prof2png:
 		-f pstats	$(CPROFILE_OUT) | \
 		$(DOT) -T png -o $(DOT_OUT)
 
+snakeviz: HOST = 0.0.0.0
+snakeviz: PORT ?= 1235
+snakeviz:
+	$(PYTHON) -m snakeviz \
+		--hostname $(HOST)  \
+		--port $(PORT) \
+		--server \
+		$(CPROFILE_OUT)
+
 ### data preprocessing targets
 
 convert-promaton-to-coco: ROOT_DIR = $(RAW_DIR)
@@ -143,6 +152,8 @@ convert-promaton-to-coco:
 		--output_coco "$(DATA_DIR)/coco/promaton.1.json" \
 		--num_workers $(CPUS) \
 		--verbosity $(VERBOSITY)
+
+# annotation
 
 convert-ntuh-coco-golden-label: ROOT_DIR = $(RAW_DIR)
 convert-ntuh-coco-golden-label: check-RAW_DIR
@@ -169,9 +180,21 @@ convert-ntuh-finding-human-label:
 		--output_csv "$(DATA_DIR)/csvs/pano_ntuh_human_label_{}.csv" \
 		--verbosity $(VERBOSITY)
 
-convert-coco-to-detectron2-semseg-v5: MASK_DIR = masks/segmentation-v5
-convert-coco-to-detectron2-semseg-v5: DATASET_NAME = pano_raw
-convert-coco-to-detectron2-semseg-v5:
+# insdet
+
+convert-coco-to-instance-detection.v2: ROOT_DIR = $(RAW_DIR)
+convert-coco-to-instance-detection.v2: DATASET_NAME = pano_insdet_v2
+convert-coco-to-instance-detection.v2:
+	$(RUN_SCRIPT) \
+		--data_dir "$(DATA_DIR)" \
+		--dataset_prefix $(DATASET_NAME) \
+		--coco "$(DATA_DIR)/coco/promaton.json"
+
+# semseg
+
+convert-coco-to-detectron2-semseg.v5: MASK_DIR = masks/segmentation-v5
+convert-coco-to-detectron2-semseg.v5: DATASET_NAME = pano_raw
+convert-coco-to-detectron2-semseg.v5:
 	$(MAKE) convert-coco-to-detectron2-semseg \
 		MASK_DIR=$(MASK_DIR) \
 		DATASET_NAME=$(DATASET_NAME)
@@ -438,6 +461,8 @@ postprocess.gt-all:
 		--num_workers $(CPUS)
 
 visualize: --check-COMMON
+visualize: POSTFIX =
+visualize: MIN_SCORE = 0.01
 visualize:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
@@ -445,7 +470,7 @@ visualize:
 		--visualize_dir $(VISUALIZE_DIR) \
 		--visualize_subset \
 		--min_score $(MIN_SCORE) \
-		--force \
+		--noforce \
 		--num_workers $(CPUS)
 
 visualize.gt: --check-COMMON

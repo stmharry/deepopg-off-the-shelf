@@ -8,13 +8,14 @@ from app.finding_summary import FindingLabel, FindingLabelList
 from app.instance_detection import InstanceDetection, InstanceDetectionFactory
 
 flags.DEFINE_string("data_dir", "./data", "Data directory.")
-flags.DEFINE_enum("dataset_prefix", "pano", ["pano"], "Dataset prefix.")
-flags.DEFINE_string("coco", "./data/coco/promaton.json", "Input coco json file.")
-flags.DEFINE_string(
-    "output_golden_label",
-    "./data/csvs/promaton-category-labels.csv",
-    "Output golden label csv file path.",
+flags.DEFINE_enum(
+    "dataset_prefix",
+    "pano",
+    InstanceDetectionFactory.available_dataset_prefixes(),
+    "Dataset prefix.",
 )
+flags.DEFINE_string("coco", "./data/coco/promaton.json", "Input coco json file.")
+flags.DEFINE_string("output_golden_label", None, "Output golden label csv file path.")
 FLAGS = flags.FLAGS
 
 
@@ -81,17 +82,21 @@ def convert_to_finding_labels(
 
 def main(_):
     data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
-        dataset_name=FLAGS.dataset_prefix, root_dir=FLAGS.data_dir
+        dataset_name=FLAGS.dataset_prefix,
+        root_dir=FLAGS.data_dir,
+        into_detectron2_catalog=False,
     )
     if data_driver.CATEGORY_NAME_TO_MAPPINGS is None:
         logging.error(
-            f"InstanceDetection {data_driver.__class__.__name__} does not have CATEGORY_NAME_TO_MAPPINGS!"
+            f"InstanceDetection {data_driver.__class__.__name__} does not have"
+            " CATEGORY_NAME_TO_MAPPINGS!"
         )
         return
 
     if data_driver.coco_path is None:
         logging.error(
-            f"InstanceDetection {data_driver.__class__.__name__} does not have a coco_path!"
+            f"InstanceDetection {data_driver.__class__.__name__} does not have a"
+            " coco_path!"
         )
         return
 
@@ -109,10 +114,11 @@ def main(_):
         coco_path=Path(data_driver.coco_path),
     )
 
-    convert_to_finding_labels(
-        coco,
-        category_id_to_mapped=category_id_to_mapped,
-    )
+    if FLAGS.output_golden_label is not None:
+        convert_to_finding_labels(
+            coco,
+            category_id_to_mapped=category_id_to_mapped,
+        )
 
 
 if __name__ == "__main__":

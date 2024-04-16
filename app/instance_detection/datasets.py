@@ -170,6 +170,62 @@ class InstanceDetectionV1NTUH(InstanceDetectionV1):
 
 
 @dataclasses.dataclass
+class InstanceDetectionV2(InstanceDetection):
+    PREFIX: ClassVar[str] = "pano_insdet_v2"
+    SPLITS: ClassVar[list[str]] = ["train", "eval_v2", "test_v2_1"]
+    CATEGORY_NAME_TO_MAPPINGS: ClassVar[dict[str, dict[str, str]] | None] = {
+        r"TOOTH_(?P<fdi>\d+)": {
+            "category": r"TOOTH",
+            "fdi": r"\g<fdi>",
+        },
+        r"DENTAL_IMPLANT_(?P<fdi>\d+)": {
+            "category": "IMPLANT",
+            "fdi": r"\g<fdi>",
+        },
+        r"ROOT_REMNANTS_(?P<fdi>\d+)": {
+            "category": "ROOT_REMNANTS",
+            "fdi": r"\g<fdi>",
+        },
+        r"METAL_CROWN_(?P<fdi>\d+)": {
+            "category": "CROWN_BRIDGE",
+            "fdi": r"\g<fdi>",
+        },
+        r"NON_METAL_CROWN_(?P<fdi>\d+)": {
+            "category": "CROWN_BRIDGE",
+            "fdi": r"\g<fdi>",
+        },
+        r"METAL_FILLING_(?P<fdi>\d+)": {
+            "category": "FILLING",
+            "fdi": r"\g<fdi>",
+        },
+        r"NON_METAL_FILLING_(?P<fdi>\d+)": {
+            "category": "FILLING",
+            "fdi": r"\g<fdi>",
+        },
+        r"ROOT_CANAL_FILLING_(?P<fdi>\d+)": {
+            "category": "ENDO",
+            "fdi": r"\g<fdi>",
+        },
+        r"CARIES_(?P<fdi>\d+)": {
+            "category": "CARIES",
+            "fdi": r"\g<fdi>",
+        },
+        r"PERIAPICAL_RADIOLUCENT_(?P<fdi>\d+)": {
+            "category": "PERIAPICAL_RADIOLUCENT",
+            "fdi": r"\g<fdi>",
+        },
+    }
+
+    @property
+    def split_dir(self) -> Path:
+        return Path(self.root_dir, "splits", "instance-detection-v2")
+
+    @property
+    def coco_path(self) -> Path:
+        return Path(self.root_dir, "coco", "instance-detection-v2-promaton.json")
+
+
+@dataclasses.dataclass
 class InstanceDetectionOdontoAI(InstanceDetection):
     PREFIX: ClassVar[str] = "pano_odontoai"
     SPLITS: ClassVar[list[str]] = ["train", "val", "test"]
@@ -195,4 +251,5 @@ class InstanceDetectionFactory(CocoDatasetFactory[InstanceDetection]):
             InstanceDetectionV1,
             InstanceDetectionV1NTUH,
             InstanceDetectionOdontoAI,
+            InstanceDetectionV2,
         ]

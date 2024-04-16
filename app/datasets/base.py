@@ -78,18 +78,30 @@ class BaseDatasetFactory(Generic[DRIVER_T]):
     @overload
     @classmethod
     def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[False] = ...
+        cls,
+        dataset_name: str,
+        root_dir: Path,
+        allow_missing: Literal[False] = ...,
+        into_detectron2_catalog: bool = ...,
     ) -> DRIVER_T: ...
 
     @overload
     @classmethod
     def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: Literal[True] = ...
+        cls,
+        dataset_name: str,
+        root_dir: Path,
+        allow_missing: Literal[True] = ...,
+        into_detectron2_catalog: bool = ...,
     ) -> DRIVER_T | None: ...
 
     @classmethod
     def register_by_name(
-        cls, dataset_name: str, root_dir: Path, allow_missing: bool = False
+        cls,
+        dataset_name: str,
+        root_dir: Path,
+        allow_missing: bool = False,
+        into_detectron2_catalog: bool = True,
     ) -> DRIVER_T | None:
         data_driver: DRIVER_T | None = None
 
@@ -101,12 +113,19 @@ class BaseDatasetFactory(Generic[DRIVER_T]):
             if dataset_name in DatasetCatalog.list():
                 logging.warning(f"Dataset {dataset_name!s} already registered!")
 
-            data_driver = subclass.register(root_dir=root_dir)
+            if into_detectron2_catalog:
+                data_driver = subclass.register(root_dir=root_dir)
+            else:
+                data_driver = subclass(root_dir=root_dir)
 
         if (not allow_missing) and (data_driver is None):
             raise ValueError(f"Dataset {dataset_name} not found.")
 
         return data_driver
+
+    @classmethod
+    def available_dataset_prefixes(cls) -> list[str]:
+        return list(cls.get_subclasses() | pipe.map(lambda subclass: subclass.PREFIX))
 
     @classmethod
     def available_dataset_names(cls) -> list[str]:
