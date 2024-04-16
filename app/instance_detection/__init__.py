@@ -5,6 +5,7 @@ from app.instance_detection.datasets import (  # type: ignore
     InstanceDetectionRaw,
     InstanceDetectionV1,
     InstanceDetectionV1NTUH,
+    InstanceDetectionV2,
 )
 from app.instance_detection.schemas import (  # type: ignore
     InstanceDetectionAnnotation,

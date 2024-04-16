@@ -250,6 +250,6 @@ class InstanceDetectionFactory(CocoDatasetFactory[InstanceDetection]):
             InstanceDetectionRaw,
             InstanceDetectionV1,
             InstanceDetectionV1NTUH,
-            InstanceDetectionOdontoAI,
             InstanceDetectionV2,
+            InstanceDetectionOdontoAI,
         ]
