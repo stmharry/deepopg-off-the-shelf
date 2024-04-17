@@ -36,6 +36,9 @@ def process_data(
     image_name: str = data.file_name.stem
     label_file_path: Path = Path(FLAGS.result_dir, "labels", f"{image_name}.txt")
 
+    if not label_file_path.exists():
+        return InstanceDetectionPrediction(image_id=data.image_id, instances=[])
+
     instances: list[InstanceDetectionPredictionInstance] = []
     with open(label_file_path, "r") as f:
         for line in f:
@@ -63,8 +66,7 @@ def process_data(
             # three points are needed to form a polygon
             if len(polygon) < 6:
                 logging.info(
-                    f"No polygon found in line from {label_file_path!s}:"
-                    f" {line.strip()}"
+                    f"No polygon found in line from {label_file_path!s}: {line.strip()}"
                 )
                 continue
 
