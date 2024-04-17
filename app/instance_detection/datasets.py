@@ -226,6 +226,16 @@ class InstanceDetectionV2(InstanceDetection):
 
 
 @dataclasses.dataclass
+class InstanceDetectionV2NTUH(InstanceDetectionV2):
+    PREFIX: ClassVar[str] = "pano_insdet_v2_ntuh"
+    SPLITS: ClassVar[list[str]] = ["test_v2", "test_v2_1"]
+
+    @property
+    def coco_path(self) -> Path:
+        return Path(self.root_dir, "coco", "instance-detection-v2-ntuh.json")
+
+
+@dataclasses.dataclass
 class InstanceDetectionOdontoAI(InstanceDetection):
     PREFIX: ClassVar[str] = "pano_odontoai"
     SPLITS: ClassVar[list[str]] = ["train", "val", "test"]
@@ -251,5 +261,6 @@ class InstanceDetectionFactory(CocoDatasetFactory[InstanceDetection]):
             InstanceDetectionV1,
             InstanceDetectionV1NTUH,
             InstanceDetectionV2,
+            InstanceDetectionV2NTUH,
             InstanceDetectionOdontoAI,
         ]
