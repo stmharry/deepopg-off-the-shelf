@@ -76,8 +76,6 @@ MIN_SCORE ?= 0.0001
 MIN_IOU ?= 0.7
 MAX_OBJS ?= 500
 
-YOLO_DIR ?= yolo
-
 MISSING_SCORING_METHOD ?= SHARE_NOBG
 FINDING_SCORING_METHOD ?= SCORE_MUL_SHARE_NOBG_NOMUL_MISSING
 POSTFIX ?= .postprocessed-with-$(SEMSEG_RESULT_NAME).missing-scoring-$(MISSING_SCORING_METHOD).finding-scoring-$(FINDING_SCORING_METHOD)
@@ -347,7 +345,7 @@ convert-yolo-labels-to-detectron2-prediction-pt:
 train-yolo: MODEL_NAME ?= $(NEW_NAME)
 train-yolo: CONFIG_NAME ?= yolov8m-seg.yaml
 train-yolo: TMP_FILE := $(shell mktemp --suffix=.yaml)
-train-yolo: check-ROOT_DIR
+train-yolo: check-ROOT_DIR check-DATASET_PREFIX
 train-yolo:
 	if [ -d $(MODEL_DIR) ]; then \
 		cat $(MODEL_DIR)/config.yaml > $(TMP_FILE) && \
@@ -360,7 +358,8 @@ train-yolo:
 				"mode: train" \
 				"\ndata: $(DATA_DIR)/yolo/$(DATASET_PREFIX)/metadata.yaml" \
 				"\nproject: $(MODEL_DIR_ROOT)" \
-				"\nname: ./$(MODEL_NAME)" >> $(TMP_FILE) ; \
+				"\nname: ./$(MODEL_NAME)" \
+				"\nexist_ok: true" >> $(TMP_FILE) ; \
 	fi && \
 		$(YOLO_TRAIN) cfg="$(TMP_FILE)"
 
@@ -369,17 +368,21 @@ test-yolo: MODEL_CHECKPOINT ?= $(LATEST_MODEL_YOLO)
 test-yolo: check-ROOT_DIR check-RESULT_NAME check-DATASET_NAME
 test-yolo:
 	$(YOLO_PREDICT) \
-		source="$(DATA_DIR)/$(YOLO_DIR)/$(DATASET_NAME).txt" \
+		source="$(DATA_DIR)/yolo/$(DATASET_PREFIX)/$(DATASET_NAME).txt" \
 		project="$(RESULT_DIR_ROOT)" \
 		name="./$(RESULT_NAME)" \
 		model="$(MODEL_DIR)/$(MODEL_CHECKPOINT)" \
+		device=$(DEVICE) \
 		exist_ok=True \
 		conf=$(MIN_SCORE) \
 		iou=$(MIN_IOU) \
 		max_det=$(MAX_OBJS) \
-		save=False \
+		retina_masks=False \
 		save_txt=True \
-		save_conf=True
+		save_conf=True \
+		save=False \
+		show_labels=True \
+		line_width=1
 
 debug-yolo: PYTHON = python -m pdb
 debug-yolo: MODEL_DIR_ROOT = /tmp/debug
@@ -505,19 +508,19 @@ evaluate-auroc:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
 		--csv $(RESULT_CSV) \
-		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_PREFIX)_golden_label.csv" \
+		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
-		--title "$(DATASET_TITLE)"
+		--title "Dental Findings (AI) – $(DATASET_TITLE)"
 
 evaluate-auroc.with-human: --check-COMMON
 evaluate-auroc.with-human:
 	$(RUN_SCRIPT) \
 		$(COMMON_ARGS) \
 		--csv $(RESULT_CSV) \
-		--golden_csv_path "$(DATA_DIR)/csvs/$(DATASET_PREFIX)_golden_label.csv" \
-		--human_csv_path "$(DATA_DIR)/csvs/$(DATASET_PREFIX)_human_label_{}.csv" \
+		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
+		--human_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
-		--title "$(DATASET_TITLE)"
+		--title "Dental Findings (AI v.s. Reader) – $(DATASET_TITLE)"
 
 compare: IMAGE_HEIGHT ?= 600
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
