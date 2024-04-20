@@ -129,10 +129,11 @@ dmypy.json
 .pyre/
 
 # Custom
-run.sh
 data
 models
 results
 
 pytorch-image-models/
+YOLOv8/
+datasets/
 yolo*.pt
