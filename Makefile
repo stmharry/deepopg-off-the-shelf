@@ -91,7 +91,7 @@ SEMSEG_PREDICTION ?= inference/sem_seg_predictions.json
 
 CPROFILE_OUT ?= profile.out
 
-ifneq ($(DEBUG),false)
+ifneq ($(DEBUG),)
 	CPUS = 0
 	VERBOSITY = 1
 endif
@@ -520,7 +520,9 @@ evaluate-auroc.with-human:
 		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
 		--human_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
-		--title "Dental Findings (AI v.s. Reader) – $(DATASET_TITLE)"
+		--nosave_metrics \
+		--plot \
+		--plot_title "Dental Findings (AI v.s. Reader) – $(DATASET_TITLE)"
 
 compare: IMAGE_HEIGHT ?= 600
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html

@@ -1,10 +1,10 @@
+import itertools
 import math
 import warnings
 from pathlib import Path
 from typing import Any, TypedDict
 
 import confidenceinterval
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -13,6 +13,7 @@ import sklearn.metrics
 from absl import app, flags, logging
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from reader_study import model_vs_readers_orh
 from statsmodels.stats.proportion import proportion_confint
@@ -42,9 +43,11 @@ flags.DEFINE_string(
 flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
 
+flags.DEFINE_boolean("save_metrics", True, "Calculate and save metrics.")
+
 flags.DEFINE_boolean("plot", True, "Plot ROC and PR curves.")
 flags.DEFINE_integer("plot_ax_per_row", 4, "Number of plots per row.")
-flags.DEFINE_float("plot_size", 3, "Size per plot pane in inches.")
+flags.DEFINE_float("plot_size", 3.0, "Size per plot pane in inches.")
 flags.DEFINE_string("plot_title", None, "Title of the plot.")
 
 FLAGS = flags.FLAGS
@@ -57,9 +60,9 @@ class OperatingPointMetadata(TypedDict):
 
 
 OPERATING_POINT_METADATA: dict[str, OperatingPointMetadata] = {
-    "ai@max_f1": {"color": "black", "marker": "o", "title": "AI System"},
-    "ai@max_f1_5": {"color": "black", "marker": "o", "title": "AI System"},
-    "ai@max_f2": {"color": "black", "marker": "o", "title": "AI System"},
+    "ai@max_f1": {"color": "black", "marker": "o", "title": "AI Operating Point"},
+    "ai@max_f1_5": {"color": "black", "marker": "o", "title": "AI Operating Point"},
+    "ai@max_f2": {"color": "black", "marker": "o", "title": "AI Operating Point"},
     "A": {"color": "blue", "marker": "D", "title": "Expert 1"},
     "C": {"color": "green", "marker": "s", "title": "Expert 2"},
     "D": {"color": "red", "marker": "^", "title": "Expert 3"},
@@ -71,21 +74,67 @@ HUMAN_TAGS: list[str] = ["A", "C", "D", "E"]
 
 class CategoryMetadata(TypedDict):
     color: str | tuple[float, ...]
+    bbox_to_anchor: tuple[float, float, float, float]
+    inset_xlim: tuple[float, float]
+    inset_ylim: tuple[float, float]
     title: str
 
 
-CMAP = mpl.colormaps.get_cmap("tab10")
-
 CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
-    Category.MISSING: {"color": CMAP(0), "title": "Missing"},
-    Category.IMPLANT: {"color": CMAP(2), "title": "Implant"},
-    Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Residual root"},
-    Category.CROWN_BRIDGE: {"color": CMAP(3), "title": "Crown/bridge"},
-    Category.ENDO: {"color": CMAP(5), "title": "Root canal filling"},
-    Category.FILLING: {"color": CMAP(4), "title": "Filling"},
-    Category.CARIES: {"color": CMAP(7), "title": "Caries"},
+    Category.MISSING: {
+        "color": "navy",
+        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "inset_xlim": (0.00, 0.05),
+        "inset_ylim": (0.84, 0.94),
+        "title": "Missing",
+    },
+    Category.IMPLANT: {
+        "color": "navy",
+        "bbox_to_anchor": (0.30, 0.15, 0.65, 0.65),
+        "inset_xlim": (0.00, 0.05),
+        "inset_ylim": (0.90, 1.00),
+        "title": "Implant",
+    },
+    Category.ROOT_REMNANTS: {
+        "color": "navy",
+        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "inset_xlim": (0.00, 0.05),
+        "inset_ylim": (0.30, 0.80),
+        "title": "Residual root",
+    },
+    Category.CROWN_BRIDGE: {
+        "color": "navy",
+        "bbox_to_anchor": (0.30, 0.15, 0.65, 0.65),
+        "inset_xlim": (0.00, 0.05),
+        "inset_ylim": (0.90, 1.00),
+        "title": "Crown/bridge",
+    },
+    Category.ENDO: {
+        "color": "navy",
+        "bbox_to_anchor": (0.30, 0.15, 0.65, 0.65),
+        "inset_xlim": (0.00, 0.05),
+        "inset_ylim": (0.85, 1.00),
+        "title": "Root canal filling",
+    },
+    Category.FILLING: {
+        "color": "navy",
+        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "inset_xlim": (0.00, 0.10),
+        "inset_ylim": (0.60, 0.90),
+        "title": "Filling",
+    },
+    Category.CARIES: {
+        "color": "navy",
+        "inset_xlim": (0.00, 0.10),
+        "bbox_to_anchor": (0.45, 0.15, 0.5, 0.5),
+        "inset_ylim": (0.20, 0.65),
+        "title": "Caries",
+    },
     Category.PERIAPICAL_RADIOLUCENT: {
-        "color": CMAP(8),
+        "color": "navy",
+        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "inset_xlim": (0.00, 0.05),
+        "inset_ylim": (0.10, 0.95),
         "title": "Periapical radiolucency",
     },
 }
@@ -210,6 +259,32 @@ def calculate_roc_metrics(
     return pd.DataFrame.from_dict(roc_metrics).loc[score.index]
 
 
+def calculate_cohen_kappa_metrics(
+    label1: pd.Series,
+    label2: pd.Series,
+    ci_level: float = 0.95,
+    ci_method: str = "mchugh",
+) -> dict[str, float]:
+    confusion_matrix = sklearn.metrics.confusion_matrix(label1, label2, normalize="all")
+    po = np.diag(confusion_matrix).sum()
+    pe = np.sum(confusion_matrix.sum(axis=0) * confusion_matrix.sum(axis=1))
+    k = (po - pe) / (1 - pe)
+
+    N = len(label1)
+
+    vk = (po * (1 - po)) / (N * (1 - pe) ** 2)
+    alpha = 1 - ci_level
+    z = scipy.stats.norm.ppf(1 - alpha / 2)
+    k_ci_lower = np.maximum(0, k - z * np.sqrt(vk))
+    k_ci_upper = np.minimum(1, k + z * np.sqrt(vk))
+
+    return {
+        "kappa.value": k,
+        "kappa.ci_lower": k_ci_lower,
+        "kappa.ci_upper": k_ci_upper,
+    }
+
+
 def calculate_basic_metrics(
     label: pd.Series,
     score: pd.Series,
@@ -327,54 +402,26 @@ def plot_metric(
     y_ci_upper: str,
     color: str | tuple[float, ...],
     ax: Axes,
+    padding: float = 0.1,
     xlabel: str | None = None,
     ylabel: str | None = None,
     title: str | None = None,
     use_inset: bool = False,
+    bbox_to_anchor: tuple[float, float, float, float] = (0.45, 0.15, 0.5, 0.5),
+    inset_xlim: tuple[float, float] = (0.0, 1.0),
+    inset_ylim: tuple[float, float] = (0.0, 1.0),
+    show_grid: bool = False,
     show_diagnoal: bool = False,
 ) -> Axes:
-    axes_to_plot_data: list[Axes] = [ax]
 
-    if use_inset and len(report_by_tag):
-        inset_ax: Axes = inset_axes(
-            ax,
-            width="100%",
-            height="100%",
-            bbox_to_anchor=(0.45, 0.15, 0.5, 0.5),
-            bbox_transform=ax.transAxes,
-        )
-        axes_to_plot_data.append(inset_ax)
-
-        x_values: list[float] = [report[x] for report in report_by_tag.values()]
-        x_max: float = max(x_values)
-        x_min: float = min(x_values)
-
-        y_values: list[float] = [report[y] for report in report_by_tag.values()]
-        y_max: float = max(y_values)
-        y_min: float = min(y_values)
-
-        min_width = 0.025
-        min_height = 0.025
-        padding = 0.025
-
-        width = max(min_width, x_max - x_min)
-        height = max(min_height, y_max - y_min)
-
-        inset_ax.set_xlim(
-            (x_min + x_max) / 2 - width / 2 - padding,
-            (x_min + x_max) / 2 + width / 2 + padding,
-        )
-        inset_ax.set_ylim(
-            (y_min + y_max) / 2 - height / 2 - padding,
-            (y_min + y_max) / 2 + height / 2 + padding,
+    if show_grid:
+        ax.grid(
+            visible=True,
+            which="major",
+            linestyle="--",
+            linewidth=0.5,
         )
 
-    ax.grid(
-        visible=True,
-        which="major",
-        linestyle="--",
-        linewidth=0.5,
-    )
     if show_diagnoal:
         ax.plot(
             [0, 1],
@@ -384,7 +431,59 @@ def plot_metric(
             linewidth=0.75,
         )
 
-    for _ax in axes_to_plot_data:
+    inset_ax: Axes | None = None
+    if use_inset and len(report_by_tag):
+        inset_ax = inset_axes(
+            ax,
+            width="100%",
+            height="100%",
+            bbox_to_anchor=bbox_to_anchor,
+            bbox_transform=ax.transAxes,
+        )
+        assert inset_ax is not None
+
+    axes = [ax] if (inset_ax is None) else [inset_ax, ax]
+    for _ax in axes:
+        if _ax is ax:
+            xlim = (0, 1)
+            ylim = (0, 1)
+            tick_fontsize = "medium"
+
+        elif _ax is inset_ax:
+            xlim = inset_xlim
+            ylim = inset_ylim
+            tick_fontsize = "small"
+
+        else:
+            raise ValueError("Invalid axis.")
+
+        intervals = [0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
+        xlim_padded = (
+            xlim[0] - (xlim[1] - xlim[0]) * padding,
+            xlim[1] + (xlim[1] - xlim[0]) * padding,
+        )
+        xinterval = min(filter(lambda v: v >= (xlim[1] - xlim[0]) / 5, intervals))
+        xticks = np.arange(xlim[0], xlim[1] + 1e-5, xinterval)
+
+        ylim_padded = (
+            ylim[0] - (ylim[1] - ylim[0]) * padding,
+            ylim[1] + (ylim[1] - ylim[0]) * padding,
+        )
+        yinterval = min(filter(lambda v: v >= (ylim[1] - ylim[0]) / 5, intervals))
+        yticks = np.arange(ylim[0], ylim[1] + 1e-5, yinterval)
+
+        if _ax is inset_ax:
+            # yes, add in main ax
+            ax.add_patch(
+                Rectangle(
+                    xy=(xlim_padded[0], ylim_padded[0]),
+                    width=xlim_padded[1] - xlim_padded[0],
+                    height=ylim_padded[1] - ylim_padded[0],
+                    facecolor="slategray",
+                    alpha=0.1,
+                )
+            )
+
         _ax.fill_between(
             df[x],
             df[y_ci_lower],
@@ -414,13 +513,21 @@ def plot_metric(
                 label=metadata["title"],
             )
 
-    xticks: np.ndarray = np.linspace(0, 1, 6)
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(["{:,.0%}".format(v) for v in xticks])
+        _ax.set_xlim(*xlim_padded)
+        _ax.set_ylim(*ylim_padded)
 
-    yticks: np.ndarray = np.linspace(0, 1, 6)
-    ax.set_yticks(yticks)
-    ax.set_yticklabels(["{:,.0%}".format(v) for v in yticks])
+        _ax.set_xticks(xticks)
+        _ax.set_xticklabels(
+            ["{:,.0%}".format(v) for v in xticks], fontsize=tick_fontsize
+        )
+
+        _ax.set_yticks(yticks)
+        _ax.set_yticklabels(
+            ["{:,.0%}".format(v) for v in yticks], fontsize=tick_fontsize
+        )
+
+        _ax.spines["right"].set_visible(False)
+        _ax.spines["top"].set_visible(False)
 
     if xlabel is not None:
         ax.set_xlabel(xlabel)
@@ -449,10 +556,13 @@ def evaluate(
             nrows=num_rows,
             ncols=num_columns,
             sharey=True,
-            figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 0.5) * num_rows),
+            figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 1.0) * num_rows),
             layout="constrained",
             dpi=300,
         )
+        engine = fig.get_layout_engine()
+        engine.set(hspace=0.05, rect=[0, 0.025, 1, 0.95])
+
         figs[name] = fig
 
     metrics: list[dict] = []
@@ -513,7 +623,22 @@ def evaluate(
                 "npv": report["0"]["precision"],
             }
 
-        if human_tags:
+        if FLAGS.save_metrics and (len(human_tags) > 0):
+            for tag1, tag2 in itertools.combinations(human_tags, 2):
+                kappa_metrics = calculate_cohen_kappa_metrics(
+                    label1=df_finding[f"score_human_{tag1}"],  # type: ignore
+                    label2=df_finding[f"score_human_{tag2}"],  # type: ignore
+                )
+
+                metrics.extend([
+                    {
+                        "finding": finding.value,
+                        "metric": f"{metric_name}@{tag1}-{tag2}",
+                        "value": metric,
+                    }
+                    for metric_name, metric in kappa_metrics.items()
+                ])
+
             # we don't use sklearn here as it's too slow
             sensitivity_fn = lambda y_true, y_pred: np.sum(y_true * y_pred) / np.sum(
                 y_true
@@ -526,6 +651,7 @@ def evaluate(
             reader_scores = df_finding[
                 [f"score_human_{tag}" for tag in human_tags]
             ].values
+
             for operating_point in ["max_f1", "max_f1_5", "max_f2"]:
                 binary_metric = binary_metrics[operating_point]
 
@@ -590,6 +716,21 @@ def evaluate(
                             },
                         ])
 
+                for tag in human_tags:
+                    kappa_metrics = calculate_cohen_kappa_metrics(
+                        label1=df_finding[f"score_human_{tag}"],  # type: ignore
+                        label2=model_score,  # type: ignore
+                    )
+
+                    metrics.extend([
+                        {
+                            "finding": finding.value,
+                            "metric": f"{metric_name}@{tag}@{operating_point}",
+                            "value": metric,
+                        }
+                        for metric_name, metric in kappa_metrics.items()
+                    ])
+
         if FLAGS.plot:
             plot_metric(
                 df=df_roc_metric,
@@ -602,8 +743,11 @@ def evaluate(
                 ylabel="Sensitivity" if num % num_columns == 0 else None,
                 color=metadata["color"],
                 title=metadata["title"],
+                use_inset=True,
+                bbox_to_anchor=metadata["bbox_to_anchor"],
+                inset_xlim=metadata["inset_xlim"],
+                inset_ylim=metadata["inset_ylim"],
                 ax=figs["roc-curve"].axes[num],
-                show_diagnoal=True,
             )
 
             plot_metric(
@@ -620,17 +764,20 @@ def evaluate(
                 ax=figs["precision-recall-curve"].axes[num],
             )
 
-    metric_path: Path = Path(evaluation_dir, "metrics.csv")
-    logging.info(f"Saving the metrics to {metric_path}.")
-    pd.DataFrame(metrics).to_csv(metric_path, index=False)
+    if FLAGS.save_metrics:
+        metric_path: Path = Path(evaluation_dir, "metrics.csv")
+        logging.info(f"Saving the metrics to {metric_path}.")
+        pd.DataFrame(metrics).to_csv(metric_path, index=False)
 
     if FLAGS.plot:
         for name, fig in figs.items():
+
             first_ax: Axes = fig.axes[0]
             fig.legend(
                 handles=first_ax.lines,
                 loc="outside lower center",
                 ncols=len(first_ax.lines),
+                frameon=False,
                 fontsize="small",
             )
 
