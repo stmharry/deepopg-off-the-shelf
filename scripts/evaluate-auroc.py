@@ -14,6 +14,7 @@ from absl import app, flags, logging
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from reader_study import model_vs_readers_orh
 from statsmodels.stats.proportion import proportion_confint
 
 from app.instance_detection import (
@@ -40,24 +41,32 @@ flags.DEFINE_string(
 )
 flags.DEFINE_string("human_csv_path", None, "Expert csv file path.")
 flags.DEFINE_string("evaluation_dir", "evaluation", "Evaluation directory.")
-flags.DEFINE_integer("plots_per_row", 4, "Number of plots per row.")
-flags.DEFINE_integer("plot_size", 3, "Size per plot pane in inches.")
-flags.DEFINE_string("title", None, "PlotPlot  ")
+
+flags.DEFINE_boolean("plot", True, "Plot ROC and PR curves.")
+flags.DEFINE_integer("plot_ax_per_row", 4, "Number of plots per row.")
+flags.DEFINE_float("plot_size", 3, "Size per plot pane in inches.")
+flags.DEFINE_string("plot_title", None, "Title of the plot.")
+
 FLAGS = flags.FLAGS
 
 
-class HumanMetadata(TypedDict):
+class OperatingPointMetadata(TypedDict):
     color: str | tuple[float, ...]
     marker: str
     title: str
 
 
-HUMAN_METADATA: dict[str, HumanMetadata] = {
+OPERATING_POINT_METADATA: dict[str, OperatingPointMetadata] = {
+    "ai@max_f1": {"color": "black", "marker": "o", "title": "AI System"},
+    "ai@max_f1_5": {"color": "black", "marker": "o", "title": "AI System"},
+    "ai@max_f2": {"color": "black", "marker": "o", "title": "AI System"},
     "A": {"color": "blue", "marker": "D", "title": "Expert 1"},
     "C": {"color": "green", "marker": "s", "title": "Expert 2"},
     "D": {"color": "red", "marker": "^", "title": "Expert 3"},
     "E": {"color": "purple", "marker": "v", "title": "Expert 4"},
 }
+
+HUMAN_TAGS: list[str] = ["A", "C", "D", "E"]
 
 
 class CategoryMetadata(TypedDict):
@@ -129,31 +138,7 @@ def calculate_roc_metrics(
         tn, tn + fn, alpha=1 - ci_level, method=ci_method
     )
 
-    # "takahashi" method
-    # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8936911/#APP1
-
-    f1 = (2 * tp) / (2 * tp + fp + fn)
-    c = np.c_[tn, fp, fn, tp]
-    df1_dc = np.c_[
-        np.zeros_like(f1),
-        -f1 / (2 * tp + fp + fn),
-        -f1 / (2 * tp + fp + fn),
-        2 * (1 - f1) / (2 * tp + fp + fn),
-    ]
-
-    def _calculate_v(c: np.ndarray, df1_dc: np.ndarray) -> np.ndarray:
-        return (
-            np.transpose(df1_dc) @ (np.diag(c) - c * np.transpose(c) / c.sum()) @ df1_dc
-        )
-
-    vf1 = np.vectorize(_calculate_v, signature="(m),(m)->()")(c, df1_dc)
-    alpha = 1 - ci_level
-    z = scipy.stats.norm.ppf(1 - alpha / 2)
-
-    f1_ci_lower = np.maximum(0, f1 - z * np.sqrt(vf1))
-    f1_ci_upper = np.minimum(1, f1 + z * np.sqrt(vf1))
-
-    return pd.DataFrame.from_dict({
+    roc_metrics: dict[str, Any] = {
         "score": score,
         "tp": tp,
         "fp": fp,
@@ -177,10 +162,52 @@ def calculate_roc_metrics(
         "npv": npv,
         "npv_ci_lower": npv_ci_lower,
         "npv_ci_upper": npv_ci_upper,
-        "f1": f1,
-        "f1_ci_lower": f1_ci_lower,
-        "f1_ci_upper": f1_ci_upper,
-    }).loc[score.index]
+    }
+
+    # "takahashi" method
+    # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8936911/#APP1
+
+    def _f(c: np.ndarray, beta=1):
+        tn, fp, fn, tp = c.T
+
+        return (1 + beta**2) * tp / ((1 + beta**2) * tp + beta**2 * fn + fp)
+
+    def _df_dc(c: np.ndarray, beta=1):
+        tn, fp, fn, tp = c.T
+
+        denom = (1 + beta**2) * tp + beta**2 * fn + fp
+        return np.c_[
+            np.zeros_like(tp),
+            -_f(c, beta) / denom,
+            -(beta**2) * _f(c, beta) / denom,
+            (1 + beta**2) * (1 - _f(c, beta)) / denom,
+        ]
+
+    _vf = np.vectorize(
+        lambda c, df_dc: (
+            np.transpose(df_dc) @ (np.diag(c) - c * np.transpose(c) / c.sum()) @ df_dc
+        ),
+        signature="(m),(m)->()",
+    )
+
+    alpha = 1 - ci_level
+    z = scipy.stats.norm.ppf(1 - alpha / 2)
+    c = np.c_[tn, fp, fn, tp]
+
+    for beta in [1, 1.5, 2]:
+        f = _f(c, beta=beta)
+        vf = _vf(c, _df_dc(c, beta=beta))
+        f_ci_lower = np.maximum(0, f - z * np.sqrt(vf))
+        f_ci_upper = np.minimum(1, f + z * np.sqrt(vf))
+
+        beta_str = f"{beta:g}".replace(".", "_")
+        roc_metrics.update({
+            f"f{beta_str}": f,
+            f"f{beta_str}_ci_lower": f_ci_lower,
+            f"f{beta_str}_ci_upper": f_ci_upper,
+        })
+
+    return pd.DataFrame.from_dict(roc_metrics).loc[score.index]
 
 
 def calculate_basic_metrics(
@@ -188,7 +215,7 @@ def calculate_basic_metrics(
     score: pd.Series,
     ci_level: float = 0.95,
     ci_method: str = "delong",
-) -> dict[str, float | tuple[float, tuple[float, float]]]:
+) -> dict[str, float]:
     p = label.eq(1).sum()
     n = label.eq(0).sum()
 
@@ -197,16 +224,12 @@ def calculate_basic_metrics(
     )
 
     return {
-        "Total Count": p + n,
-        "Positive Count": p,
-        "Negative Count": n,
-        "AUC": (
-            float(auc),
-            (
-                max(0, float(auc_ci[0])),  # type: ignore
-                min(1, float(auc_ci[1])),  # type: ignore
-            ),
-        ),
+        "total_count": p + n,
+        "positive_count": p,
+        "negative_count": n,
+        "auc.value": float(auc),
+        "auc.ci_lower": max(0, float(auc_ci[0])),
+        "auc.ci_upper": min(1, float(auc_ci[1])),
     }
 
 
@@ -223,60 +246,58 @@ def compile_binary_metrics(
         0.995,
         0.999,
     ],
-) -> dict[str, dict[str, float | tuple[float, tuple[float, float]]]]:
-    tp, fp, tn, fn = (
-        df_roc_metric["tp"],
-        df_roc_metric["fp"],
-        df_roc_metric["tn"],
-        df_roc_metric["fn"],
-    )
+) -> dict[str, dict[str, float]]:
+    ppv = df_roc_metric["ppv"]
+    npv = df_roc_metric["npv"]
 
-    ppv = tp / (tp + fp)
-    npv = tn / (tn + fn)
-    f1 = (2 * tp) / (2 * tp + fp + fn)
-
-    name_to_index: dict[str, Any] = {}
-
+    operating_point_to_index: dict[str, Any] = {}
     for ppv_threshold in thresholds:
         if ppv[ppv > ppv_threshold].empty:
             continue
 
-        name_to_index[f"PPV={ppv_threshold:.2%}"] = ppv[ppv > ppv_threshold].index[0]
+        operating_point_to_index[f"ppv={ppv_threshold:.2%}"] = ppv[
+            ppv > ppv_threshold
+        ].index[0]
 
     for npv_threshold in thresholds:
         if npv[npv > npv_threshold].empty:
             continue
 
-        name_to_index[f"NPV={npv_threshold:.2%}"] = npv[npv > npv_threshold].index[-1]
+        operating_point_to_index[f"npv={npv_threshold:.2%}"] = npv[
+            npv > npv_threshold
+        ].index[-1]
 
-    name_to_index["MAX F1"] = f1.idxmax()
+    operating_point_to_index["max_f1"] = df_roc_metric["f1"].idxmax()
+    operating_point_to_index["max_f1_5"] = df_roc_metric["f1_5"].idxmax()
+    operating_point_to_index["max_f2"] = df_roc_metric["f2"].idxmax()
 
-    binary_metrics: dict[str, dict[str, float | tuple[float, tuple[float, float]]]] = {}
-    for name, index in name_to_index.items():
+    binary_metrics: dict[str, dict[str, float]] = {}
+    for operating_point, index in operating_point_to_index.items():
         row: pd.Series = df_roc_metric.loc[index]
 
-        binary_metrics[name] = {
-            "Threshold": float(row["score"]),
-            "Sensitivity": (
-                float(row["tpr"]),
-                (float(row["tpr_ci_lower"]), float(row["tpr_ci_upper"])),
-            ),
-            "Specificity": (
-                float(row["tnr"]),
-                (float(row["tnr_ci_lower"]), float(row["tnr_ci_upper"])),
-            ),
-            "PPV": (
-                float(row["ppv"]),
-                (float(row["ppv_ci_lower"]), float(row["ppv_ci_upper"])),
-            ),
-            "NPV": (
-                float(row["npv"]),
-                (float(row["npv_ci_lower"]), float(row["npv_ci_upper"])),
-            ),
-            "F1": (
-                float(row["f1"]),
-                (float(row["f1_ci_lower"]), float(row["f1_ci_upper"])),
-            ),
+        binary_metrics[operating_point] = {
+            "threshold.value": float(row["score"]),
+            "sensitivity.value": float(row["tpr"]),
+            "sensitivity.ci_lower": float(row["tpr_ci_lower"]),
+            "sensitivity.ci_upper": float(row["tpr_ci_upper"]),
+            "specificity.value": float(row["tnr"]),
+            "specificity.ci_lower": float(row["tnr_ci_lower"]),
+            "specificity.ci_upper": float(row["tnr_ci_upper"]),
+            "ppv.value": float(row["ppv"]),
+            "ppv.ci_lower": float(row["ppv_ci_lower"]),
+            "ppv.ci_upper": float(row["ppv_ci_upper"]),
+            "npv.value": float(row["npv"]),
+            "npv.ci_lower": float(row["npv_ci_lower"]),
+            "npv.ci_upper": float(row["npv_ci_upper"]),
+            "f1.value": float(row["f1"]),
+            "f1.ci_lower": float(row["f1_ci_lower"]),
+            "f1.ci_upper": float(row["f1_ci_upper"]),
+            "f1_5.value": float(row["f1_5"]),
+            "f1_5.ci_lower": float(row["f1_5_ci_lower"]),
+            "f1_5.ci_upper": float(row["f1_5_ci_upper"]),
+            "f2.value": float(row["f2"]),
+            "f2.ci_lower": float(row["f2_ci_lower"]),
+            "f2.ci_upper": float(row["f2_ci_upper"]),
         }
 
     return binary_metrics
@@ -290,8 +311,8 @@ def format_metric(metric: Any) -> str:
         case np.floating() as m:
             return f"{m:.1%}"
 
-        case (np.floating() as m, (np.floating() as l, np.floating() as u)):
-            return f"{m:.1%} ({l:.1%}, {u:.1%})"
+        # case (np.floating() as m, (np.floating() as l, np.floating() as u)):
+        #     return f"{m:.1%} ({l:.1%}, {u:.1%})"
 
         case _:
             return f"{metric}"
@@ -381,16 +402,16 @@ def plot_metric(
         )
 
         for tag, report in report_by_tag.items():
-            human_metadata: HumanMetadata = HUMAN_METADATA[tag]
+            metadata: OperatingPointMetadata = OPERATING_POINT_METADATA[tag]
 
             _ax.plot(
                 report[x],
                 report[y],
-                color=human_metadata["color"],
-                marker=human_metadata["marker"],
+                color=metadata["color"],
+                marker=metadata["marker"],
                 markersize=2,
                 linewidth=0.0,
-                label=human_metadata["title"],
+                label=metadata["title"],
             )
 
     xticks: np.ndarray = np.linspace(0, 1, 6)
@@ -419,7 +440,7 @@ def evaluate(
     num_images: int,
     evaluation_dir: Path,
 ) -> None:
-    num_columns: int = FLAGS.plots_per_row
+    num_columns: int = FLAGS.plot_ax_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
 
     figs: dict[str, Figure] = {}
@@ -445,32 +466,39 @@ def evaluate(
         score: pd.Series = df_finding["score"]  # type: ignore
 
         df_roc_metric: pd.DataFrame = calculate_roc_metrics(label=label, score=score)
-        basic_metrics: dict[str, float | tuple[float, tuple[float, float]]] = (
-            calculate_basic_metrics(label=label, score=score)
+        basic_metrics: dict[str, float] = calculate_basic_metrics(
+            label=label, score=score
         )
-        binary_metrics: dict[
-            str, dict[str, float | tuple[float, tuple[float, float]]]
-        ] = compile_binary_metrics(df_roc_metric)
+        binary_metrics: dict[str, dict[str, float]] = compile_binary_metrics(
+            df_roc_metric
+        )
 
         logging.info(f"Finding {finding.value}")
-        for name, metric in basic_metrics.items():
-            logging.info(f"  - {name}: {format_metric(metric)}")
+        for metric_name, metric in basic_metrics.items():
+            logging.info(f"  - {metric_name}: {metric}")
 
             metrics.append({
                 "finding": finding.value,
-                "metric": name,
-                "value": format_metric(metric),
+                "metric": metric_name,
+                "value": metric,
             })
 
-        for criterion, finding_metrics in binary_metrics.items():
-            for name, metric in finding_metrics.items():
+        for operating_point, finding_metrics in binary_metrics.items():
+            for metric_name, metric in finding_metrics.items():
                 metrics.append({
                     "finding": finding.value,
-                    "metric": f"{name} @ {criterion}",
-                    "value": format_metric(metric),
+                    "metric": f"{metric_name}@{operating_point}",
+                    "value": metric,
                 })
 
-        report_by_tag: dict[str, dict] = {}
+        report_by_tag: dict[str, dict] = {
+            "ai@max_f2": {
+                "tpr": binary_metrics["max_f2"]["sensitivity.value"],
+                "fpr": 1 - binary_metrics["max_f2"]["specificity.value"],
+                "ppv": binary_metrics["max_f2"]["ppv.value"],
+                "npv": binary_metrics["max_f2"]["npv.value"],
+            }
+        }
         for tag in human_tags:
             report: dict = sklearn.metrics.classification_report(  # type: ignore
                 y_true=label,
@@ -485,59 +513,140 @@ def evaluate(
                 "npv": report["0"]["precision"],
             }
 
-        plot_metric(
-            df=df_roc_metric,
-            report_by_tag=report_by_tag,
-            x="fpr",
-            y="tpr",
-            y_ci_lower="tpr_ci_lower",
-            y_ci_upper="tpr_ci_upper",
-            xlabel="1 - Specificity",
-            ylabel="Sensitivity" if num % num_columns == 0 else None,
-            color=metadata["color"],
-            title=metadata["title"],
-            ax=figs["roc-curve"].axes[num],
-            show_diagnoal=True,
-        )
+        if human_tags:
+            # we don't use sklearn here as it's too slow
+            sensitivity_fn = lambda y_true, y_pred: np.sum(y_true * y_pred) / np.sum(
+                y_true
+            )
+            specificity_fn = lambda y_true, y_pred: np.sum(
+                (1 - y_true) * (1 - y_pred)
+            ) / np.sum(1 - y_true)
 
-        plot_metric(
-            df=df_roc_metric,
-            report_by_tag=report_by_tag,
-            x="tpr",
-            y="ppv",
-            y_ci_lower="ppv_ci_lower",
-            y_ci_upper="ppv_ci_upper",
-            xlabel="Recall",
-            ylabel="Precision" if num % num_columns == 0 else None,
-            color=metadata["color"],
-            title=metadata["title"],
-            ax=figs["precision-recall-curve"].axes[num],
-        )
+            disease = df_finding["label"].eq(1).values
+            reader_scores = df_finding[
+                [f"score_human_{tag}" for tag in human_tags]
+            ].values
+            for operating_point in ["max_f1", "max_f1_5", "max_f2"]:
+                binary_metric = binary_metrics[operating_point]
 
-    for name, fig in figs.items():
-        first_ax: Axes = fig.axes[0]
-        fig.legend(
-            handles=first_ax.lines,
-            loc="outside lower center",
-            ncols=len(first_ax.lines),
-            fontsize="small",
-        )
+                model_score = (
+                    df_finding["score"].gt(binary_metric["threshold.value"]).values
+                )
 
-        if FLAGS.title:
-            fig.suptitle(f"{FLAGS.title} (N = {num_images})", fontsize="x-large")
+                for metric_name, metric_fn in [
+                    ("sensitivity", sensitivity_fn),
+                    ("specificity", specificity_fn),
+                ]:
 
-        for extension in ["pdf", "png"]:
-            fig_path: Path = Path(evaluation_dir, f"{name}.{extension}")
-            logging.info(f"Saving the ROC curve to {fig_path}.")
-            fig.savefig(fig_path)
+                    for test_name, test_margin in [
+                        ("superiority", 0),
+                        ("non-inferiority", 0.05),
+                    ]:
+
+                        result = model_vs_readers_orh(
+                            disease=disease,
+                            model_score=model_score,
+                            reader_scores=reader_scores,
+                            fom_fn=metric_fn,
+                            coverage=0.95,
+                            margin=test_margin,
+                        )
+
+                        full_test_name = (
+                            test_name
+                            if test_margin == 0
+                            else f"{test_name}@margin={test_margin:.2f}"
+                        )
+                        is_pass = (
+                            (test_name == "superiority" and result.effect > 0)
+                            or (test_name == "non-inferiority")
+                        ) and (result.pvalue < 0.05)
+
+                        metrics.extend([
+                            {
+                                "finding": finding.value,
+                                "metric": f"{metric_name}.{full_test_name}.effect.value@{operating_point}",
+                                "value": result.effect,
+                            },
+                            {
+                                "finding": finding.value,
+                                "metric": f"{metric_name}.{full_test_name}.effect.ci_lower@{operating_point}",
+                                "value": result.ci[0],
+                            },
+                            {
+                                "finding": finding.value,
+                                "metric": f"{metric_name}.{full_test_name}.effect.ci_upper@{operating_point}",
+                                "value": result.ci[1],
+                            },
+                            {
+                                "finding": finding.value,
+                                "metric": f"{metric_name}.{full_test_name}.pvalue@{operating_point}",
+                                "value": result.pvalue,
+                            },
+                            {
+                                "finding": finding.value,
+                                "metric": f"{metric_name}.{full_test_name}.is_significant@{operating_point}",
+                                "value": is_pass,
+                            },
+                        ])
+
+        if FLAGS.plot:
+            plot_metric(
+                df=df_roc_metric,
+                report_by_tag=report_by_tag,
+                x="fpr",
+                y="tpr",
+                y_ci_lower="tpr_ci_lower",
+                y_ci_upper="tpr_ci_upper",
+                xlabel="1 - Specificity",
+                ylabel="Sensitivity" if num % num_columns == 0 else None,
+                color=metadata["color"],
+                title=metadata["title"],
+                ax=figs["roc-curve"].axes[num],
+                show_diagnoal=True,
+            )
+
+            plot_metric(
+                df=df_roc_metric,
+                report_by_tag=report_by_tag,
+                x="tpr",
+                y="ppv",
+                y_ci_lower="ppv_ci_lower",
+                y_ci_upper="ppv_ci_upper",
+                xlabel="Recall",
+                ylabel="Precision" if num % num_columns == 0 else None,
+                color=metadata["color"],
+                title=metadata["title"],
+                ax=figs["precision-recall-curve"].axes[num],
+            )
 
     metric_path: Path = Path(evaluation_dir, "metrics.csv")
     logging.info(f"Saving the metrics to {metric_path}.")
     pd.DataFrame(metrics).to_csv(metric_path, index=False)
 
+    if FLAGS.plot:
+        for name, fig in figs.items():
+            first_ax: Axes = fig.axes[0]
+            fig.legend(
+                handles=first_ax.lines,
+                loc="outside lower center",
+                ncols=len(first_ax.lines),
+                fontsize="small",
+            )
+
+            if FLAGS.plot_title:
+                fig.suptitle(
+                    f"{FLAGS.plot_title} (N = {num_images})", fontsize="x-large"
+                )
+
+            for extension in ["pdf", "png"]:
+                fig_path: Path = Path(evaluation_dir, f"{name}.{extension}")
+                logging.info(f"Saving the ROC curve to {fig_path}.")
+                fig.savefig(fig_path)
+
 
 def main(_):
-    warnings.simplefilter(action="ignore", category=FutureWarning)
+    warnings.simplefilter(action="ignore")
 
     data_driver: InstanceDetection = InstanceDetectionFactory.register_by_name(
         dataset_name=FLAGS.dataset_name, root_dir=FLAGS.data_dir
@@ -556,7 +665,7 @@ def main(_):
 
     df_human_by_tag: dict[str, pd.DataFrame] = {}
     if FLAGS.human_csv_path:
-        for tag in HUMAN_METADATA.keys():
+        for tag in HUMAN_TAGS:
             df_human: pd.DataFrame = pd.read_csv(Path(FLAGS.human_csv_path.format(tag)))
             df_human_by_tag[tag] = df_human
 
