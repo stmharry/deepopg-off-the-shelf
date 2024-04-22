@@ -56,17 +56,53 @@ FLAGS = flags.FLAGS
 class OperatingPointMetadata(TypedDict):
     color: str | tuple[float, ...]
     marker: str
+    markersize: int
     title: str
 
 
 OPERATING_POINT_METADATA: dict[str, OperatingPointMetadata] = {
-    "ai@max_f1": {"color": "black", "marker": "o", "title": "AI Operating Point"},
-    "ai@max_f1_5": {"color": "black", "marker": "o", "title": "AI Operating Point"},
-    "ai@max_f2": {"color": "black", "marker": "o", "title": "AI Operating Point"},
-    "A": {"color": "blue", "marker": "D", "title": "Expert 1"},
-    "C": {"color": "green", "marker": "s", "title": "Expert 2"},
-    "D": {"color": "red", "marker": "^", "title": "Expert 3"},
-    "E": {"color": "purple", "marker": "v", "title": "Expert 4"},
+    "ai@max_f1": {
+        "color": "black",
+        "marker": "x",
+        "markersize": 4,
+        "title": "AI operating point",
+    },
+    "ai@max_f1_5": {
+        "color": "black",
+        "marker": "x",
+        "markersize": 4,
+        "title": "AI operating point",
+    },
+    "ai@max_f2": {
+        "color": "black",
+        "marker": "x",
+        "markersize": 4,
+        "title": "AI operating point",
+    },
+    "C": {
+        "color": "tab:green",
+        "marker": "s",
+        "markersize": 2,
+        "title": "Reader 2",
+    },
+    "E": {
+        "color": "tab:cyan",
+        "marker": "v",
+        "markersize": 2,
+        "title": "Reader 4",
+    },
+    "A": {
+        "color": "tab:orange",
+        "marker": "D",
+        "markersize": 2,
+        "title": "Reader 1",
+    },
+    "D": {
+        "color": "tab:red",
+        "marker": "^",
+        "markersize": 2,
+        "title": "Reader 3",
+    },
 }
 
 HUMAN_TAGS: list[str] = ["A", "C", "D", "E"]
@@ -83,42 +119,42 @@ class CategoryMetadata(TypedDict):
 CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
     Category.MISSING: {
         "color": "navy",
-        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "bbox_to_anchor": (0.45, 0.15, 0.6, 0.6),
         "inset_xlim": (0.00, 0.05),
         "inset_ylim": (0.84, 0.94),
         "title": "Missing",
     },
     Category.IMPLANT: {
         "color": "navy",
-        "bbox_to_anchor": (0.30, 0.15, 0.65, 0.65),
+        "bbox_to_anchor": (0.40, 0.15, 0.65, 0.65),
         "inset_xlim": (0.00, 0.05),
         "inset_ylim": (0.90, 1.00),
         "title": "Implant",
     },
     Category.ROOT_REMNANTS: {
         "color": "navy",
-        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "bbox_to_anchor": (0.45, 0.15, 0.6, 0.6),
         "inset_xlim": (0.00, 0.05),
         "inset_ylim": (0.30, 0.80),
         "title": "Residual root",
     },
     Category.CROWN_BRIDGE: {
         "color": "navy",
-        "bbox_to_anchor": (0.30, 0.15, 0.65, 0.65),
+        "bbox_to_anchor": (0.40, 0.15, 0.65, 0.65),
         "inset_xlim": (0.00, 0.05),
         "inset_ylim": (0.90, 1.00),
         "title": "Crown/bridge",
     },
     Category.ENDO: {
         "color": "navy",
-        "bbox_to_anchor": (0.30, 0.15, 0.65, 0.65),
+        "bbox_to_anchor": (0.40, 0.15, 0.65, 0.65),
         "inset_xlim": (0.00, 0.05),
         "inset_ylim": (0.85, 1.00),
         "title": "Root canal filling",
     },
     Category.FILLING: {
         "color": "navy",
-        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "bbox_to_anchor": (0.45, 0.15, 0.6, 0.6),
         "inset_xlim": (0.00, 0.10),
         "inset_ylim": (0.60, 0.90),
         "title": "Filling",
@@ -126,13 +162,13 @@ CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
     Category.CARIES: {
         "color": "navy",
         "inset_xlim": (0.00, 0.10),
-        "bbox_to_anchor": (0.45, 0.15, 0.5, 0.5),
+        "bbox_to_anchor": (0.55, 0.15, 0.5, 0.5),
         "inset_ylim": (0.20, 0.65),
         "title": "Caries",
     },
     Category.PERIAPICAL_RADIOLUCENT: {
         "color": "navy",
-        "bbox_to_anchor": (0.35, 0.15, 0.6, 0.6),
+        "bbox_to_anchor": (0.45, 0.15, 0.6, 0.6),
         "inset_xlim": (0.00, 0.05),
         "inset_ylim": (0.10, 0.95),
         "title": "Periapical radiolucency",
@@ -378,21 +414,6 @@ def compile_binary_metrics(
     return binary_metrics
 
 
-def format_metric(metric: Any) -> str:
-    match metric:
-        case np.integer() as m:
-            return f"{m:d}"
-
-        case np.floating() as m:
-            return f"{m:.1%}"
-
-        # case (np.floating() as m, (np.floating() as l, np.floating() as u)):
-        #     return f"{m:.1%} ({l:.1%}, {u:.1%})"
-
-        case _:
-            return f"{metric}"
-
-
 def plot_metric(
     df: pd.DataFrame,
     report_by_tag: dict[str, dict],
@@ -402,7 +423,8 @@ def plot_metric(
     y_ci_upper: str,
     color: str | tuple[float, ...],
     ax: Axes,
-    padding: float = 0.1,
+    lim_padding_ratio: float = 0.025,
+    spine_outward_point: float = 7.5,
     xlabel: str | None = None,
     ylabel: str | None = None,
     title: str | None = None,
@@ -447,11 +469,13 @@ def plot_metric(
         if _ax is ax:
             xlim = (0, 1)
             ylim = (0, 1)
+            extra_markersize = 0
             tick_fontsize = "medium"
 
         elif _ax is inset_ax:
             xlim = inset_xlim
             ylim = inset_ylim
+            extra_markersize = 1
             tick_fontsize = "small"
 
         else:
@@ -459,15 +483,15 @@ def plot_metric(
 
         intervals = [0.005, 0.01, 0.02, 0.05, 0.10, 0.20]
         xlim_padded = (
-            xlim[0] - (xlim[1] - xlim[0]) * padding,
-            xlim[1] + (xlim[1] - xlim[0]) * padding,
+            xlim[0] - (xlim[1] - xlim[0]) * lim_padding_ratio,
+            xlim[1] + (xlim[1] - xlim[0]) * lim_padding_ratio,
         )
         xinterval = min(filter(lambda v: v >= (xlim[1] - xlim[0]) / 5, intervals))
         xticks = np.arange(xlim[0], xlim[1] + 1e-5, xinterval)
 
         ylim_padded = (
-            ylim[0] - (ylim[1] - ylim[0]) * padding,
-            ylim[1] + (ylim[1] - ylim[0]) * padding,
+            ylim[0] - (ylim[1] - ylim[0]) * lim_padding_ratio,
+            ylim[1] + (ylim[1] - ylim[0]) * lim_padding_ratio,
         )
         yinterval = min(filter(lambda v: v >= (ylim[1] - ylim[0]) / 5, intervals))
         yticks = np.arange(ylim[0], ylim[1] + 1e-5, yinterval)
@@ -489,7 +513,7 @@ def plot_metric(
             df[y_ci_lower],
             df[y_ci_upper],
             color=color,
-            alpha=0.2,
+            alpha=0.1,
             linewidth=0.0,
         )
         _ax.plot(
@@ -497,7 +521,7 @@ def plot_metric(
             df[y],
             color=color,
             linewidth=0.75,
-            label="AI System",
+            label="AI system",
         )
 
         for tag, report in report_by_tag.items():
@@ -508,13 +532,18 @@ def plot_metric(
                 report[y],
                 color=metadata["color"],
                 marker=metadata["marker"],
-                markersize=2,
+                markersize=metadata["markersize"] + extra_markersize,
                 linewidth=0.0,
                 label=metadata["title"],
             )
 
         _ax.set_xlim(*xlim_padded)
         _ax.set_ylim(*ylim_padded)
+
+        _ax.spines.left.set_position(("outward", spine_outward_point))
+        _ax.spines.bottom.set_position(("outward", spine_outward_point))
+        _ax.spines.right.set_visible(False)
+        _ax.spines.top.set_visible(False)
 
         _ax.set_xticks(xticks)
         _ax.set_xticklabels(
@@ -526,9 +555,6 @@ def plot_metric(
             ["{:,.0%}".format(v) for v in yticks], fontsize=tick_fontsize
         )
 
-        _ax.spines["right"].set_visible(False)
-        _ax.spines["top"].set_visible(False)
-
     if xlabel is not None:
         ax.set_xlabel(xlabel)
 
@@ -536,7 +562,7 @@ def plot_metric(
         ax.set_ylabel(ylabel)
 
     if title is not None:
-        ax.set_title(title, fontsize="large")
+        ax.set_title(title, fontsize="medium", loc="left")
 
     return ax
 
@@ -555,13 +581,17 @@ def evaluate(
         fig, _ = plt.subplots(
             nrows=num_rows,
             ncols=num_columns,
+            sharex=True,
             sharey=True,
-            figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 1.0) * num_rows),
+            figsize=(
+                FLAGS.plot_size * num_columns,
+                (FLAGS.plot_size + 0.5) * num_rows,
+            ),
             layout="constrained",
             dpi=300,
         )
         engine = fig.get_layout_engine()
-        engine.set(hspace=0.05, rect=[0, 0.025, 1, 0.95])
+        engine.set(hspace=0.075, rect=[0, 0.025, 1, 0.95])
 
         figs[name] = fig
 
@@ -739,10 +769,15 @@ def evaluate(
                 y="tpr",
                 y_ci_lower="tpr_ci_lower",
                 y_ci_upper="tpr_ci_upper",
-                xlabel="1 - Specificity",
+                xlabel=(
+                    "1 - Specificity" if num // num_columns == num_rows - 1 else None
+                ),
                 ylabel="Sensitivity" if num % num_columns == 0 else None,
                 color=metadata["color"],
-                title=metadata["title"],
+                title=(
+                    f"{metadata['title']}\n(N = {len(df_roc_metric)}, AUC ="
+                    f" {basic_metrics['auc.value']:.1%})"
+                ),
                 use_inset=True,
                 bbox_to_anchor=metadata["bbox_to_anchor"],
                 inset_xlim=metadata["inset_xlim"],
@@ -777,14 +812,12 @@ def evaluate(
                 handles=first_ax.lines,
                 loc="outside lower center",
                 ncols=len(first_ax.lines),
-                frameon=False,
                 fontsize="small",
+                frameon=False,
             )
 
             if FLAGS.plot_title:
-                fig.suptitle(
-                    f"{FLAGS.plot_title} (N = {num_images})", fontsize="x-large"
-                )
+                fig.suptitle(FLAGS.plot_title, fontsize="x-large")
 
             for extension in ["pdf", "png"]:
                 fig_path: Path = Path(evaluation_dir, f"{name}.{extension}")

@@ -510,7 +510,7 @@ evaluate-auroc:
 		--csv $(RESULT_CSV) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
-		--title "Dental Findings (AI) – $(DATASET_TITLE)"
+		--title "Dental Findings ($(DATASET_TITLE))"
 
 evaluate-auroc.with-human: --check-COMMON
 evaluate-auroc.with-human:
@@ -522,7 +522,7 @@ evaluate-auroc.with-human:
 		--evaluation_dir $(EVALUATION_DIR).with-human \
 		--nosave_metrics \
 		--plot \
-		--plot_title "Dental Findings (AI v.s. Reader) – $(DATASET_TITLE)"
+		--plot_title "Dental Findings ($(DATASET_TITLE))"
 
 compare: IMAGE_HEIGHT ?= 600
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
