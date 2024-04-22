@@ -9,6 +9,7 @@ import pandas as pd
 import sklearn.metrics
 from absl import app, flags, logging
 from matplotlib.figure import Figure
+from PIL import Image
 
 from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
@@ -61,16 +62,16 @@ class CategoryMetadata(TypedDict):
 CMAP = mpl.colormaps.get_cmap("tab10")
 
 CATEGORY_METADATA: dict[Category, CategoryMetadata] = {
-    Category.MISSING: {"color": CMAP(0), "title": "Missing Teeth"},
-    Category.IMPLANT: {"color": CMAP(2), "title": "Implants"},
-    Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Root Remnants"},
-    Category.CROWN_BRIDGE: {"color": CMAP(3), "title": "Crowns & Bridges"},
-    Category.FILLING: {"color": CMAP(4), "title": "Restorations"},
-    Category.ENDO: {"color": CMAP(5), "title": "Root Fillings"},
+    Category.MISSING: {"color": CMAP(0), "title": "Missing"},
+    Category.IMPLANT: {"color": CMAP(2), "title": "Implant"},
+    Category.ROOT_REMNANTS: {"color": CMAP(6), "title": "Residual root"},
+    Category.CROWN_BRIDGE: {"color": CMAP(3), "title": "Crown/bridge"},
+    Category.ENDO: {"color": CMAP(5), "title": "Root canal filling"},
+    Category.FILLING: {"color": CMAP(4), "title": "Filling"},
     Category.CARIES: {"color": CMAP(7), "title": "Caries"},
     Category.PERIAPICAL_RADIOLUCENT: {
         "color": CMAP(8),
-        "title": "Periapical Radiolucencies",
+        "title": "Periapical radiolucency",
     },
 }
 
@@ -107,7 +108,9 @@ def plot_roc_curve(
         metadata: CategoryMetadata = CATEGORY_METADATA[finding]
         test_name: list[str] = ["Netherlands", "Brazil", "Taiwan"]
         line_style: list[str] = ["-", "--", "-."]
-        color_style: list[str] = ["blue", "green", "red"]
+        color_style: list[str] = ["#800080", "#FFA500", "#00BFFF"]
+        data_N: list[int] = [1201, 1173, 253]
+
         for id, df in enumerate(df_list):
             df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].copy()
 
@@ -178,8 +181,8 @@ def plot_roc_curve(
                     tpr,
                     color=color_style[id],
                     linestyle=line_style[id],
-                    linewidth=0.8,
-                    label=test_name[id],
+                    linewidth=1,
+                    label=f"{test_name[id]} (N={data_N[id]})",
                 )
 
             logging.info(
@@ -214,8 +217,8 @@ def plot_roc_curve(
         fontsize="small",
     )
 
-    # if FLAGS.title:
-    #     fig.suptitle(f"{FLAGS.title} (N = {num_images})", fontsize="x-large")
+    if FLAGS.title:
+        fig.suptitle(f"AI Model Evaluation", fontsize="x-large")
 
     return fig
 
@@ -225,7 +228,7 @@ def main(_):
         "/mnt/hdd/PANO.arlen/results/2024-03-14/evaluation-test.csv"
     )
     df_Brazil: pd.DataFrame = pd.read_csv(
-        "/mnt/hdd/PANO.arlen/results/2024-03-14/evaluation-testA.csv"
+        "/mnt/hdd/PANO.arlen/results/2024-03-29/Brazil.csv"
     )
     df_Taiwzn: pd.DataFrame = pd.read_csv(
         "/mnt/hdd/PANO.arlen/results/2024-03-14/evaluation-testB.csv"
@@ -234,7 +237,7 @@ def main(_):
     df_list = [df_Netherlands, df_Brazil, df_Taiwzn]
 
     # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
-    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-03-29/")
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-04-06/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
     #
@@ -245,6 +248,10 @@ def main(_):
         fig_path: Path = Path(evaluation_dir, f"roc-curve-combine.{extension}")
         logging.info(f"Saving the ROC curve to {fig_path}.")
         fig.savefig(fig_path, dpi=300)
+        if extension == "png":
+            img = Image.open(fig_path).convert("L")
+            img.save(Path(evaluation_dir, f"roc-curve-combine-gray.png"))
+            logging.info(f"Saving the Gray ROC curve to {fig_path}.")
 
 
 if __name__ == "__main__":

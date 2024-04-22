@@ -4,16 +4,13 @@ from pathlib import Path
 from typing import TypedDict
 
 import matplotlib as mpl
-import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import sklearn.metrics
 from absl import app, flags, logging
 from matplotlib.figure import Figure
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from PIL import Image
-from scipy.stats import permutation_test
 
 from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
@@ -105,7 +102,7 @@ def plot_roc_curve(
     fig, axes = plt.subplots(
         nrows=num_rows,
         ncols=num_columns,
-        sharey=True,
+        # sharey=True,
         figsize=(FLAGS.plot_size * num_columns, (FLAGS.plot_size + 0.5) * num_rows),
         layout="constrained",
         dpi=300,
@@ -114,15 +111,11 @@ def plot_roc_curve(
     for num, finding in enumerate(Category):
         metadata: CategoryMetadata = CATEGORY_METADATA[finding]
         df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].copy()
-        df_finding.to_csv(
-            "/mnt/hdd/PANO.arlen/results/2024-04-19/df_{}.csv".format(finding.value),
-            index=False,
-        )
 
         P = df_finding["label"].eq(1).sum()
         N = df_finding["label"].eq(0).sum()
 
-        fpr, tpr, threshold = sklearn.metrics.roc_curve(
+        fpr, tpr, _ = sklearn.metrics.roc_curve(
             y_true=df_finding["label"],
             y_score=df_finding["score"],
             drop_intermediate=False,
@@ -154,7 +147,6 @@ def plot_roc_curve(
         roc_auc_ci_upper: float = np.minimum(1, roc_auc + 1.96 * auc_std_err)
 
         report_by_tag: dict[str, dict] = {}
-        min_thrs: list[float] = []
         for tag in human_tags:
             report: dict = sklearn.metrics.classification_report(  # type: ignore
                 y_true=df_finding["label"],
@@ -172,39 +164,6 @@ def plot_roc_curve(
         axes_to_plot_data.append(ax)
 
         if len(human_tags):
-            if finding.value == "ROOT_REMNANTS":
-                inset_ax: plt.axes.Axes = inset_axes(
-                    ax,
-                    width="55.1%",
-                    height="55.1%",
-                    loc="lower right",
-                    bbox_to_anchor=(-0.07, 0.11, 1, 1),
-                    bbox_transform=ax.transAxes,
-                    borderpad=0,
-                )
-            elif finding.value == "CARIES":
-                inset_ax: plt.axes.Axes = inset_axes(
-                    ax,
-                    width="54%",
-                    height="54%",
-                    loc="lower right",
-                    bbox_to_anchor=(-0.07, 0.11, 1, 1),
-                    bbox_transform=ax.transAxes,
-                    borderpad=0,
-                )
-            else:
-                inset_ax: plt.axes.Axes = inset_axes(
-                    ax,
-                    width="60%",
-                    height="60%",
-                    loc="lower right",
-                    bbox_to_anchor=(-0.07, 0.11, 1, 1),
-                    bbox_transform=ax.transAxes,
-                    borderpad=0,
-                )
-
-            axes_to_plot_data.append(inset_ax)
-
             tprs: list[float] = [
                 report["1"]["recall"] for report in report_by_tag.values()
             ]
@@ -217,30 +176,6 @@ def plot_roc_curve(
             max_fpr: float = max(fprs)
             min_fpr: float = min(fprs)
 
-            for _tprs, _fprs in zip(tprs, fprs):
-                dist: list[float] = []
-                for _tpr, _fpr in zip(tpr, fpr):
-                    dist.append((_tprs - _tpr) ** 2 + (_fprs - _fpr) ** 2)
-                min_dist: float = min(dist)
-                min_dist_idx: int = dist.index(min_dist)
-                min_thrs = threshold[min_dist_idx]
-
-            breakpoint()
-            res_P = permutation_test(
-                (
-                    (df_finding.loc[df_finding["label"].eq(1), "score"] >= min_thrs)
-                    * 1.0,
-                    df_finding.loc[df_finding["label"].eq(1), "score_human_E"],
-                ),
-                permutation_type="pairing",
-                vectorized=False,
-                n_resamples=len(
-                    df_finding.loc[df_finding["label"].eq(1), "score_human_E"]
-                ),
-                alternative="two-sided",
-                random_state=42,
-            )
-
             padding = 0.025
             width = 0.04
             height = 0.25
@@ -252,26 +187,17 @@ def plot_roc_curve(
                 min((min_tpr + max_tpr) / 2 + height + padding, 1.0 + padding),
             ]
 
-            inset_ax.set_xlim(
-                bounds[0],
-                bounds[1],
-            )
-            inset_ax.set_ylim(
-                bounds[2],
-                bounds[3],
-            )
-
-            ax.add_patch(
-                patches.Rectangle(
-                    (bounds[0], bounds[2]),
-                    bounds[1] - bounds[0],
-                    bounds[3] - bounds[2],
-                    linewidth=0,
-                    alpha=0.1,
-                    color="black",
-                    zorder=-1,
-                ),
-            )
+            # ax.add_patch(
+            #     patches.Rectangle(
+            #         (bounds[0], bounds[2]),
+            #         bounds[1] - bounds[0],
+            #         bounds[3] - bounds[2],
+            #         linewidth=0,
+            #         alpha=0.1,
+            #         color="black",
+            #         zorder=-1,
+            #     ),
+            # )
 
         ax.grid(
             visible=True,
@@ -317,13 +243,22 @@ def plot_roc_curve(
                     label=human_metadata["title"],
                 )
 
-        xticks: np.ndarray = np.linspace(0, 1, 6)
+        xticks: np.ndarray = np.linspace(bounds[0], bounds[1], 6)
         ax.set_xticks(xticks)
         ax.set_xticklabels(["{:,.0%}".format(v) for v in xticks])
 
-        yticks: np.ndarray = np.linspace(0, 1, 6)
+        yticks: np.ndarray = np.linspace(bounds[2], bounds[3], 6)
         ax.set_yticks(yticks)
         ax.set_yticklabels(["{:,.0%}".format(v) for v in yticks])
+
+        ax.set_xlim(
+            bounds[0],
+            bounds[1],
+        )
+        ax.set_ylim(
+            bounds[2],
+            bounds[3],
+        )
 
         ax.set_xlabel("1 - Specificity")
         if num % num_columns == 0:
@@ -335,10 +270,11 @@ def plot_roc_curve(
         )
 
         logging.info(
-            f"Finding {finding.value}\n  - Sample Count: {len(df_finding)}\n  -"
-            f" Positive Count: {P}\n  - Negative Count: {N}\n  - AUROC:"
-            f" {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})\n  -"
-            f" Threshold: {min_thrs}\n"
+            f"Finding {finding.value}\n"
+            f"  - Sample Count: {len(df_finding)}\n"
+            f"  - Positive Count: {P}\n"
+            f"  - Negative Count: {N}\n"
+            f"  - AUROC: {roc_auc:.1%} ({roc_auc_ci_lower:.1%}, {roc_auc_ci_upper:.1%})"
         )
 
     ax = axes.flatten()[0]
@@ -423,7 +359,7 @@ def main(_):
     )
 
     # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
-    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-04-19/")
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-04-15/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
     #
@@ -433,12 +369,12 @@ def main(_):
     )
 
     for extension in ["pdf", "png"]:
-        fig_path: Path = Path(evaluation_dir, f"roc-curve-test.{extension}")
+        fig_path: Path = Path(evaluation_dir, f"roc-curve-test-inset.{extension}")
         logging.info(f"Saving the ROC curve to {fig_path}.")
         fig.savefig(fig_path, dpi=300)
         if extension == "png":
             img = Image.open(fig_path).convert("L")
-            img.save(Path(evaluation_dir, f"roc-curve-test-gray.png"))
+            img.save(Path(evaluation_dir, f"roc-curve-test-inset-gray.png"))
             logging.info(f"Saving the Gray ROC curve to {fig_path}.")
 
     evaluation_csv_path: Path = Path(evaluation_dir, "evaluation-test.csv")
