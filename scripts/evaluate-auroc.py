@@ -13,7 +13,6 @@ from absl import app, flags, logging
 from matplotlib.figure import Figure
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from PIL import Image
-from scipy.stats import permutation_test
 
 from app.instance_detection import (
     EVALUATE_WHEN_MISSING_FINDINGS,
@@ -216,30 +215,6 @@ def plot_roc_curve(
             ]
             max_fpr: float = max(fprs)
             min_fpr: float = min(fprs)
-
-            for _tprs, _fprs in zip(tprs, fprs):
-                dist: list[float] = []
-                for _tpr, _fpr in zip(tpr, fpr):
-                    dist.append((_tprs - _tpr) ** 2 + (_fprs - _fpr) ** 2)
-                min_dist: float = min(dist)
-                min_dist_idx: int = dist.index(min_dist)
-                min_thrs = threshold[min_dist_idx]
-
-            breakpoint()
-            res_P = permutation_test(
-                (
-                    (df_finding.loc[df_finding["label"].eq(1), "score"] >= min_thrs)
-                    * 1.0,
-                    df_finding.loc[df_finding["label"].eq(1), "score_human_E"],
-                ),
-                permutation_type="pairing",
-                vectorized=False,
-                n_resamples=len(
-                    df_finding.loc[df_finding["label"].eq(1), "score_human_E"]
-                ),
-                alternative="two-sided",
-                random_state=42,
-            )
 
             padding = 0.025
             width = 0.04
