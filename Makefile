@@ -520,9 +520,9 @@ evaluate-auroc.with-human:
 		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
 		--human_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
-		--nosave_metrics \
+		--nostat_test \
 		--plot \
-		--plot_title "Dental Findings ($(DATASET_TITLE))"
+		--plot_title "$(DATASET_TITLE)"
 
 compare: IMAGE_HEIGHT ?= 600
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html
