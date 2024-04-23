@@ -1142,18 +1142,11 @@ def evaluate(
         kappa_metrics = calculate_cohen_kappa_metrics(df_label=df_label)
         for (reader1, reader2), _kappa_metrics in kappa_metrics.items():
             for metric_name, metric in _kappa_metrics.items():
-                metrics.extend([
-                    {
-                        "finding": finding.value,
-                        "metric": f"{metric_name}@{reader1}@{reader2}",
-                        "value": metric,
-                    },
-                    {
-                        "finding": finding.value,
-                        "metric": f"{metric_name}@{reader2}@{reader1}",
-                        "value": metric,
-                    },
-                ])
+                metrics.append({
+                    "finding": finding.value,
+                    "metric": f"{metric_name}@{reader1}@{reader2}",
+                    "value": metric,
+                })
 
         logging.debug(f"Kappa metrics: {kappa_metrics}")
 
@@ -1161,6 +1154,14 @@ def evaluate(
             df_label=df_label,
             human_tags=human_tags,
         )
+        for name, _group_kappa_metrics in group_kappa_metrics.items():
+            for metric_name, metric in _group_kappa_metrics.items():
+                metrics.append({
+                    "finding": finding.value,
+                    "metric": f"{metric_name}@{name}",
+                    "value": metric,
+                })
+
         logging.debug(f"Group kappa metrics: {group_kappa_metrics}")
 
         if FLAGS.plot:
@@ -1178,7 +1179,7 @@ def evaluate(
                 color=metadata["color"],
                 title=(
                     f"{metadata['title']}\n(N = {len(df_roc_metric)}, AUC ="
-                    f" {basic_metrics['auc.value']:.3f})"
+                    f" {basic_metrics['auc.value']:.1%})"
                 ),
                 use_inset=True,
                 bbox_to_anchor=metadata["bbox_to_anchor"],

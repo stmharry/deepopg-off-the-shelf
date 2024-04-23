@@ -520,7 +520,7 @@ evaluate-auroc.with-human:
 		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
 		--human_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
-		--nostat_test \
+		--stat_test \
 		--plot \
 		--plot_title "$(DATASET_TITLE)"
 
