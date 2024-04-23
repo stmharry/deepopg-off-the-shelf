@@ -1,7 +1,7 @@
 import itertools
 import math
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -26,6 +26,13 @@ from app.instance_detection import (
     InstanceDetectionFactory,
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
+from app.stats import (
+    _calculate_fom,
+    calculate_fom_stats,
+    fast_kappa_score,
+    fast_sensitivity_score,
+    fast_specificity_score,
+)
 
 plt.rcParams["font.family"] = "Arial"
 
@@ -200,26 +207,6 @@ def process_per_tooth(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _fast_sensitivity_fn(y_true, y_pred):
-    return np.sum(y_true * y_pred) / np.sum(y_true)
-
-
-def _fast_specificity_fn(y_true, y_pred):
-    return np.sum((1 - y_true) * (1 - y_pred)) / np.sum(1 - y_true)
-
-
-def _fast_kappa_fn(y_true, y_pred):
-    n = len(y_true)
-    sum_y_true = np.sum(y_true)
-    sum_y_pred = np.sum(y_pred)
-
-    return (
-        2
-        * (np.sum(y_true * y_pred) - sum_y_true * sum_y_pred / n)
-        / (sum_y_true + sum_y_pred - 2 * sum_y_true * sum_y_pred / n)
-    )
-
-
 def calculate_roc_metrics(
     label: pd.Series,
     score: pd.Series,
@@ -325,39 +312,12 @@ def calculate_roc_metrics(
     return pd.DataFrame.from_dict(roc_metrics).loc[score.index]
 
 
-def _jackknife_var(
-    df: pd.DataFrame,
-    fom_fns: list[Callable[[pd.DataFrame], float]],
-) -> np.ndarray:
-
-    foms: list[list[float]] = []
-    for index in df.index:
-        _df = df.drop(index=index)
-
-        foms.append([fom_fn(_df) for fom_fn in fom_fns])
-
-    n = len(df)
-    var = np.var(foms, axis=0, ddof=1)
-
-    return var * (n - 1) ** 2 / n
-
-
-def _apply_fom_fns(
-    df: pd.DataFrame,
-    fom_fns: list[Callable[[pd.DataFrame], float]],
-) -> tuple[np.ndarray, np.ndarray]:
-
-    fom = np.asarray([fom_fn(df) for fom_fn in fom_fns])
-    fom_var = _jackknife_var(df=df, fom_fns=fom_fns)
-
-    return fom, fom_var
-
-
 def calculate_cohen_kappa_metrics(
     df_label: pd.DataFrame,
     ci_level: float = 0.95,
     ci_method: Literal["mchugh", "jackknife"] = "mchugh",
 ) -> dict[tuple[str, str], dict[str, float]]:
+    df_label = df_label.eq(1)
 
     n = len(df_label)
     alpha = 1 - ci_level
@@ -377,13 +337,13 @@ def calculate_cohen_kappa_metrics(
                 vk = (po * (1 - po)) / (n * (1 - pe) ** 2)
 
             case "jackknife":
-                # invoke the col's in the argument to bind them
-                fom_fn = lambda df, col1=col1, col2=col2: _fast_kappa_fn(
-                    df[col1].values, df[col2].values
+                k, vk, _ = calculate_fom_stats(
+                    df=df_label,
+                    fom_fn=lambda df: fast_kappa_score(
+                        df[col1].values, df[col2].values
+                    ),
+                    axis="index",
                 )
-
-                k = fom_fn(df_label)
-                vk = _jackknife_var(df=df_label, fom_fns=[fom_fn])
 
         k_ci_lower = np.maximum(0, k - z * np.sqrt(vk))
         k_ci_upper = np.minimum(1, k + z * np.sqrt(vk))
@@ -397,26 +357,42 @@ def calculate_cohen_kappa_metrics(
     return kappa_metrics
 
 
-def _derive_group_pairs(
-    human_tags: list[str],
-) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]]]:
-    group_tags_by_name: dict[str, list[str]] = {}
-    for tag in human_tags:
-        group = OPERATING_POINT_METADATA[tag]["group"]
-        if group is None:
+def _get_group_name_to_tags(tags: tuple[str]) -> dict[str, list[str]]:
+    group_name_to_tags: dict[str, list[str]] = {}
+    for tag in tags:
+        group_name = OPERATING_POINT_METADATA[tag]["group"]
+        if group_name is None:
             continue
 
-        group_tags_by_name.setdefault(group, []).append(tag)
+        group_name_to_tags.setdefault(group_name, []).append(tag)
 
-    intra_group_pairs: list[tuple[str, ...]] = []
-    for group in group_tags_by_name.values():
-        intra_group_pairs.extend(itertools.combinations(group, 2))
+    return group_name_to_tags
 
-    inter_group_pairs: list[tuple[str, ...]] = list(
-        itertools.product(*group_tags_by_name.values())
-    )
 
-    return intra_group_pairs, inter_group_pairs
+def _get_intra_group_pairs(tags: tuple[str]) -> list[tuple[str, str]]:
+    group_name_to_tags = _get_group_name_to_tags(tags=tags)
+
+    intra_group_pairs: list[tuple[str, str]] = []
+    for group in group_name_to_tags.values():
+        _intra_group_pairs: Iterable[tuple[str, ...]] = itertools.combinations(group, 2)
+        intra_group_pairs.extend(_intra_group_pairs)  # type: ignore
+
+    return intra_group_pairs
+
+
+def _get_inter_group_pairs(tags: tuple[str]) -> list[tuple[str, str]]:
+    group_name_to_tags = _get_group_name_to_tags(tags=tags)
+
+    inter_group_pairs: list[tuple[str, str]] = []
+    for group_name_0, group_name_1 in itertools.combinations(
+        group_name_to_tags.keys(), 2
+    ):
+        _iter_group_pairs: Iterable[tuple[str, ...]] = itertools.product(
+            group_name_to_tags[group_name_0], group_name_to_tags[group_name_1]
+        )
+        inter_group_pairs.extend(_iter_group_pairs)  # type: ignore
+
+    return inter_group_pairs
 
 
 def calculate_group_cohen_kappa_metrics(
@@ -433,61 +409,62 @@ def calculate_group_cohen_kappa_metrics(
     ],
     dict[str, float],
 ]:
+    df = df_label[human_tags]
 
-    mean_kappa_fn = lambda df, pairs: np.mean(
-        [_fast_kappa_fn(df[pair[0]].values, df[pair[1]].values) for pair in pairs]
-    )
-    diff_kappa_fn = lambda df, intra_group_pairs, inter_group_pairs: (
-        mean_kappa_fn(df, pairs=intra_group_pairs)
-        - mean_kappa_fn(df, pairs=inter_group_pairs)
+    mean_kappa_score: Callable[..., float] = lambda df, pairs: np.mean(
+        [fast_kappa_score(df[pair[0]].values, df[pair[1]].values) for pair in pairs]
     )
 
     # fom derivation
-    all_pairs = list(itertools.combinations(human_tags, 2))
-    intra_group_pairs, inter_group_pairs = _derive_group_pairs(human_tags)
-    fom_fns = [
-        lambda df: mean_kappa_fn(df, pairs=intra_group_pairs),
-        lambda df: mean_kappa_fn(df, pairs=inter_group_pairs),
-        lambda df: mean_kappa_fn(df, pairs=all_pairs),
-        lambda df: diff_kappa_fn(
-            df,
-            intra_group_pairs=intra_group_pairs,
-            inter_group_pairs=inter_group_pairs,
+    intra_group_pairs = _get_intra_group_pairs(tuple(df.columns))
+    inter_group_pairs = _get_inter_group_pairs(tuple(df.columns))
+    all_pairs = intra_group_pairs + inter_group_pairs
+
+    fom_fns = {
+        "intra_group": lambda df: mean_kappa_score(df, pairs=intra_group_pairs),
+        "inter_group": lambda df: mean_kappa_score(df, pairs=inter_group_pairs),
+        "overall": lambda df: mean_kappa_score(df, pairs=all_pairs),
+        "diff": lambda df: (
+            mean_kappa_score(df, pairs=intra_group_pairs)
+            - mean_kappa_score(df, pairs=inter_group_pairs)
         ),
-    ]
-    fom = np.asarray([fom_fn(df_label) for fom_fn in fom_fns])
+    }
+    fom: pd.Series = _calculate_fom(df=df, fom_fns=fom_fns)
 
-    # fom_se derivation (this is in itself a jackknife over all tags)
-    _foms = []
-    _fom_vars = []
-    for tag in human_tags:
-        _human_tags = [_tag for _tag in human_tags if _tag != tag]
-        _all_pairs = list(itertools.combinations(_human_tags, 2))
-        _intra_group_pairs, _inter_group_pairs = _derive_group_pairs(_human_tags)
+    _foms: list[pd.Series] = []
+    _fom_vars: list[pd.Series] = []
+    for tag in df.columns:
+        _df = df.drop(columns=[tag])
+        _intra_group_pairs = _get_intra_group_pairs(tuple(_df.columns))
+        _inter_group_pairs = _get_inter_group_pairs(tuple(_df.columns))
+        _all_pairs = _intra_group_pairs + _inter_group_pairs
 
-        _fom_fns = [
-            lambda df: mean_kappa_fn(df, pairs=_intra_group_pairs),
-            lambda df: mean_kappa_fn(df, pairs=_inter_group_pairs),
-            lambda df: mean_kappa_fn(df, pairs=_all_pairs),
-            lambda df: diff_kappa_fn(
-                df,
-                intra_group_pairs=_intra_group_pairs,
-                inter_group_pairs=_inter_group_pairs,
+        _fom_fns = {
+            "intra_group": lambda df: mean_kappa_score(df, pairs=_intra_group_pairs),
+            "inter_group": lambda df: mean_kappa_score(df, pairs=_inter_group_pairs),
+            "overall": lambda df: mean_kappa_score(df, pairs=_all_pairs),
+            "diff": lambda df: (
+                mean_kappa_score(df, pairs=_intra_group_pairs)
+                - mean_kappa_score(df, pairs=_inter_group_pairs)
             ),
-        ]
+        }
 
-        _fom, _fom_var = _apply_fom_fns(df=df_label, fom_fns=_fom_fns)
+        _fom, _fom_var, _ = calculate_fom_stats(df=df, fom_fns=_fom_fns, axis="index")
+
         _foms.append(_fom)
         _fom_vars.append(_fom_var)
 
-    fom_var0 = np.var(_foms, axis=0, ddof=1)
-    fom_var2 = np.sum(_fom_vars, axis=0)
+    df_fom: pd.DataFrame = pd.DataFrame(_foms)
+    df_fom_var: pd.DataFrame = pd.DataFrame(_fom_vars)
 
-    fom_var = fom_var0 + fom_var2
-    fom_se = np.sqrt(fom_var / len(human_tags))
+    fom_var0: pd.Series = df_fom.var(axis=0, ddof=1)  # type: ignore
+    fom_var2: pd.Series = df_fom_var.sum(axis=0)
 
-    dof = (fom_var0 + fom_var2) ** 2 / (
-        fom_var0**2 / (len(human_tags) - 1) + fom_var2**2 / (len(df_label) - 1)
+    fom_var: pd.Series = fom_var0 + fom_var2
+    fom_se: pd.Series = np.sqrt(fom_var / len(df.columns))
+
+    dof = fom_var**2 / (
+        fom_var0**2 / (len(df.columns) - 1) + fom_var2**2 / (len(df) - 1)
     )
 
     alpha = 1 - ci_level
@@ -495,26 +472,37 @@ def calculate_group_cohen_kappa_metrics(
 
     return {
         "intra_group": {
-            "kappa.value": fom[0],
-            "kappa.ci_lower": np.maximum(0, fom[0] - z * fom_se[0]),
-            "kappa.ci_upper": np.minimum(1, fom[0] + z * fom_se[0]),
+            "kappa.value": float(fom["intra_group"]),
+            "kappa.ci_lower": np.maximum(
+                0, fom["intra_group"] - z * fom_se["intra_group"]
+            ),
+            "kappa.ci_upper": np.minimum(
+                1, fom["intra_group"] + z * fom_se["intra_group"]
+            ),
         },
         "inter_group": {
-            "kappa.value": fom[1],
-            "kappa.ci_lower": np.maximum(0, fom[1] - z * fom_se[1]),
-            "kappa.ci_upper": np.minimum(1, fom[1] + z * fom_se[1]),
+            "kappa.value": float(fom["inter_group"]),
+            "kappa.ci_lower": np.maximum(
+                0, fom["inter_group"] - z * fom_se["inter_group"]
+            ),
+            "kappa.ci_upper": np.minimum(
+                1, fom["inter_group"] + z * fom_se["inter_group"]
+            ),
         },
         "overall": {
-            "kappa.value": fom[2],
-            "kappa.ci_lower": np.maximum(0, fom[2] - z * fom_se[2]),
-            "kappa.ci_upper": np.minimum(1, fom[2] + z * fom_se[2]),
+            "kappa.value": float(fom["overall"]),
+            "kappa.ci_lower": np.maximum(0, fom["overall"] - z * fom_se["overall"]),
+            "kappa.ci_upper": np.minimum(1, fom["overall"] + z * fom_se["overall"]),
         },
         "diff_test": {
-            "effect.value": fom[3],
-            "effect.ci_lower": fom[3] - z * fom_se[3],
-            "effect.ci_upper": fom[3] + z * fom_se[3],
+            "effect.value": float(fom["diff"]),
+            "effect.ci_lower": float(fom["diff"] - z * fom_se["diff"]),
+            "effect.ci_upper": float(fom["diff"] + z * fom_se["diff"]),
             "pvalue": float(
-                2 * scipy.stats.t.cdf(-np.abs(fom[3] / fom_se[3]), df=dof[3])
+                2
+                * scipy.stats.t.cdf(
+                    -np.abs(fom["diff"] / fom_se["diff"]), df=dof["diff"]
+                )
             ),
         },
     }
@@ -794,7 +782,8 @@ def plot_forest(
     xvisible: bool = True,
     title: str | None = None,
 ) -> Axes:
-    intra_group_pairs, inter_group_pairs = _derive_group_pairs(human_tags)
+    intra_group_pairs = _get_intra_group_pairs(tuple(human_tags))
+    inter_group_pairs = _get_inter_group_pairs(tuple(human_tags))
 
     # assemble data
 
@@ -1085,8 +1074,8 @@ def evaluate(
 
                 for metric_name, metric_fn in [
                     # we don't use sklearn here as it's too slow
-                    ("sensitivity", _fast_sensitivity_fn),
-                    ("specificity", _fast_specificity_fn),
+                    ("sensitivity", fast_sensitivity_score),
+                    ("specificity", fast_specificity_score),
                 ]:
 
                     for test_name, test_margin in test_name_margins:
@@ -1151,8 +1140,7 @@ def evaluate(
         logging.debug(f"Kappa metrics: {kappa_metrics}")
 
         group_kappa_metrics = calculate_group_cohen_kappa_metrics(
-            df_label=df_label,
-            human_tags=human_tags,
+            df_label=df_label, human_tags=human_tags
         )
         for name, _group_kappa_metrics in group_kappa_metrics.items():
             for metric_name, metric in _group_kappa_metrics.items():
