@@ -261,16 +261,24 @@ def model_vs_readers_orh(
     covariances = _jackknife_covariance_model_vs_readers(
         disease, model_score, reader_scores, fom_fn
     )
-    off_diagonals = []
-    for offset in range(1, num_readers):
-        off_diagonals.extend(np.diag(covariances, k=offset))
-    cov2 = np.mean(off_diagonals)
+    if num_readers > 1:
+        off_diagonals = []
+        for offset in range(1, num_readers):
+            off_diagonals.extend(np.diag(covariances, k=offset))
+        cov2 = np.mean(off_diagonals)
+        msr = np.var(reader_foms - model_fom, ddof=1)
+        se = np.sqrt((msr + max(num_readers * cov2, 0)) / num_readers)
+        dof = (num_readers - 1) * ((msr + max(num_readers * cov2, 0)) / msr) ** 2
+    else:
+        cov2 = covariances
+        msr = (reader_foms - model_fom) ** 2
+        se = abs(reader_foms - model_fom)
+        dof = 1
 
     # msr = mean squared reader difference
-    msr = np.var(reader_foms - model_fom, ddof=1)
-    se = np.sqrt((msr + max(num_readers * cov2, 0)) / num_readers)
-    dof = (num_readers - 1) * ((msr + max(num_readers * cov2, 0)) / msr) ** 2
-
+    # msr = np.var(reader_foms - model_fom, ddof=1)
+    # se = np.sqrt((msr + max(num_readers * cov2, 0)) / num_readers)
+    # dof = (num_readers - 1) * ((msr + max(num_readers * cov2, 0)) / msr) ** 2
     return _test_result(
         effect=observed_effect_size,
         margin=margin,
@@ -350,24 +358,26 @@ def main(_):
     )
 
     #
-    operation_point(df, list(HUMAN_METADATA.keys()))
+    point = operation_point(df, list(HUMAN_METADATA.keys()))
+
     p_value: dict[str, dict] = {}
     for finding in Category:
         df_finding = df.loc[df["finding"].eq(finding.value)].copy()
-        score = model_vs_readers_orh(
-            disease=df_finding["label"].values,
-            model_score=df_finding["score"].values,
-            reader_scores=df_finding[
-                ["score_human_A", "score_human_C", "score_human_D", "score_human_E"]
-            ].values,
-            fom_fn=sklearn.metrics.roc_auc_score,
-            coverage=0.95,
-            margin=0,
-        )
+        for tag in HUMAN_METADATA.keys():
+            score = model_vs_readers_orh(
+                disease=df_finding["label"].values,
+                model_score=(
+                    df_finding["score"] >= point[finding.value][tag]["threshold"]
+                ).astype(int),
+                reader_scores=df_finding[[f"score_human_{tag}"]].values,
+                fom_fn=sklearn.metrics.roc_auc_score,
+                coverage=0.95,
+                margin=0,
+            )
 
-        p_value[f"{finding.value}"] = score.pvalue
+            p_value[f"{finding.value}_{tag}"] = score.pvalue
 
-        breakpoint()
+    breakpoint()
 
 
 if __name__ == "__main__":
