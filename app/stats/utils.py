@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import Literal, overload
 
 import pandas as pd
+from absl import logging
 
 
 def _calculate_fom(
@@ -45,6 +46,8 @@ def _calculate_fom_var_over_columns_jackknife(
 
     dof: float | None = None
     for column in df.columns:
+        logging.debug(f"Calculating FOM, dropping column {column}")
+
         _df: pd.DataFrame = df.drop(columns=column)
 
         _fom: pd.Series = _calculate_fom(_df, fom_fns=fom_fns)
@@ -57,6 +60,8 @@ def _calculate_fom_var_over_columns_jackknife(
 
         if (dof is not None) and (_dof != dof):
             raise ValueError(f"Degrees of freedom are not consistent: {dof} != {_dof}")
+
+        dof = _dof
 
     df_fom: pd.DataFrame = pd.DataFrame(foms)
     df_fom_var: pd.DataFrame = pd.DataFrame(fom_vars)
@@ -92,7 +97,7 @@ def calculate_fom_stats(
     fom_fns: dict[str, Callable[[pd.DataFrame], float]] = ...,
     axis: Literal["index", "columns"] = ...,
     method: Literal["jackknife"] = "jackknife",
-) -> tuple[pd.Series, pd.Series, float]: ...
+) -> tuple[pd.Series, pd.Series, pd.Series]: ...
 
 
 def calculate_fom_stats(
@@ -101,7 +106,7 @@ def calculate_fom_stats(
     fom_fns: dict[str, Callable[[pd.DataFrame], float]] | None = None,
     axis: Literal["index", "columns"] = "index",
     method: Literal["jackknife"] = "jackknife",
-) -> tuple[float | pd.Series, float | pd.Series, float]:
+) -> tuple[float | pd.Series, float | pd.Series, float | pd.Series]:
 
     return_singular: bool
     match (fom_fn, fom_fns):
