@@ -510,7 +510,7 @@ evaluate-auroc:
 		--csv $(RESULT_CSV) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
 		--evaluation_dir $(EVALUATION_DIR) \
-		--title "Dental Findings ($(DATASET_TITLE))"
+		--plot_title "$(DATASET_TITLE)"
 
 evaluate-auroc.with-human: --check-COMMON
 evaluate-auroc.with-human:
@@ -539,3 +539,7 @@ compile-stats:
 		--dicom_dir $(RAW_DIR)/data/dicoms \
 		--dataset_name $(DATASET_NAME) \
 		--verbosity $(VERBOSITY)
+
+plot-performances:
+	$(RUN_SCRIPT) \
+		$(foreach CSV,$(CSVS),--csv "$(CSV)")

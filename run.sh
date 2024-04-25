@@ -5,7 +5,6 @@ export ROOT_DIR=/mnt/hdd/PANO
 export CPUS=8
 export CUDA_VISIBLE_DEVICES=0
 
-# export DEBUG=false
 # export DEBUG=pdb
 # export DEBUG=memray
 # export DEBUG=cProfile
@@ -62,10 +61,14 @@ function _SET_RESULT_NAME() { __DEFAULT_SET_NAME "_SET_RESULT_NAME"; }
 function _IMPORT_EXP_SH() {
   # See: https://docs.google.com/spreadsheets/d/1EwkoX-EZM-vcP1r3a7J2IknsEmleFiucXPwAa5YvKpY
 
+  EXP_SH=.experiment.sh
   URL=${1:-"https://docs.google.com/spreadsheets/d/e/2PACX-1vSD6m_E8CQMX4Fm850d3-RZ1fg7gHEOZmouc5I3rIkzObDUk2sWhHqcTusVeattKRY1HjxAImwvjo2i/pub?gid=1641585683&single=true&output=tsv"}
 
-  echo "Downloading experiment configuration from Google Sheets"
-  . <(curl -L -s ${URL} | sed 's/\r//g')
+  if [[ -z "${USE_CACHED_EXP_SH}" ]] || [[ ! -f "${EXP_SH}" ]] ; then
+    echo "Downloading experiment configuration from Google Sheets"
+    curl -L -s ${URL} | sed 's/\r//g' > ${EXP_SH}
+  fi
+  . ${EXP_SH}
 }
 
 ### dialog functions
@@ -144,7 +147,7 @@ function _CONFIRM_VARIABLES() {
 
 ### main logic
 
-function _TRAIN() {
+function _TARGET_CREATE_MODEL() {
   MODEL_NAME=$(_NEW_NAME)
   ARCH=yolo
   DATASET_PREFIX=pano
@@ -163,23 +166,67 @@ function _TRAIN() {
   done
 }
 
+function _TARGET_CREATE_EVALUATION() {
+  _IMPORT_EXP_SH
+  _INPUT_VARIABLES \
+    "RESULT_NAME" \
+    "SEMSEG_RESULT_NAME"
+
+  if [[ ! -z "${DATASET_NAME}" ]] ; then
+    FORCE_DATASET_NAME=${DATASET_NAME}
+  fi
+
+  INSDET_RESULT_NAME=${RESULT_NAME}
+  _SET_RESULT_NAME ${SEMSEG_RESULT_NAME}
+  SEMSEG_DATASET_NAME=${DATASET_NAME}
+  _SET_RESULT_NAME ${INSDET_RESULT_NAME}
+
+  if [[ ! -z "${FORCE_DATASET_NAME}" ]] ; then
+    echo "DATASET_NAME specified, please ensure ${FORCE_DATASET_NAME} is a subset of ${DATASET_NAME}"
+
+    DATASET_NAME=${FORCE_DATASET_NAME}
+  fi
+
+  while : ; do
+    _INPUT_VARIABLES \
+      "RESULT_NAME" \
+      "SEMSEG_RESULT_NAME" \
+      "DATASET_NAME" \
+      "CPUS" \
+      "DEBUG"
+
+    # perform checks against the variables
+
+    break
+  done
+
+  _SET_MODEL_NAME ${MODEL_NAME}
+  _SET_DATASET_NAME ${DATASET_NAME}
+
+  export SEMSEG_DATASET_NAME
+}
+
 function _MAIN() {
-  _SELECT_VARIABLE "TARGET" \
-    "train" \
-    "test" \
-    "visualize" \
-    "visualize-semseg" \
-    "visualize-coco" \
-    "postprocess" \
-    "evaluate-auroc" \
-    "evaluate-auroc.with-human" \
-    "compile-stats" \
-    "convert-coco-to-instance-detection" \
-    "compare"
+
+  if [[ -z "${TARGET}" ]] ; then
+    _SELECT_VARIABLE "TARGET" \
+      "train" \
+      "test" \
+      "visualize" \
+      "visualize-semseg" \
+      "visualize-coco" \
+      "postprocess" \
+      "evaluate-auroc" \
+      "evaluate-auroc.with-human" \
+      "compile-stats" \
+      "convert-coco-to-instance-detection" \
+      "compare" \
+      "plot-performances"
+  fi
 
   case "${TARGET}" in
 
-    "train" ) _TRAIN ;;
+    "train" ) _TARGET_CREATE_MODEL ;;
 
     "test" )
 
@@ -245,40 +292,16 @@ function _MAIN() {
     | "evaluate-auroc.with-human" \
     )
 
-      _IMPORT_EXP_SH
-      _INPUT_VARIABLES \
-        "RESULT_NAME" \
-        "SEMSEG_RESULT_NAME"
-
-      INSDET_RESULT_NAME=${RESULT_NAME}
-      _SET_RESULT_NAME ${SEMSEG_RESULT_NAME}
-      export SEMSEG_DATASET_NAME=${DATASET_NAME}
-      _SET_RESULT_NAME ${INSDET_RESULT_NAME}
-
-      _INPUT_VARIABLES \
-        "RESULT_NAME" \
-        "SEMSEG_RESULT_NAME" \
-        "DATASET_NAME"
-
-      if [[ ! -z "${DATASET_NAME}" ]] ; then
-        FORCE_DATASET_NAME=${DATASET_NAME}
-      fi
-
-      _SET_MODEL_NAME ${MODEL_NAME}
-
-      if [[ ! -z "${FORCE_DATASET_NAME}" ]] ; then
-        echo "DATASET_NAME specified, please ensure ${FORCE_DATASET_NAME} is a subset of ${DATASET_NAME}"
-
-        DATASET_NAME=${FORCE_DATASET_NAME}
-      fi
-
-      _SET_DATASET_NAME ${DATASET_NAME}
+      _TARGET_CREATE_EVALUATION
 
       ;;
 
     "compile-stats" )
 
-      _INPUT_VARIABLE "DATASET_NAME"
+      _SELECT_VARIABLE "DATASET_NAME" \
+        "pano_eval_v2" \
+        "pano_test_v2_1" \
+        "pano_ntuh_test_v2"
 
       ;;
 
@@ -347,6 +370,17 @@ function _MAIN() {
       esac
 
       export IMAGE_PATTERNS="$(echo ${RAW_IMAGE_PATTERNS} | sed 's/ //g' | sed 's/,$//g')"
+
+      ;;
+
+    "plot-performances" )
+
+      RAW_CSVS=(
+        "pano_eval_v2:${ROOT_DIR}/results/2024-02-05-154450/evaluation.pano_eval_v2.postprocessed-with-2024-04-14-122002.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING/metrics.csv" \
+        "pano_test_v2_1:${ROOT_DIR}/results/2024-03-05-151736/evaluation.pano_test_v2_1.postprocessed-with-2024-04-14-013301.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING/metrics.csv" \
+        "pano_ntuh_test_v2:${ROOT_DIR}/results/2024-02-20-050603/evaluation.pano_ntuh_test_v2.postprocessed-with-2024-04-13-022434.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING/metrics.csv"
+      )
+      export CSVS=${RAW_CSVS[@]}
 
       ;;
 
