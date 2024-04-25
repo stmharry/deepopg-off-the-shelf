@@ -1,7 +1,5 @@
-import itertools
 import math
 import warnings
-from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -26,13 +24,7 @@ from app.instance_detection import (
     InstanceDetectionFactory,
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
-from app.stats import (
-    _calculate_fom,
-    calculate_fom_stats,
-    fast_kappa_score,
-    fast_sensitivity_score,
-    fast_specificity_score,
-)
+from app.stats import fast_sensitivity_score, fast_specificity_score
 
 plt.rcParams["font.family"] = "Arial"
 
@@ -242,6 +234,9 @@ def calculate_roc_metrics(
 
     roc_metrics: dict[str, Any] = {
         "score": score,
+        "pp": tp + fp,
+        "pn": tn + fn,
+        #
         "tp": tp,
         "fp": fp,
         "tn": tn,
@@ -312,202 +307,6 @@ def calculate_roc_metrics(
     return pd.DataFrame.from_dict(roc_metrics).loc[score.index]
 
 
-def calculate_cohen_kappa_metrics(
-    df_label: pd.DataFrame,
-    ci_level: float = 0.95,
-    ci_method: Literal["mchugh", "jackknife"] = "mchugh",
-) -> dict[tuple[str, str], dict[str, float]]:
-    df_label = df_label.eq(1)
-
-    n = len(df_label)
-    alpha = 1 - ci_level
-    z = scipy.stats.norm.ppf(1 - alpha / 2)
-
-    kappa_metrics: dict[tuple[str, str], dict[str, float]] = {}
-    for col1, col2 in itertools.combinations(df_label.columns, 2):
-        match ci_method:
-            case "mchugh":
-                confusion_matrix = sklearn.metrics.confusion_matrix(
-                    df_label[col1], df_label[col2], normalize="all"
-                )
-                po = np.diag(confusion_matrix).sum()
-                pe = np.sum(confusion_matrix.sum(axis=0) * confusion_matrix.sum(axis=1))
-                k = (po - pe) / (1 - pe)
-
-                vk = (po * (1 - po)) / (n * (1 - pe) ** 2)
-
-            case "jackknife":
-                k, vk, _ = calculate_fom_stats(
-                    df=df_label,
-                    fom_fn=lambda df: fast_kappa_score(
-                        df[col1].values, df[col2].values
-                    ),
-                    axis="index",
-                )
-
-        k_ci_lower = np.maximum(0, k - z * np.sqrt(vk))
-        k_ci_upper = np.minimum(1, k + z * np.sqrt(vk))
-
-        kappa_metrics[(col1, col2)] = kappa_metrics[(col2, col1)] = {
-            "kappa.value": k,
-            "kappa.ci_lower": k_ci_lower,
-            "kappa.ci_upper": k_ci_upper,
-        }
-
-    return kappa_metrics
-
-
-def _get_group_name_to_tags(tags: tuple[str]) -> dict[str, list[str]]:
-    group_name_to_tags: dict[str, list[str]] = {}
-    for tag in tags:
-        group_name = OPERATING_POINT_METADATA[tag]["group"]
-        if group_name is None:
-            continue
-
-        group_name_to_tags.setdefault(group_name, []).append(tag)
-
-    return group_name_to_tags
-
-
-def _get_intra_group_pairs(tags: tuple[str]) -> list[tuple[str, str]]:
-    group_name_to_tags = _get_group_name_to_tags(tags=tags)
-
-    intra_group_pairs: list[tuple[str, str]] = []
-    for group in group_name_to_tags.values():
-        _intra_group_pairs: Iterable[tuple[str, ...]] = itertools.combinations(group, 2)
-        intra_group_pairs.extend(_intra_group_pairs)  # type: ignore
-
-    return intra_group_pairs
-
-
-def _get_inter_group_pairs(tags: tuple[str]) -> list[tuple[str, str]]:
-    group_name_to_tags = _get_group_name_to_tags(tags=tags)
-
-    inter_group_pairs: list[tuple[str, str]] = []
-    for group_name_0, group_name_1 in itertools.combinations(
-        group_name_to_tags.keys(), 2
-    ):
-        _iter_group_pairs: Iterable[tuple[str, ...]] = itertools.product(
-            group_name_to_tags[group_name_0], group_name_to_tags[group_name_1]
-        )
-        inter_group_pairs.extend(_iter_group_pairs)  # type: ignore
-
-    return inter_group_pairs
-
-
-def calculate_group_cohen_kappa_metrics(
-    df_label: pd.DataFrame,
-    human_tags: list[str],
-    ci_level: float = 0.95,
-    ci_method: Literal["jackknife"] = "jackknife",
-) -> dict[
-    Literal[
-        "intra_group",
-        "inter_group",
-        "overall",
-        "diff_test",
-    ],
-    dict[str, float],
-]:
-    df = df_label[human_tags]
-
-    mean_kappa_score: Callable[..., float] = lambda df, pairs: np.mean(
-        [fast_kappa_score(df[pair[0]].values, df[pair[1]].values) for pair in pairs]
-    )
-
-    # fom derivation
-    intra_group_pairs = _get_intra_group_pairs(tuple(df.columns))
-    inter_group_pairs = _get_inter_group_pairs(tuple(df.columns))
-    all_pairs = intra_group_pairs + inter_group_pairs
-
-    fom_fns = {
-        "intra_group": lambda df: mean_kappa_score(df, pairs=intra_group_pairs),
-        "inter_group": lambda df: mean_kappa_score(df, pairs=inter_group_pairs),
-        "overall": lambda df: mean_kappa_score(df, pairs=all_pairs),
-        "diff": lambda df: (
-            mean_kappa_score(df, pairs=intra_group_pairs)
-            - mean_kappa_score(df, pairs=inter_group_pairs)
-        ),
-    }
-    fom: pd.Series = _calculate_fom(df=df, fom_fns=fom_fns)
-
-    _foms: list[pd.Series] = []
-    _fom_vars: list[pd.Series] = []
-    for tag in df.columns:
-        _df = df.drop(columns=[tag])
-        _intra_group_pairs = _get_intra_group_pairs(tuple(_df.columns))
-        _inter_group_pairs = _get_inter_group_pairs(tuple(_df.columns))
-        _all_pairs = _intra_group_pairs + _inter_group_pairs
-
-        _fom_fns = {
-            "intra_group": lambda df: mean_kappa_score(df, pairs=_intra_group_pairs),
-            "inter_group": lambda df: mean_kappa_score(df, pairs=_inter_group_pairs),
-            "overall": lambda df: mean_kappa_score(df, pairs=_all_pairs),
-            "diff": lambda df: (
-                mean_kappa_score(df, pairs=_intra_group_pairs)
-                - mean_kappa_score(df, pairs=_inter_group_pairs)
-            ),
-        }
-
-        _fom, _fom_var, _ = calculate_fom_stats(df=df, fom_fns=_fom_fns, axis="index")
-
-        _foms.append(_fom)
-        _fom_vars.append(_fom_var)
-
-    df_fom: pd.DataFrame = pd.DataFrame(_foms)
-    df_fom_var: pd.DataFrame = pd.DataFrame(_fom_vars)
-
-    fom_var0: pd.Series = df_fom.var(axis=0, ddof=1)  # type: ignore
-    fom_var2: pd.Series = df_fom_var.sum(axis=0)
-
-    fom_var: pd.Series = fom_var0 + fom_var2
-    fom_se: pd.Series = np.sqrt(fom_var / len(df.columns))
-
-    dof = fom_var**2 / (
-        fom_var0**2 / (len(df.columns) - 1) + fom_var2**2 / (len(df) - 1)
-    )
-
-    alpha = 1 - ci_level
-    z = scipy.stats.norm.ppf(1 - alpha / 2)
-
-    return {
-        "intra_group": {
-            "kappa.value": float(fom["intra_group"]),
-            "kappa.ci_lower": np.maximum(
-                0, fom["intra_group"] - z * fom_se["intra_group"]
-            ),
-            "kappa.ci_upper": np.minimum(
-                1, fom["intra_group"] + z * fom_se["intra_group"]
-            ),
-        },
-        "inter_group": {
-            "kappa.value": float(fom["inter_group"]),
-            "kappa.ci_lower": np.maximum(
-                0, fom["inter_group"] - z * fom_se["inter_group"]
-            ),
-            "kappa.ci_upper": np.minimum(
-                1, fom["inter_group"] + z * fom_se["inter_group"]
-            ),
-        },
-        "overall": {
-            "kappa.value": float(fom["overall"]),
-            "kappa.ci_lower": np.maximum(0, fom["overall"] - z * fom_se["overall"]),
-            "kappa.ci_upper": np.minimum(1, fom["overall"] + z * fom_se["overall"]),
-        },
-        "diff_test": {
-            "effect.value": float(fom["diff"]),
-            "effect.ci_lower": float(fom["diff"] - z * fom_se["diff"]),
-            "effect.ci_upper": float(fom["diff"] + z * fom_se["diff"]),
-            "pvalue": float(
-                2
-                * scipy.stats.t.cdf(
-                    -np.abs(fom["diff"] / fom_se["diff"]), df=dof["diff"]
-                )
-            ),
-        },
-    }
-
-
 def calculate_basic_metrics(
     label: pd.Series,
     score: pd.Series,
@@ -574,6 +373,8 @@ def compile_binary_metrics(
         row: pd.Series = df_roc_metric.loc[index]
 
         binary_metrics[operating_point] = {
+            "predicted_positive_count": int(row["pp"]),
+            "predicted_negative_count": int(row["pn"]),
             "threshold.value": float(row["score"]),
             "sensitivity.value": float(row["tpr"]),
             "sensitivity.ci_lower": float(row["tpr_ci_lower"]),
@@ -774,191 +575,21 @@ def plot_curve_grid(
     return ax
 
 
-def plot_forest(
-    metrics: dict[Any, dict[str, float]],
-    human_tags: list[str],
-    ax: Axes,
-    xlabel: str | None = None,
-    xvisible: bool = True,
-    title: str | None = None,
-) -> Axes:
-    intra_group_pairs = _get_intra_group_pairs(tuple(human_tags))
-    inter_group_pairs = _get_inter_group_pairs(tuple(human_tags))
-
-    # assemble data
-
-    keys = [
-        *intra_group_pairs,
-        "intra_group",
-        *inter_group_pairs,
-        "inter_group",
-        "overall",
-    ]
-
-    x = np.asarray([metrics[key]["kappa.value"] for key in keys])
-    xerr = np.asarray([
-        [
-            metrics[key]["kappa.value"] - metrics[key]["kappa.ci_lower"],
-            metrics[key]["kappa.ci_upper"] - metrics[key]["kappa.value"],
-        ]
-        for key in keys
-    ])
-
-    colors = []
-    y = []
-    yticklabels = []
-
-    _y = 0
-    for key in keys:
-        match key:
-            case (str() as tag0, str() as tag1):
-                color = "navy"
-                title0, title1 = sorted([
-                    OPERATING_POINT_METADATA[tag0]["title"],
-                    OPERATING_POINT_METADATA[tag1]["title"],
-                ])
-                y.append(_y)
-                yticklabel = f"Readers {title0} & {title1}"
-
-                _y += 1
-
-            case "intra_group" | "inter_group" | "overall":
-                color = "tab:red"
-                y.append(_y)
-                yticklabel = {
-                    "intra_group": "Mean, within-group",
-                    "inter_group": "Mean, across-group",
-                    "overall": "Mean, overall",
-                }[key]
-
-                _y += 1.5
-
-            case _:
-                raise ValueError("Invalid key.")
-
-        colors.append(color)
-        yticklabels.append(yticklabel)
-
-    xlim = (0, 1)
-    ylim = (np.max(y) + 1, np.min(y) - 1)
-
-    pvalue = metrics["diff_test"]["pvalue"]
-    match pvalue:
-        case _ if pvalue < 0.001:
-            pvalue_str = f"*** (p = {pvalue:.2g})"
-
-        case _ if pvalue < 0.01:
-            pvalue_str = f"** (p = {pvalue:.2g})"
-
-        case _ if pvalue < 0.05:
-            pvalue_str = f"* (p = {pvalue:.2f})"
-
-        case _:
-            pvalue_str = f"n.s."
-
-    # plotting
-
-    ax.xaxis.grid(
-        which="both",
-        linestyle="--",
-        linewidth=0.25,
-    )
-
-    for _x, _y, _xerr, color in zip(x, y, xerr, colors):
-        ax.errorbar(
-            x=_x,
-            y=_y,
-            xerr=np.asarray([_xerr]).T,
-            color=color,
-            marker="o",
-            markersize=3,
-            markerfacecolor=color,
-            elinewidth=0.5,
-            capsize=4,
-            capthick=0.5,
-            linewidth=0,
-        )
-
-    # plotting significance test
-
-    _i1 = keys.index("intra_group")
-    _i2 = keys.index("inter_group")
-    _y1 = y[_i1]
-    _y2 = y[_i2]
-
-    _x_max = np.max([x[i] + xerr[i, 1] for i in range(_i1, _i2 + 1)])
-    _x_base = _x_max + 0.05 * (xlim[1] - xlim[0])
-    _x_tip = _x_base - 0.01 * (xlim[1] - xlim[0])
-
-    ax.plot(
-        [_x_tip, _x_base, _x_base, _x_tip],
-        [_y1, _y1, _y2, _y2],
-        color="k",
-        linewidth=0.5,
-    )
-
-    ax.text(
-        x=_x_base + 0.01 * (xlim[1] - xlim[0]),
-        y=(_y1 + _y2) / 2,
-        s=pvalue_str,
-        color="black",
-        fontsize="small",
-        horizontalalignment="left",
-        verticalalignment="center",
-    )
-
-    # patch spine
-
-    if xvisible:
-        ax.plot(
-            [0.0, 1.0],
-            [ylim[0], ylim[0]],
-            color="black",
-            linewidth=1.5,
-        )
-
-    # formatting
-
-    ax.set_ylim(*ylim)
-
-    ax.spines.left.set_visible(False)
-    ax.spines.right.set_visible(False)
-    ax.spines.top.set_visible(False)
-    ax.spines.bottom.set_visible(False)
-
-    ax.set_yticks(y)
-    ax.set_yticklabels(yticklabels)
-
-    if not xvisible:
-        ax.xaxis.set_tick_params(which="both", length=0)
-    ax.yaxis.set_tick_params(which="both", length=0)
-
-    if xlabel is not None:
-        ax.set_xlabel(xlabel)
-
-    if title is not None:
-        ax.set_title(title, fontsize="medium", loc="left")
-
-    return ax
-
-
 def evaluate(
     df: pd.DataFrame,
     human_tags: list[str],
     evaluation_dir: Path,
 ) -> None:
-    figs: dict[
-        Literal[
-            "roc-curve",
-            "precision-recall-curve",
-            "kappa",
-        ],
-        Figure,
-    ] = {}
+    figs: dict[Literal["roc-curve", "precision-recall-curve"], Figure] = {}
 
     num_columns: int = FLAGS.plot_curve_ax_per_row
     num_rows: int = math.ceil(len(Category) / num_columns)
-    for name in ["roc-curve", "precision-recall-curve"]:
+
+    names: list[Literal["roc-curve", "precision-recall-curve"]] = [
+        "roc-curve",
+        "precision-recall-curve",
+    ]
+    for name in names:
         fig, _ = plt.subplots(
             nrows=num_rows,
             ncols=num_columns,
@@ -971,20 +602,8 @@ def evaluate(
             layout="constrained",
             dpi=300,
         )
-        engine = fig.get_layout_engine()
+        engine: ConstrainedLayoutEngine = fig.get_layout_engine()  # type: ignore
         engine.set(hspace=0.075, rect=[0, 0.025, 1, 0.95])
-
-        figs[name] = fig
-
-    for name in ["kappa"]:
-        fig, _ = plt.subplots(
-            nrows=len(Category),
-            ncols=1,
-            sharex=True,
-            figsize=(6, 2 * len(Category)),
-            layout="constrained",
-            dpi=300,
-        )
 
         figs[name] = fig
 
@@ -1046,11 +665,7 @@ def evaluate(
                 "npv": report["0"]["precision"],
             }
 
-        labels = {}
         if len(human_tags) > 0:
-            for tag in human_tags:
-                labels[tag] = df_finding[f"score_human_{tag}"].eq(1).values
-
             if FLAGS.stat_test:
                 test_name_margins = [("superiority", 0), ("non-inferiority", 0.05)]
 
@@ -1070,7 +685,6 @@ def evaluate(
                 model_score = (
                     df_finding["score"].gt(binary_metric["threshold.value"]).values
                 )
-                labels[f"ai@{operating_point}"] = model_score
 
                 for metric_name, metric_fn in [
                     # we don't use sklearn here as it's too slow
@@ -1126,32 +740,6 @@ def evaluate(
                             },
                         ])
 
-        df_label = pd.DataFrame.from_dict(labels, orient="columns")
-
-        kappa_metrics = calculate_cohen_kappa_metrics(df_label=df_label)
-        for (reader1, reader2), _kappa_metrics in kappa_metrics.items():
-            for metric_name, metric in _kappa_metrics.items():
-                metrics.append({
-                    "finding": finding.value,
-                    "metric": f"{metric_name}@{reader1}@{reader2}",
-                    "value": metric,
-                })
-
-        logging.debug(f"Kappa metrics: {kappa_metrics}")
-
-        group_kappa_metrics = calculate_group_cohen_kappa_metrics(
-            df_label=df_label, human_tags=human_tags
-        )
-        for name, _group_kappa_metrics in group_kappa_metrics.items():
-            for metric_name, metric in _group_kappa_metrics.items():
-                metrics.append({
-                    "finding": finding.value,
-                    "metric": f"{metric_name}@{name}",
-                    "value": metric,
-                })
-
-        logging.debug(f"Group kappa metrics: {group_kappa_metrics}")
-
         if FLAGS.plot:
             plot_curve_grid(
                 df=df_roc_metric,
@@ -1190,22 +778,6 @@ def evaluate(
                 ax=figs["precision-recall-curve"].axes[num],
             )
 
-            plot_forest(
-                metrics=kappa_metrics | group_kappa_metrics,
-                human_tags=human_tags,
-                xlabel=(
-                    "Cohen's kappa\n"
-                    "← Lower agreement"
-                    "                                "
-                    "Higher agreement →"
-                    if num == len(Category) - 1
-                    else None
-                ),
-                xvisible=(num == len(Category) - 1),
-                title=metadata["title"],
-                ax=figs["kappa"].axes[num],
-            )
-
     metric_path: Path = Path(evaluation_dir, "metrics.csv")
     logging.info(f"Saving the metrics to {metric_path}.")
     pd.DataFrame(metrics).to_csv(metric_path, index=False)
@@ -1222,15 +794,10 @@ def evaluate(
             )
 
             if FLAGS.plot_title:
-                match name:
-                    case "roc-curve" | "precision-recall-curve":
-                        title = (
-                            f"Dental finding summary performance ({FLAGS.plot_title})"
-                        )
-                    case "kappa":
-                        title = f"Dental finding summary agreement ({FLAGS.plot_title})"
-
-                fig.suptitle(title, fontsize="x-large")
+                fig.suptitle(
+                    f"Dental finding summary performance ({FLAGS.plot_title})",
+                    fontsize="x-large",
+                )
 
             for extension in ["pdf", "png"]:
                 fig_path: Path = Path(evaluation_dir, f"{name}.{extension}")

@@ -540,6 +540,16 @@ compile-stats:
 		--dataset_name $(DATASET_NAME) \
 		--verbosity $(VERBOSITY)
 
+plot-performances: check-RESULT_DIR check-CSVS
 plot-performances:
 	$(RUN_SCRIPT) \
-		$(foreach CSV,$(CSVS),--csv "$(CSV)")
+		--result_dir $(RESULT_DIR) \
+		$(foreach CSV,$(CSVS),--csv "$(CSV)") \
+		--verbosity $(VERBOSITY)
+
+plot-agreements: check-RESULT_DIR check-CSV
+plot-agreements:
+	$(RUN_SCRIPT) \
+		--result_dir $(RESULT_DIR) \
+		--csv $(CSV) \
+		--verbosity $(VERBOSITY)
