@@ -221,7 +221,8 @@ function _MAIN() {
       "compile-stats" \
       "convert-coco-to-instance-detection" \
       "compare" \
-      "plot-performances"
+      "plot-performances" \
+      "plot-agreements"
   fi
 
   case "${TARGET}" in
@@ -381,6 +382,12 @@ function _MAIN() {
         "pano_ntuh_test_v2:${ROOT_DIR}/results/2024-02-20-050603/evaluation.pano_ntuh_test_v2.postprocessed-with-2024-04-13-022434.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING/metrics.csv"
       )
       export CSVS=${RAW_CSVS[@]}
+
+      ;;
+
+    "plot-agreements" )
+
+      export CSV="results/2024-02-20-050603/evaluation.pano_ntuh_test_v2_1.postprocessed-with-2024-04-13-022434.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING.with-human/evaluation.csv"
 
       ;;
 
