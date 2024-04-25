@@ -136,8 +136,11 @@ def process_finding_stats() -> dict[str, dict[str, str]]:
         dataset_name=FLAGS.dataset_name
     )
 
+    # index = (file_name, fdi); column = finding; value = label
+    df = df.unstack()  # type: ignore
+
     total_count: int = len(df)
-    finding_counts: pd.Series = df.groupby("finding")["label"].sum()  # type: ignore
+    finding_counts: pd.Series = df["label"].sum(axis=0)  # type: ignore
 
     return {
         "Findings, n (prevalence %)": (
