@@ -245,10 +245,13 @@ def main(_):
             match pvalue:
                 case _ if pvalue < 0.001:
                     pvalue_str = f"***"
+
                 case _ if pvalue < 0.01:
                     pvalue_str = f"**"
+
                 case _ if pvalue < 0.05:
                     pvalue_str = f"*"
+
                 case _:
                     pvalue_str = f"n.s."
                     continue
@@ -257,7 +260,6 @@ def main(_):
 
             y_max: float = float(row["max_value"]) + 0.075 * lim_range
             y_external_max: float = float(row["external_max_value"]) + 0.075 * lim_range
-            y_text: float = y_max + 0.03 * lim_range
 
             ax.plot(
                 [
@@ -283,7 +285,7 @@ def main(_):
             )
             ax.text(
                 x=float((row["internal_pos"] + row["external_center_pos"]) / 2),
-                y=y_text,
+                y=y_max + 0.03 * lim_range,
                 s=pvalue_str,
                 color="black",
                 fontsize="small",
