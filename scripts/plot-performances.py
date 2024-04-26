@@ -6,8 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.stats
-from absl import app, flags
+from absl import app, flags, logging
 from matplotlib.layout_engine import ConstrainedLayoutEngine
+
+from app.logging import patch_logging  # type: ignore
 
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_multi_string("csv", [], "CSV files to plot.")
@@ -111,8 +113,6 @@ def apply_per_finding(df: pd.DataFrame) -> pd.Series:
     mu_i: float = float(s_i["value"])
     se_i: float = float((s_i["ci_upper"] - s_i["ci_lower"]) / (2 * Z))
 
-    #
-
     df_e: pd.DataFrame = df.loc[df["dataset_type"] == "external"]
 
     mu_e: float = float(df_e["value"].mean(axis=0))
@@ -121,11 +121,17 @@ def apply_per_finding(df: pd.DataFrame) -> pd.Series:
     var_e: float = var0_e + var2_e
     se_e: float = np.sqrt(var_e / len(df_e))
 
-    #
-
     t: float = (mu_i - mu_e) / np.sqrt(se_i**2 + se_e**2)
     dof: float = var_e**2 / var0_e**2 * (len(df_e) - 1)
     pvalue: float = float(2 * scipy.stats.t.cdf(-np.abs(t), df=dof))
+
+    #
+
+    mu: float = float(df["value"].mean(axis=0))
+    var0: float = float(df["value"].var(axis=0, ddof=1))
+    var2: float = np.sum(np.square((df["ci_upper"] - df["ci_lower"]) / (2 * Z)))
+    var: float = var0 + var2
+    se: float = np.sqrt(var / len(df))
 
     return pd.Series({
         "max_value": df["ci_upper"].max(),
@@ -138,6 +144,9 @@ def apply_per_finding(df: pd.DataFrame) -> pd.Series:
         "external_left_pos": df_e["position"].min(),
         "external_right_pos": df_e["position"].max(),
         "pvalue": pvalue,
+        "value": mu,
+        "ci_lower": mu - Z * se,
+        "ci_upper": mu + Z * se,
     })
 
 
@@ -211,6 +220,8 @@ def main(_):
     engine.set(hspace=0.075)
 
     for metric, ax in zip(metrics_to_plot, fig.axes):
+        logging.info(f"Plotting {metric.name}...")
+
         assert metric.lim is not None
 
         _df = df[metric.name].copy()
@@ -240,8 +251,18 @@ def main(_):
 
         #
 
-        for _, row in _df_finding.iterrows():
+        for finding_name, row in _df_finding.iterrows():
+            logging.info(
+                f"Mean {metric.name} for {finding_name} is {row['value']:.1%} (95% CI:"
+                f" {row['ci_lower']:.1%} - {row['ci_upper']:.1%})"
+            )
+
             pvalue: float = float(row["pvalue"])
+            logging.info(
+                f"Internal/external test set {metric.name} discrepancy test pvalue:"
+                f" {pvalue:.2g}"
+            )
+
             match pvalue:
                 case _ if pvalue < 0.001:
                     pvalue_str = f"***"

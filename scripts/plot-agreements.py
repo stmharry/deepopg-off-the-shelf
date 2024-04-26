@@ -271,6 +271,8 @@ def main(_):
         metrics |= calculate_kappa_metrics(df=_df_label)
         metrics |= calculate_mean_kappa_metrics(df=_df_label)
 
+        logging.info(metrics)
+
         mean_diff_stat: Statistic = metrics["mean_diff_test"]
         pvalue: float = float(
             2
