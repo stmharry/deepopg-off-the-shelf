@@ -31,6 +31,8 @@ def _calculate_fom_var_over_index_jackknife(
     fom_var: pd.Series = df_fom.var(axis=0, ddof=1)  # type: ignore
 
     return (
+        # a (n - 1) / n factor is to correct for the population size
+        # another (n - 1) factor is due to the nature of jackknife estimation
         fom_var * (n - 1) ** 2 / n,
         n - 1,
     )
@@ -46,7 +48,9 @@ def _calculate_fom_var_over_columns_jackknife(
 
     dof: float | None = None
     for column in df.columns:
-        logging.debug(f"Calculating FOM, dropping column {column}")
+        logging.debug(
+            f"Calculating foms ({','.join(fom_fns)}), dropping column {column}"
+        )
 
         _df: pd.DataFrame = df.drop(columns=column)
 
@@ -75,7 +79,7 @@ def _calculate_fom_var_over_columns_jackknife(
     fom_var: pd.Series = fom_var0 + fom_var2
 
     return (
-        fom_var,
+        fom_var * (n - 1) ** 2 / n,
         fom_var**2 / (fom_var0**2 / (n - 1) + fom_var2**2 / dof),
     )
 
