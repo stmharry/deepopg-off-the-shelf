@@ -1,7 +1,9 @@
 from collections.abc import Callable
 from typing import Literal, overload
 
+import numpy as np
 import pandas as pd
+import scipy.stats
 from absl import logging
 
 
@@ -16,7 +18,7 @@ def _calculate_fom(
 def _calculate_fom_var_over_index_jackknife(
     df: pd.DataFrame,
     fom_fns: dict[str, Callable[[pd.DataFrame], float]],
-) -> tuple[pd.Series, float]:
+) -> tuple[pd.Series, pd.Series]:
 
     foms: list[pd.Series] = []
     for index in df.index:
@@ -34,19 +36,43 @@ def _calculate_fom_var_over_index_jackknife(
         # a (n - 1) / n factor is to correct for the population size
         # another (n - 1) factor is due to the nature of jackknife estimation
         fom_var * (n - 1) ** 2 / n,
-        n - 1,
+        pd.Series(n - 1, index=fom_var.index),
+    )
+
+
+def _calculate_fom_var_over_index_bootstrap(
+    df: pd.DataFrame,
+    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    num_samples: int = 2_000,
+) -> tuple[pd.Series, pd.Series]:
+    n: int = len(df)
+
+    foms: list[pd.Series] = []
+    for _ in range(num_samples):
+        _df: pd.DataFrame = df.sample(n=n, replace=True)
+        _fom: pd.Series = _calculate_fom(_df, fom_fns=fom_fns)
+
+        foms.append(_fom)
+
+    df_fom: pd.DataFrame = pd.DataFrame.from_records(foms)
+
+    fom_var: pd.Series = df_fom.var(axis=0, ddof=0)  # type: ignore
+
+    return (
+        fom_var,
+        pd.Series(n - 1, index=fom_var.index),
     )
 
 
 def _calculate_fom_var_over_columns_jackknife(
     df: pd.DataFrame,
     fom_fns: dict[str, Callable[[pd.DataFrame], float]],
-) -> tuple[pd.Series, float]:
+) -> tuple[pd.Series, pd.Series]:
 
     foms: list[pd.Series] = []
     fom_vars: list[pd.Series] = []
 
-    dof: float | None = None
+    dof: pd.Series | None = None
     for column in df.columns:
         logging.debug(
             f"Calculating foms ({','.join(fom_fns)}), dropping column {column}"
@@ -56,13 +82,13 @@ def _calculate_fom_var_over_columns_jackknife(
 
         _fom: pd.Series = _calculate_fom(_df, fom_fns=fom_fns)
         _fom_var: pd.Series
-        _dof: float
+        _dof: pd.Series
         _fom_var, _dof = _calculate_fom_var_over_index_jackknife(_df, fom_fns=fom_fns)
 
         foms.append(_fom)
         fom_vars.append(_fom_var)
 
-        if (dof is not None) and (_dof != dof):
+        if (dof is not None) and _dof.ne(dof).any():
             raise ValueError(f"Degrees of freedom are not consistent: {dof} != {_dof}")
 
         dof = _dof
@@ -90,8 +116,8 @@ def calculate_fom_stats(
     fom_fn: Callable[[pd.DataFrame], float] = ...,
     fom_fns: None = None,
     axis: Literal["index", "columns"] = ...,
-    method: Literal["jackknife"] = "jackknife",
-) -> tuple[float, float, float]: ...
+    method: Literal["jackknife", "bootstrap"] = "jackknife",
+) -> tuple[float, float, float, float]: ...
 
 
 @overload
@@ -100,8 +126,8 @@ def calculate_fom_stats(
     fom_fn: None = None,
     fom_fns: dict[str, Callable[[pd.DataFrame], float]] = ...,
     axis: Literal["index", "columns"] = ...,
-    method: Literal["jackknife"] = "jackknife",
-) -> tuple[pd.Series, pd.Series, pd.Series]: ...
+    method: Literal["jackknife", "bootstrap"] = "jackknife",
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]: ...
 
 
 def calculate_fom_stats(
@@ -109,8 +135,8 @@ def calculate_fom_stats(
     fom_fn: Callable[[pd.DataFrame], float] | None = None,
     fom_fns: dict[str, Callable[[pd.DataFrame], float]] | None = None,
     axis: Literal["index", "columns"] = "index",
-    method: Literal["jackknife"] = "jackknife",
-) -> tuple[float | pd.Series, float | pd.Series, float | pd.Series]:
+    method: Literal["jackknife", "bootstrap"] = "jackknife",
+) -> tuple[float | pd.Series, float | pd.Series, float | pd.Series, float | pd.Series]:
 
     return_singular: bool
     match (fom_fn, fom_fns):
@@ -129,20 +155,57 @@ def calculate_fom_stats(
 
     assert fom_fns is not None
 
-    if method != "jackknife":
-        raise NotImplementedError(f"Method {method} not implemented")
-
     fom: pd.Series = _calculate_fom(df, fom_fns=fom_fns)
+
+    fom_var: pd.Series
+    dof: pd.Series
+    n: int
     match axis:
         case "index":
-            fom_var, dof = _calculate_fom_var_over_index_jackknife(df, fom_fns=fom_fns)
+            n = df.shape[0]
+
+            match method:
+                case "jackknife":
+                    fom_var, dof = _calculate_fom_var_over_index_jackknife(
+                        df, fom_fns=fom_fns
+                    )
+
+                case "bootstrap":
+                    fom_var, dof = _calculate_fom_var_over_index_bootstrap(
+                        df, fom_fns=fom_fns
+                    )
+
+                case _:
+                    raise ValueError(f"Method {method} not supported")
 
         case "columns":
+            if method != "jackknife":
+                raise NotImplementedError(f"Method {method} not implemented")
+
             fom_var, dof = _calculate_fom_var_over_columns_jackknife(
                 df, fom_fns=fom_fns
             )
+            n = df.shape[1]
+
+    fom_se: pd.Series = np.sqrt(fom_var / n)
 
     if return_singular:
-        return fom.item(), fom_var.item(), dof
+        return fom.item(), fom_var.item(), fom_se.item(), dof.item()
 
-    return fom, fom_var, dof
+    return fom, fom_var, fom_se, dof
+
+
+def calculate_pvalue(
+    t: pd.Series,
+    dof: pd.Series,
+    method: Literal["two-sided", "one-sided"] = "two-sided",
+) -> pd.Series:
+    pvalue: pd.Series
+    match method:
+        case "two-sided":
+            pvalue = 2 * scipy.stats.t.cdf(-np.abs(t), df=dof)  # type: ignore
+
+        case "one-sided":
+            pvalue = scipy.stats.t.sf(t, df=dof)  # type: ignore
+
+    return pvalue

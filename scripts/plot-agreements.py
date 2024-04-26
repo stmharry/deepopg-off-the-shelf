@@ -1,7 +1,7 @@
 import dataclasses
 import functools
 import itertools
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -67,7 +67,7 @@ GROUP_PADDING: float = 0.5
 def calculate_kappa_metrics(
     df: pd.DataFrame,
     ci_level: float = 0.95,
-    ci_method: Literal["mchugh", "jackknife"] = "jackknife",
+    ci_method: Literal["mchugh", "jackknife"] = "mchugh",
 ) -> dict[tuple[str, str], Statistic]:
     n: int = len(df)
     alpha: float = 1 - ci_level
@@ -75,8 +75,9 @@ def calculate_kappa_metrics(
 
     metrics: dict[tuple[str, str], Statistic] = {}
     for col1, col2 in itertools.combinations(df.columns, 2):
-        k: float
-        vk: float
+        kappa: float
+        kappa_var: float
+        kappa_se: float
         dof: float
 
         match ci_method:
@@ -86,27 +87,24 @@ def calculate_kappa_metrics(
                 )
                 po = np.diag(confusion_matrix).sum()
                 pe = np.sum(confusion_matrix.sum(axis=0) * confusion_matrix.sum(axis=1))
-                k = (po - pe) / (1 - pe)
 
-                vk = (po * (1 - po)) / (n * (1 - pe) ** 2)
+                kappa = (po - pe) / (1 - pe)
+                kappa_var = po * (1 - po) / ((1 - pe) ** 2)
+                kappa_se = np.sqrt(kappa_var / n)
                 dof = n - 1
 
             case "jackknife":
-                fom_fn: Callable[[pd.DataFrame], float] = lambda df: fast_kappa_score(
-                    df[col1].to_numpy(), df[col2].to_numpy()
-                )
-                k, vk, dof = calculate_fom_stats(
-                    df=df,
-                    fom_fn=fom_fn,
-                    axis="index",
+                raise NotImplementedError(
+                    "Jackknife method not implemented since it is not consistent with"
+                    " the Mchugh method."
                 )
 
         metrics[(col1, col2)] = metrics[(col2, col1)] = Statistic(
-            value=k,
+            value=kappa,
             dof=dof,
             ci_level=ci_level,
-            ci_lower=np.maximum(0, k - z * np.sqrt(vk)),
-            ci_upper=np.minimum(1, k + z * np.sqrt(vk)),
+            ci_lower=np.maximum(0, kappa - z * kappa_se),
+            ci_upper=np.minimum(1, kappa + z * kappa_se),
         )
 
     return metrics
@@ -192,8 +190,9 @@ def calculate_mean_kappa_metrics(
 
     fom: pd.Series
     fom_var: pd.Series
+    fom_se: pd.Series
     dof: pd.Series
-    fom, fom_var, dof = calculate_fom_stats(
+    fom, _, fom_se, dof = calculate_fom_stats(
         df=df,
         fom_fns={
             "intra_group_mean": lambda df: _mean_kappa_score(
@@ -212,7 +211,6 @@ def calculate_mean_kappa_metrics(
         },
         axis="columns",
     )
-    fom_se: pd.Series = np.sqrt(fom_var / n)
 
     metrics: dict[str, Statistic] = {
         key: Statistic(
