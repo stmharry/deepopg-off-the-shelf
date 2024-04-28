@@ -427,7 +427,7 @@ postprocess:
 		--missing_scoring_method $(MISSING_SCORING_METHOD) \
 		--finding_scoring_method $(FINDING_SCORING_METHOD) \
 		--nosave_predictions \
-		--num_workers $(CPUS)
+		--num_workers $(CPUS)| ts "%.s" | tee debug.log
 
 postprocess.gt-det: --check-postprocess
 postprocess.gt-det: RESULT_NAME = $(DATASET_NAME)

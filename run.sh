@@ -2,9 +2,10 @@
 
 export RAW_DIR=/mnt/md0/data/PANO
 export ROOT_DIR=/mnt/hdd/PANO
-export CPUS=8
+export CPUS=1
 export CUDA_VISIBLE_DEVICES=0
 
+export DEBUG=
 # export DEBUG=pdb
 # export DEBUG=memray
 # export DEBUG=cProfile
@@ -192,6 +193,7 @@ function _TARGET_CREATE_EVALUATION() {
       "RESULT_NAME" \
       "SEMSEG_RESULT_NAME" \
       "DATASET_NAME" \
+      "SEMSEG_DATASET_NAME" \
       "CPUS" \
       "DEBUG"
 
@@ -236,12 +238,12 @@ function _MAIN() {
 
       if [[ -z "${RESULT_NAME}" ]] ; then
         RESULT_NAME=$(_NEW_NAME)
-        MODEL_NAME=
-        DATASET_NAME=
-        MODEL_CHECKPOINT=weights/last.pt
+        MODEL_NAME=2024-04-12-075958
+        DATASET_NAME=pano_semseg_v5_ntuh_test
+        MODEL_CHECKPOINT=model_0099999.pth
         MAX_OBJS=300
-		    MIN_SCORE=0.001
-		    MIN_IOU=0.3
+		    MIN_SCORE=0.0001
+		    MIN_IOU=0.5
 
 		  else
 		    _SET_RESULT_NAME ${RESULT_NAME}
@@ -346,6 +348,13 @@ function _MAIN() {
 			    ;;
 
 			  "pano_test_v2_1" )
+
+			    RAW_IMAGE_PATTERNS="
+			      ${ROOT_DIR}/data/images/PROMATON/*.jpg,
+			      ${ROOT_DIR}/results/2024-04-15-042952/visualize/*.tooth.jpg,
+			      ${ROOT_DIR}/results/2024-04-15-042952/visualize/*.findings.jpg,
+			    "
+
 			    ;;
 
 			  "pano_ntuh_test_v2" )
@@ -393,7 +402,6 @@ function _MAIN() {
 
   esac
 
-  clear
   make ${TARGET} ${ADDITIONAL_TARGETS[@]}
 }
 

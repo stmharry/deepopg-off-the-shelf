@@ -10,10 +10,7 @@ def fast_sensitivity_score(y_true: ArrayLike, y_pred: ArrayLike) -> float:
 
 
 def fast_specificity_score(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-
-    return float(np.sum((1 - y_true) * (1 - y_pred)) / np.sum(1 - y_true))
+    return fast_sensitivity_score(1 - np.asarray(y_true), 1 - np.asarray(y_pred))
 
 
 def fast_kappa_score(y1: ArrayLike, y2: ArrayLike) -> float:

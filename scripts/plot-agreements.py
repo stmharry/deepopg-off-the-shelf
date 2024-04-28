@@ -67,7 +67,7 @@ GROUP_PADDING: float = 0.5
 def calculate_kappa_metrics(
     df: pd.DataFrame,
     ci_level: float = 0.95,
-    ci_method: Literal["mchugh", "jackknife"] = "mchugh",
+    ci_method: Literal["mchugh", "jackknife", "bootstrap"] = "jackknife",
 ) -> dict[tuple[str, str], Statistic]:
     n: int = len(df)
     alpha: float = 1 - ci_level
@@ -89,15 +89,20 @@ def calculate_kappa_metrics(
                 pe = np.sum(confusion_matrix.sum(axis=0) * confusion_matrix.sum(axis=1))
 
                 kappa = (po - pe) / (1 - pe)
-                kappa_var = po * (1 - po) / ((1 - pe) ** 2)
-                kappa_se = np.sqrt(kappa_var / n)
+                kappa_var = po * (1 - po) / ((1 - pe) ** 2) / n
                 dof = n - 1
 
-            case "jackknife":
-                raise NotImplementedError(
-                    "Jackknife method not implemented since it is not consistent with"
-                    " the Mchugh method."
+            case "jackknife" | "bootstrap":
+                kappa, kappa_var, dof = calculate_fom_stats(
+                    df=df,
+                    fom_fn=lambda df: fast_kappa_score(  # type: ignore
+                        df[col1].to_numpy(), df[col2].to_numpy()
+                    ),
+                    axis="index",
+                    method=ci_method,
                 )
+
+        kappa_se = np.sqrt(kappa_var)
 
         metrics[(col1, col2)] = metrics[(col2, col1)] = Statistic(
             value=kappa,
@@ -148,7 +153,7 @@ def _get_inter_group_pairs(tags: tuple[str, ...]) -> list[tuple[str, str]]:
     return inter_group_pairs
 
 
-def _get_pairs(
+def get_pairs(
     df: pd.DataFrame,
     kind: Literal["intra_group", "inter_group", "overall"],
 ) -> list[tuple[str, str]]:
@@ -166,7 +171,7 @@ def _get_pairs(
             return _get_intra_group_pairs(tags) + _get_inter_group_pairs(tags)
 
 
-def _mean_kappa_score(df: pd.DataFrame, pairs: list[tuple[str, str]]) -> float:
+def mean_kappa_score(df: pd.DataFrame, pairs: list[tuple[str, str]]) -> float:
     return float(
         np.mean([
             fast_kappa_score(df[pair[0]].to_numpy(), df[pair[1]].to_numpy())
@@ -184,41 +189,42 @@ def calculate_mean_kappa_metrics(
     if ci_method != "jackknife":
         raise ValueError("Only jackknife method is supported.")
 
-    n: int = len(df.columns)
     alpha: float = 1 - ci_level
     z: float = float(scipy.stats.norm.ppf(1 - alpha / 2))
 
     fom: pd.Series
-    fom_var: pd.Series
     fom_se: pd.Series
     dof: pd.Series
-    fom, _, fom_se, dof = calculate_fom_stats(
+    fom, fom_var, dof = calculate_fom_stats(
         df=df,
         fom_fns={
-            "intra_group_mean": lambda df: _mean_kappa_score(
-                df, pairs=_get_pairs(df, kind="intra_group")
+            "intra_group_mean": lambda df: mean_kappa_score(
+                df, pairs=get_pairs(df, kind="intra_group")
             ),
-            "inter_group_mean": lambda df: _mean_kappa_score(
-                df, pairs=_get_pairs(df, kind="inter_group")
+            "inter_group_mean": lambda df: mean_kappa_score(
+                df, pairs=get_pairs(df, kind="inter_group")
             ),
-            "overall_mean": lambda df: _mean_kappa_score(
-                df, pairs=_get_pairs(df, kind="overall")
+            "overall_mean": lambda df: mean_kappa_score(
+                df, pairs=get_pairs(df, kind="overall")
             ),
             "mean_diff": lambda df: (
-                _mean_kappa_score(df, pairs=_get_pairs(df, kind="intra_group"))
-                - _mean_kappa_score(df, pairs=_get_pairs(df, kind="inter_group"))
+                mean_kappa_score(df, pairs=get_pairs(df, kind="intra_group"))
+                - mean_kappa_score(df, pairs=get_pairs(df, kind="inter_group"))
             ),
         },
         axis="columns",
     )
+    fom_se: pd.Series = np.sqrt(fom_var)  # type: ignore
+    fom_ci_lower: pd.Series = fom - z * fom_se
+    fom_ci_upper: pd.Series = fom + z * fom_se
 
     metrics: dict[str, Statistic] = {
         key: Statistic(
             value=float(fom[key]),
             dof=float(dof[key]),
             ci_level=ci_level,
-            ci_lower=np.maximum(0, fom[key] - z * fom_se[key]),
-            ci_upper=np.minimum(1, fom[key] + z * fom_se[key]),
+            ci_lower=np.maximum(0, fom_ci_lower[key]),
+            ci_upper=np.minimum(1, fom_ci_upper[key]),
         )
         for key in ["intra_group_mean", "inter_group_mean", "overall_mean"]
     }
@@ -228,8 +234,8 @@ def calculate_mean_kappa_metrics(
         value=float(fom[key]),
         dof=float(dof[key]),
         ci_level=ci_level,
-        ci_lower=float(fom[key] - z * fom_se[key]),
-        ci_upper=float(fom[key] + z * fom_se[key]),
+        ci_lower=float(fom_ci_lower[key]),
+        ci_upper=float(fom_ci_upper[key]),
     )
 
     return metrics
@@ -305,9 +311,9 @@ def main(_):
 
         _df_plot: pd.DataFrame = pd.DataFrame.from_dict(metrics, orient="index")
         _df_plot = _df_plot.loc[[
-            *_get_pairs(df=_df_label, kind="intra_group"),
+            *get_pairs(df=_df_label, kind="intra_group"),
             "intra_group_mean",
-            *_get_pairs(df=_df_label, kind="inter_group"),
+            *get_pairs(df=_df_label, kind="inter_group"),
             "inter_group_mean",
             "overall_mean",
         ]]
