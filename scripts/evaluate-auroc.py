@@ -205,32 +205,47 @@ def calculate_roc_metrics(
     ci_level: float = 0.95,
     ci_method: str = "wilson",
 ) -> pd.DataFrame:
+    N = len(label)
+
     tn = label.eq(0).cumsum()
     fn = label.eq(1).cumsum()
-    tp = fn.max() - fn
-    fp = tn.max() - tn
+    p = fn.max()
+    n = tn.max()
+
+    tp = p - fn
+    fp = n - tn
+
+    pp = tp + fp
+    pn = tn + fn
 
     # sensitivity
-    tpr = tp / (tp + fn)
+    tpr = tp / p
     tpr_ci_lower, tpr_ci_upper = proportion_confint(
         tp, tp + fn, alpha=1 - ci_level, method=ci_method
     )
 
     # specificity
-    tnr = tn / (tn + fp)
+    tnr = tn / n
     tnr_ci_lower, tnr_ci_upper = proportion_confint(
         tn, tn + fp, alpha=1 - ci_level, method=ci_method
     )
 
-    ppv = tp / (tp + fp)
+    ppv = tp / pp
     ppv_ci_lower, ppv_ci_upper = proportion_confint(
         tp, tp + fp, alpha=1 - ci_level, method=ci_method
     )
 
-    npv = tn / (tn + fn)
+    npv = tn / pn
     npv_ci_lower, npv_ci_upper = proportion_confint(
         tn, tn + fn, alpha=1 - ci_level, method=ci_method
     )
+
+    po = (tp + tn) / N
+    pe = (pp * p + pn * n) / N**2
+    kappa = (po - pe) / (1 - pe)
+    kappa_se = np.sqrt(po * (1 - po) / (1 - pe) ** 2 / N)
+    kappa_ci_lower = kappa - scipy.stats.norm.ppf(1 - ci_level / 2) * kappa_se
+    kappa_ci_upper = kappa + scipy.stats.norm.ppf(1 - ci_level / 2) * kappa_se
 
     roc_metrics: dict[str, Any] = {
         "score": score,
@@ -259,6 +274,9 @@ def calculate_roc_metrics(
         "npv": npv,
         "npv_ci_lower": npv_ci_lower,
         "npv_ci_upper": npv_ci_upper,
+        "kappa": kappa,
+        "kappa_ci_lower": kappa_ci_lower,
+        "kappa_ci_upper": kappa_ci_upper,
     }
 
     # "takahashi" method
@@ -388,6 +406,9 @@ def compile_binary_metrics(
             "npv.value": float(row["npv"]),
             "npv.ci_lower": float(row["npv_ci_lower"]),
             "npv.ci_upper": float(row["npv_ci_upper"]),
+            "kappa.value": float(row["kappa"]),
+            "kappa.ci_lower": float(row["kappa_ci_lower"]),
+            "kappa.ci_upper": float(row["kappa_ci_upper"]),
             "f1.value": float(row["f1"]),
             "f1.ci_lower": float(row["f1_ci_lower"]),
             "f1.ci_upper": float(row["f1_ci_upper"]),
@@ -674,16 +695,16 @@ def evaluate(
 
             # statistical tests on sensitivity and specificity
 
-            disease = df_finding["label"].eq(1).values
+            disease = df_finding["label"].eq(1).to_numpy()
             reader_scores = df_finding[
                 [f"score_human_{tag}" for tag in human_tags]
-            ].values
+            ].to_numpy()
 
             for operating_point in ["max_f1", "max_f1_5", "max_f2"]:
                 binary_metric = binary_metrics[operating_point]
 
                 model_score = (
-                    df_finding["score"].gt(binary_metric["threshold.value"]).values
+                    df_finding["score"].gt(binary_metric["threshold.value"]).to_numpy()
                 )
 
                 for metric_name, metric_fn in [
