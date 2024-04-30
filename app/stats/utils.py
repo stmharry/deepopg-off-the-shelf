@@ -1,4 +1,5 @@
-from collections.abc import Callable, Iterable
+import dataclasses
+from collections.abc import Callable, Hashable, Iterable
 from typing import Literal, overload
 
 import numpy as np
@@ -6,9 +7,47 @@ import pandas as pd
 import scipy.stats
 
 
+@dataclasses.dataclass
+class TStatistic(object):
+    mu: float
+    se: float
+    dof: float
+
+    def tvalue(
+        self,
+        mu0: float = 0,
+    ) -> float:
+        return (self.mu - mu0) / self.se
+
+    def pvalue(
+        self,
+        mu0: float = 0,
+        method: Literal["two-sided", "one-sided"] = "two-sided",
+    ) -> float:
+        match method:
+            case "two-sided":
+                return float(
+                    2 * scipy.stats.t.cdf(-np.abs(self.tvalue(mu0)), df=self.dof)
+                )
+
+            case "one-sided":
+                return float(scipy.stats.t.sf(self.tvalue(mu0), df=self.dof))
+
+    def ci(
+        self,
+        alpha: float = 0.05,
+        method: Literal["two-sided", "one-sided"] = "two-sided",
+    ) -> tuple[float, float]:
+        if method == "two-sided":
+            alpha /= 2
+
+        z: float = scipy.stats.t.ppf(1 - alpha, df=self.dof)  # type: ignore
+        return self.mu - z * self.se, self.mu + z * self.se
+
+
 def _calculate_fom(
     df: pd.DataFrame,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
 ) -> pd.Series:
 
     return pd.Series({fom_name: fom_fn(df) for fom_name, fom_fn in fom_fns.items()})
@@ -16,7 +55,7 @@ def _calculate_fom(
 
 def _calculate_fom_var_over_index_generator(
     df_gen: Iterable[pd.DataFrame],
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
 ) -> pd.Series:
 
     fom: pd.DataFrame = pd.DataFrame.from_records(
@@ -29,7 +68,7 @@ def _calculate_fom_var_over_index_generator(
 
 def _calculate_fom_var_over_index_jackknife(
     df: pd.DataFrame,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
 ) -> tuple[pd.Series, pd.Series]:
 
     n: int = len(df)
@@ -46,7 +85,7 @@ def _calculate_fom_var_over_index_jackknife(
 
 def _calculate_fom_var_over_index_bootstrap(
     df: pd.DataFrame,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
     num_samples: int = 2_000,
 ) -> tuple[pd.Series, pd.Series]:
 
@@ -64,7 +103,7 @@ def _calculate_fom_var_over_index_bootstrap(
 
 def _calculate_fom_var_over_columns_generator(
     df_gen: Iterable[pd.DataFrame],
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
 
     _df: pd.DataFrame
@@ -105,7 +144,7 @@ def _calculate_fom_var_over_columns_generator(
 
 def _calculate_fom_var_over_columns_jackknife(
     df: pd.DataFrame,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
 ) -> tuple[pd.Series, pd.Series]:
 
     n: int = len(df.columns)
@@ -127,7 +166,7 @@ def _calculate_fom_var_over_columns_jackknife(
 
 def _calculate_fom_var_over_columns_bootstrap(
     df: pd.DataFrame,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]],
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]],
     num_samples: int = 2_000,
 ) -> tuple[pd.Series, pd.Series]:
 
@@ -155,26 +194,26 @@ def calculate_fom_stats(
     fom_fns: None = None,
     axis: Literal["index", "columns"] = ...,
     method: Literal["jackknife", "bootstrap"] = "jackknife",
-) -> tuple[float, float, float]: ...
+) -> TStatistic: ...
 
 
 @overload
 def calculate_fom_stats(
     df: pd.DataFrame,
     fom_fn: None = None,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]] = ...,
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]] = ...,
     axis: Literal["index", "columns"] = ...,
     method: Literal["jackknife", "bootstrap"] = "jackknife",
-) -> tuple[pd.Series, pd.Series, pd.Series]: ...
+) -> dict[Hashable, TStatistic]: ...
 
 
 def calculate_fom_stats(
     df: pd.DataFrame,
     fom_fn: Callable[[pd.DataFrame], float] | None = None,
-    fom_fns: dict[str, Callable[[pd.DataFrame], float]] | None = None,
+    fom_fns: dict[Hashable, Callable[[pd.DataFrame], float]] | None = None,
     axis: Literal["index", "columns"] = "index",
     method: Literal["jackknife", "bootstrap"] = "jackknife",
-) -> tuple[float | pd.Series, float | pd.Series, float | pd.Series]:
+) -> TStatistic | dict[Hashable, TStatistic]:
 
     return_singular: bool
     match (fom_fn, fom_fns):
@@ -219,23 +258,12 @@ def calculate_fom_stats(
                 f"The combination of axis={axis} and method={method} is not supported"
             )
 
+    fom_se: pd.Series = np.sqrt(fom_var)  # type: ignore
+
     if return_singular:
-        return fom.item(), fom_var.item(), dof.item()
+        return TStatistic(mu=fom.item(), se=fom_se.item(), dof=dof.item())
 
-    return fom, fom_var, dof
-
-
-def calculate_pvalue(
-    t: pd.Series,
-    dof: pd.Series,
-    method: Literal["two-sided", "one-sided"] = "two-sided",
-) -> pd.Series:
-    pvalue: pd.Series
-    match method:
-        case "two-sided":
-            pvalue = 2 * scipy.stats.t.cdf(-np.abs(t), df=dof)  # type: ignore
-
-        case "one-sided":
-            pvalue = scipy.stats.t.sf(t, df=dof)  # type: ignore
-
-    return pvalue
+    return {
+        fom_name: TStatistic(mu=_fom, se=_fom_se, dof=_dof)
+        for fom_name, _fom, _fom_se, _dof in zip(fom_fns.keys(), fom, fom_se, dof)
+    }

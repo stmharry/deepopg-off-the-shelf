@@ -9,7 +9,7 @@ import scipy.stats
 from absl import app, flags, logging
 from matplotlib.layout_engine import ConstrainedLayoutEngine
 
-from app.logging import patch_logging  # type: ignore
+from app.stats.utils import calculate_pvalue  # type: ignore
 
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_multi_string("csv", [], "CSV files to plot.")
@@ -19,7 +19,7 @@ FLAGS = flags.FLAGS
 @dataclasses.dataclass
 class Dataset(object):
     name: str
-    type_: str
+    type_: str | None
     color: str
     title: str
 
@@ -34,6 +34,7 @@ class Finding(object):
 class Metric(object):
     name: str
     operating_point: str | None = None
+    label: str | None = None
     title: str | None = None
     lim: tuple[float, float] | None = None
 
@@ -79,23 +80,75 @@ METRICS: list[Metric] = [
     Metric(name="negative_count"),
     Metric(name="predicted_positive_count", operating_point=OPERATING_POINT),
     Metric(name="predicted_negative_count", operating_point=OPERATING_POINT),
-    Metric(name="auc", title="AUC-ROC", lim=(0.75, 1.0)),
+    Metric(name="auc", label="AUC", title="AUC-ROC", lim=(0.75, 1.0)),
     Metric(
         name="sensitivity",
         operating_point=OPERATING_POINT,
+        label="Sensitivity",
         title="Sensitivity",
         lim=(0.4, 1.0),
     ),
     Metric(
         name="specificity",
         operating_point=OPERATING_POINT,
+        label="Specificity",
         title="Specificity",
         lim=(0.8, 1.0),
     ),
     Metric(
-        name="ppv", operating_point=OPERATING_POINT, title="Precision", lim=(0.0, 1.0)
+        name="ppv",
+        operating_point=OPERATING_POINT,
+        label="Precision",
+        title="Precision",
+        lim=(0.0, 1.0),
+    ),
+    Metric(
+        name="kappa",
+        operating_point=OPERATING_POINT,
+        label="Cohen's kappa",
+        title="Cohen's kappa (AI v.s. reference)",
+        lim=(0.0, 1.0),
     ),
 ]
+
+DF_HUMAN_KAPPA = pd.DataFrame([
+    {"finding": "MISSING", "metric": "value", "value": 0.901},
+    {"finding": "MISSING", "metric": "ci_lower", "value": 0.819},
+    {"finding": "MISSING", "metric": "ci_upper", "value": 0.982},
+    {"finding": "IMPLANT", "metric": "value", "value": 0.923},
+    {"finding": "IMPLANT", "metric": "ci_lower", "value": 0.830},
+    {"finding": "IMPLANT", "metric": "ci_upper", "value": 1.000},
+    {"finding": "ROOT_REMNANTS", "metric": "value", "value": 0.562},
+    {"finding": "ROOT_REMNANTS", "metric": "ci_lower", "value": 0.356},
+    {"finding": "ROOT_REMNANTS", "metric": "ci_upper", "value": 0.768},
+    {"finding": "CROWN_BRIDGE", "metric": "value", "value": 0.954},
+    {"finding": "CROWN_BRIDGE", "metric": "ci_lower", "value": 0.929},
+    {"finding": "CROWN_BRIDGE", "metric": "ci_upper", "value": 0.978},
+    {"finding": "ENDO", "metric": "value", "value": 0.921},
+    {"finding": "ENDO", "metric": "ci_lower", "value": 0.868},
+    {"finding": "ENDO", "metric": "ci_upper", "value": 0.974},
+    {"finding": "FILLING", "metric": "value", "value": 0.749},
+    {"finding": "FILLING", "metric": "ci_lower", "value": 0.698},
+    {"finding": "FILLING", "metric": "ci_upper", "value": 0.800},
+    {"finding": "CARIES", "metric": "value", "value": 0.465},
+    {"finding": "CARIES", "metric": "ci_lower", "value": 0.348},
+    {"finding": "CARIES", "metric": "ci_upper", "value": 0.581},
+    {
+        "finding": "PERIAPICAL_RADIOLUCENT",
+        "metric": "value",
+        "value": 0.376,
+    },
+    {
+        "finding": "PERIAPICAL_RADIOLUCENT",
+        "metric": "ci_lower",
+        "value": 0.147,
+    },
+    {
+        "finding": "PERIAPICAL_RADIOLUCENT",
+        "metric": "ci_upper",
+        "value": 0.606,
+    },
+]).pivot(index="finding", columns="metric", values="value")
 
 
 ITEM_SIZE: float = 1.0
@@ -211,7 +264,7 @@ def main(_):
     fig, _ = plt.subplots(
         nrows=num_rows,
         ncols=num_cols,
-        figsize=(6 * num_cols, 2.5 * num_rows),
+        figsize=(6 * num_cols, 2 * num_rows),
         sharex=True,
         layout="constrained",
         dpi=300,
@@ -220,7 +273,7 @@ def main(_):
     engine.set(hspace=0.075)
 
     for metric, ax in zip(metrics_to_plot, fig.axes):
-        logging.info(f"Plotting {metric.name}...")
+        logging.info(f"Plotting for {metric}...")
 
         assert metric.lim is not None
 
@@ -251,15 +304,34 @@ def main(_):
 
         #
 
+        lim_range: float = metric.lim[1] - metric.lim[0]
+        lim_lower: float
+        if metric.lim[0] == 0:
+            lim_lower = 0
+
+        else:
+            lim_lower = metric.lim[0] - 0.075 * lim_range
+
+            # marking skipped axis
+            ax.text(
+                x=_df_finding["left_pos"].min() - (ITEM_SIZE / 2 + GROUP_PADDING / 2),
+                y=lim_lower,
+                s="\u2248",
+                color="black",
+                fontsize="medium",
+                horizontalalignment="center",
+                verticalalignment="baseline",
+            )
+
         for finding_name, row in _df_finding.iterrows():
             logging.info(
-                f"Mean {metric.name} for {finding_name} is {row['value']:.1%} (95% CI:"
-                f" {row['ci_lower']:.1%} - {row['ci_upper']:.1%})"
+                f"- Mean {metric.name} for {finding_name} is {row['value']:.1%} (95%"
+                f" CI: {row['ci_lower']:.1%} - {row['ci_upper']:.1%})"
             )
 
             pvalue: float = float(row["pvalue"])
             logging.info(
-                f"Internal/external test set {metric.name} discrepancy test pvalue:"
+                f"- Internal/external test set {metric.name} discrepancy test pvalue:"
                 f" {pvalue:.2g}"
             )
 
@@ -275,46 +347,91 @@ def main(_):
 
                 case _:
                     pvalue_str = f"n.s."
-                    continue
 
-            lim_range: float = metric.lim[1] - metric.lim[0]
+            if pvalue_str != "n.s.":
+                y_max: float = float(row["max_value"]) + 0.075 * lim_range
+                y_external_max: float = (
+                    float(row["external_max_value"]) + 0.075 * lim_range
+                )
 
-            y_max: float = float(row["max_value"]) + 0.075 * lim_range
-            y_external_max: float = float(row["external_max_value"]) + 0.075 * lim_range
+                ax.plot(
+                    [
+                        row["internal_pos"],
+                        row["internal_pos"],
+                        row["external_center_pos"],
+                        row["external_center_pos"],
+                    ],
+                    [
+                        y_max,
+                        y_max + 0.02 * lim_range,
+                        y_max + 0.02 * lim_range,
+                        y_external_max,
+                    ],
+                    color="black",
+                    linewidth=0.5,
+                )
+                ax.plot(
+                    [row["external_left_pos"], row["external_right_pos"]],
+                    [y_external_max, y_external_max],
+                    color="black",
+                    linewidth=0.5,
+                )
+                ax.text(
+                    x=float((row["internal_pos"] + row["external_center_pos"]) / 2),
+                    y=y_max + 0.03 * lim_range,
+                    s=pvalue_str,
+                    color="black",
+                    fontsize="small",
+                    horizontalalignment="center",
+                    verticalalignment="bottom",
+                )
 
-            ax.plot(
-                [
-                    row["internal_pos"],
-                    row["internal_pos"],
-                    row["external_center_pos"],
-                    row["external_center_pos"],
-                ],
-                [
-                    y_max,
-                    y_max + 0.02 * lim_range,
-                    y_max + 0.02 * lim_range,
-                    y_external_max,
-                ],
-                color="black",
-                linewidth=0.5,
-            )
-            ax.plot(
-                [row["external_left_pos"], row["external_right_pos"]],
-                [y_external_max, y_external_max],
-                color="black",
-                linewidth=0.5,
-            )
-            ax.text(
-                x=float((row["internal_pos"] + row["external_center_pos"]) / 2),
-                y=y_max + 0.03 * lim_range,
-                s=pvalue_str,
-                color="black",
-                fontsize="small",
-                horizontalalignment="center",
-                verticalalignment="bottom",
-            )
+            if metric.name == "kappa":
+                row_human = DF_HUMAN_KAPPA.loc[finding_name]
+
+                mu = row["value"] - row_human["value"]
+                se = np.sqrt(
+                    ((row["ci_upper"] - row["ci_lower"]) / (2 * Z)) ** 2
+                    + ((row_human["ci_upper"] - row_human["ci_lower"]) / (2 * Z)) ** 2
+                )
+                pvalue = calculate_pvalue(
+                    t=mu / se,
+                    dof=len(df) - 1,
+                )
+                logging.info(
+                    f"- pvalue for overall mean v.s. human mean for {finding_name}:"
+                    f" {pvalue:.2g}"
+                )
+
+                ax.errorbar(
+                    x=row["right_pos"] + ITEM_SIZE,
+                    y=row_human["value"],
+                    yerr=[
+                        [row_human["value"] - row_human["ci_lower"]],
+                        [row_human["ci_upper"] - row_human["value"]],
+                    ],
+                    color="gray",
+                    marker="o",
+                    markersize=1,
+                    markerfacecolor="gray",
+                    elinewidth=0.5,
+                    capsize=1.5,
+                    capthick=0.5,
+                    linewidth=0,
+                    zorder=2,
+                )
 
         for _, row in _df.iterrows():
+            ax.bar(
+                x=row["position"],
+                bottom=lim_lower,
+                height=row["value"] - lim_lower,
+                width=ITEM_SIZE * 0.5,
+                color=row["color"],
+                alpha=0.2,
+                zorder=1,
+            )
+
             ax.errorbar(
                 x=row["position"],
                 y=row["value"],
@@ -330,6 +447,7 @@ def main(_):
                 capsize=4,
                 capthick=0.5,
                 linewidth=0,
+                zorder=2,
             )
 
         ax.grid(
@@ -339,18 +457,35 @@ def main(_):
             linewidth=0.25,
         )
 
+        if metric.name == "kappa":
+            ax.legend(
+                handles=[
+                    plt.plot(
+                        [],
+                        [],
+                        color="gray",
+                        linewidth=0.5,
+                        label="Mean, reader v.s. reader",
+                    )[0],
+                ],
+                loc="lower right",
+                bbox_to_anchor=(1, 1),
+                fontsize="x-small",
+                frameon=False,
+            )
+
         ax.set_xlim(
             _df_finding["left_pos"].min() - (ITEM_SIZE / 2 + GROUP_PADDING / 2),
             _df_finding["right_pos"].max() + (ITEM_SIZE / 2 + GROUP_PADDING / 2),
         )
-        ax.set_ylim(bottom=metric.lim[0])
+        ax.set_ylim(bottom=lim_lower)
 
         # depends on lim's
         xlim = ax.get_xlim()
         ylim = ax.get_ylim()
         ax.plot(
             [xlim[0], xlim[0]],
-            [metric.lim[0], metric.lim[1]],
+            [(metric.lim[0] + lim_lower) / 2, metric.lim[1]],
             color="black",
             linewidth=1.5,
         )
@@ -363,17 +498,20 @@ def main(_):
                     x2=row["right_pos"] + (ITEM_SIZE / 2 + GROUP_PADDING / 2),
                     color="black",
                     alpha=0.1,
+                    zorder=-10,
                 )
 
         ax.set_xticks(_df_finding["center_pos"])
         ax.set_xticklabels(
-            _df_finding["label"], rotation=30, horizontalalignment="right"
+            _df_finding["label"], rotation=20, horizontalalignment="right"
         )
+
+        if metric.label is not None:
+            ax.set_ylabel(metric.label)
 
         if metric.title is None:
             ax.set_ylabel("Metric")
         else:
-            ax.set_ylabel(metric.title)
             ax.set_title(metric.title, fontsize="medium", loc="left")
 
         ax.spines.left.set_visible(False)
@@ -383,7 +521,13 @@ def main(_):
 
     fig.legend(
         handles=[
-            plt.plot([], [], color=dataset.color, label=dataset.title)[0]
+            plt.plot(
+                [],
+                [],
+                color=dataset.color,
+                linewidth=0.5,
+                label=dataset.title,
+            )[0]
             for dataset in DATASETS
         ],
         loc="outside lower center",
@@ -391,7 +535,7 @@ def main(_):
         fontsize="small",
         frameon=False,
     )
-    fig.suptitle("Dental finding summary performance", fontsize="x-large")
+    fig.suptitle("Dental finding summary performance for AI system", fontsize="large")
 
     pdf_path: Path = Path(FLAGS.result_dir, "performances.pdf")
     fig.savefig(pdf_path)

@@ -218,34 +218,37 @@ def calculate_roc_metrics(
     pp = tp + fp
     pn = tn + fn
 
+    alpha = 1 - ci_level
+    z = scipy.stats.norm.ppf(1 - alpha / 2)
+
     # sensitivity
     tpr = tp / p
     tpr_ci_lower, tpr_ci_upper = proportion_confint(
-        tp, tp + fn, alpha=1 - ci_level, method=ci_method
+        tp, tp + fn, alpha=alpha, method=ci_method
     )
 
     # specificity
     tnr = tn / n
     tnr_ci_lower, tnr_ci_upper = proportion_confint(
-        tn, tn + fp, alpha=1 - ci_level, method=ci_method
+        tn, tn + fp, alpha=alpha, method=ci_method
     )
 
     ppv = tp / pp
     ppv_ci_lower, ppv_ci_upper = proportion_confint(
-        tp, tp + fp, alpha=1 - ci_level, method=ci_method
+        tp, tp + fp, alpha=alpha, method=ci_method
     )
 
     npv = tn / pn
     npv_ci_lower, npv_ci_upper = proportion_confint(
-        tn, tn + fn, alpha=1 - ci_level, method=ci_method
+        tn, tn + fn, alpha=alpha, method=ci_method
     )
 
     po = (tp + tn) / N
     pe = (pp * p + pn * n) / N**2
     kappa = (po - pe) / (1 - pe)
-    kappa_se = np.sqrt(po * (1 - po) / (1 - pe) ** 2 / N)
-    kappa_ci_lower = kappa - scipy.stats.norm.ppf(1 - ci_level / 2) * kappa_se
-    kappa_ci_upper = kappa + scipy.stats.norm.ppf(1 - ci_level / 2) * kappa_se
+    kappa_se = np.sqrt(po * (1 - po) / ((1 - pe) ** 2) / N)
+    kappa_ci_lower = kappa - z * kappa_se
+    kappa_ci_upper = kappa + z * kappa_se
 
     roc_metrics: dict[str, Any] = {
         "score": score,

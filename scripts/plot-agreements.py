@@ -3,18 +3,17 @@ import functools
 import itertools
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import scipy.stats
-import sklearn.metrics
 from absl import app, flags, logging
 from matplotlib.layout_engine import ConstrainedLayoutEngine
 
 from app.instance_detection import InstanceDetectionV1Category as CategoryEnum
 from app.stats import calculate_fom_stats, fast_kappa_score
+from app.stats.utils import TStatistic
 
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_string("csv", None, "CSV files to plot.")
@@ -32,14 +31,6 @@ class Reader(object):
 class Category(object):
     enum: CategoryEnum
     title: str
-
-
-class Statistic(TypedDict):
-    value: float
-    dof: float
-    ci_level: float
-    ci_lower: float
-    ci_upper: float
 
 
 READERS: list[Reader] = [
@@ -62,57 +53,6 @@ CATEGORIES: list[Category] = [
 
 ITEM_SIZE: float = 1.0
 GROUP_PADDING: float = 0.5
-
-
-def calculate_kappa_metrics(
-    df: pd.DataFrame,
-    ci_level: float = 0.95,
-    ci_method: Literal["mchugh", "jackknife", "bootstrap"] = "jackknife",
-) -> dict[tuple[str, str], Statistic]:
-    n: int = len(df)
-    alpha: float = 1 - ci_level
-    z: float = float(scipy.stats.norm.ppf(1 - alpha / 2))
-
-    metrics: dict[tuple[str, str], Statistic] = {}
-    for col1, col2 in itertools.combinations(df.columns, 2):
-        kappa: float
-        kappa_var: float
-        kappa_se: float
-        dof: float
-
-        match ci_method:
-            case "mchugh":
-                confusion_matrix = sklearn.metrics.confusion_matrix(
-                    df[col1], df[col2], normalize="all"
-                )
-                po = np.diag(confusion_matrix).sum()
-                pe = np.sum(confusion_matrix.sum(axis=0) * confusion_matrix.sum(axis=1))
-
-                kappa = (po - pe) / (1 - pe)
-                kappa_var = po * (1 - po) / ((1 - pe) ** 2) / n
-                dof = n - 1
-
-            case "jackknife" | "bootstrap":
-                kappa, kappa_var, dof = calculate_fom_stats(
-                    df=df,
-                    fom_fn=lambda df: fast_kappa_score(  # type: ignore
-                        df[col1].to_numpy(), df[col2].to_numpy()
-                    ),
-                    axis="index",
-                    method=ci_method,
-                )
-
-        kappa_se = np.sqrt(kappa_var)
-
-        metrics[(col1, col2)] = metrics[(col2, col1)] = Statistic(
-            value=kappa,
-            dof=dof,
-            ci_level=ci_level,
-            ci_lower=np.maximum(0, kappa - z * kappa_se),
-            ci_upper=np.minimum(1, kappa + z * kappa_se),
-        )
-
-    return metrics
 
 
 @functools.cache
@@ -174,28 +114,20 @@ def get_pairs(
 def mean_kappa_score(df: pd.DataFrame, pairs: list[tuple[str, str]]) -> float:
     return float(
         np.mean([
-            fast_kappa_score(df[pair[0]].to_numpy(), df[pair[1]].to_numpy())
-            for pair in pairs
+            fast_kappa_score(df[col1].to_numpy(), df[col2].to_numpy())
+            for col1, col2 in pairs
         ])
     )
 
 
-def calculate_mean_kappa_metrics(
+def calculate_kappa_stats(
     df: pd.DataFrame,
-    ci_level: float = 0.95,
-    ci_method: Literal["jackknife"] = "jackknife",
-) -> dict[str, Statistic]:
+    method: Literal["jackknife", "bootstrap"] = "jackknife",
+) -> dict[Any, TStatistic]:
 
-    if ci_method != "jackknife":
-        raise ValueError("Only jackknife method is supported.")
+    stats: dict[Any, TStatistic] = {}
 
-    alpha: float = 1 - ci_level
-    z: float = float(scipy.stats.norm.ppf(1 - alpha / 2))
-
-    fom: pd.Series
-    fom_se: pd.Series
-    dof: pd.Series
-    fom, fom_var, dof = calculate_fom_stats(
+    stats |= calculate_fom_stats(
         df=df,
         fom_fns={
             "intra_group_mean": lambda df: mean_kappa_score(
@@ -213,32 +145,24 @@ def calculate_mean_kappa_metrics(
             ),
         },
         axis="columns",
+        method=method,
     )
-    fom_se: pd.Series = np.sqrt(fom_var)  # type: ignore
-    fom_ci_lower: pd.Series = fom - z * fom_se
-    fom_ci_upper: pd.Series = fom + z * fom_se
-
-    metrics: dict[str, Statistic] = {
-        key: Statistic(
-            value=float(fom[key]),
-            dof=float(dof[key]),
-            ci_level=ci_level,
-            ci_lower=np.maximum(0, fom_ci_lower[key]),
-            ci_upper=np.minimum(1, fom_ci_upper[key]),
-        )
-        for key in ["intra_group_mean", "inter_group_mean", "overall_mean"]
-    }
-
-    key: str = "mean_diff"
-    metrics[f"{key}_test"] = Statistic(
-        value=float(fom[key]),
-        dof=float(dof[key]),
-        ci_level=ci_level,
-        ci_lower=float(fom_ci_lower[key]),
-        ci_upper=float(fom_ci_upper[key]),
+    stats |= calculate_fom_stats(
+        df=df,
+        fom_fns={
+            (col1, col2): lambda df, col1=col1, col2=col2: fast_kappa_score(
+                df[col1].to_numpy(), df[col2].to_numpy()
+            )
+            for col1, col2 in get_pairs(df, kind="overall")
+        },
+        axis="index",
+        method=method,
     )
 
-    return metrics
+    for col1, col2 in get_pairs(df, kind="overall"):
+        stats[(col2, col1)] = stats[(col1, col2)]
+
+    return stats
 
 
 def main(_):
@@ -271,27 +195,17 @@ def main(_):
             orient="columns",
         )
 
-        metrics: dict[Any, Statistic] = {}
-        metrics |= calculate_kappa_metrics(df=_df_label)
-        metrics |= calculate_mean_kappa_metrics(df=_df_label)
+        stats: dict[Any, TStatistic] = calculate_kappa_stats(df=_df_label)
+        logging.info(stats)
 
-        logging.info(metrics)
-
-        mean_diff_stat: Statistic = metrics["mean_diff_test"]
-        pvalue: float = float(
-            2
-            * scipy.stats.t.cdf(
-                -np.abs(
-                    mean_diff_stat["value"]
-                    / (mean_diff_stat["ci_upper"] - mean_diff_stat["ci_lower"])
-                    * (
-                        2
-                        * scipy.stats.norm.ppf(1 - (1 - mean_diff_stat["ci_level"]) / 2)
-                    )
-                ),
-                df=mean_diff_stat["dof"],
-            )
+        logging.info(
+            f"Overall mean: {stats['overall_mean'].mu:.2%} (95% CI:"
+            f" {stats['overall_mean'].ci()[0]:.2%},"
+            f" {stats['overall_mean'].ci()[1]:.2%})"
         )
+
+        mean_diff_stat: TStatistic = stats["mean_diff"]
+        pvalue: float = mean_diff_stat.pvalue(mu0=0)
         match pvalue:
             case _ if pvalue < 0.001:
                 pvalue_str = f"***"
@@ -309,7 +223,17 @@ def main(_):
 
         #
 
-        _df_plot: pd.DataFrame = pd.DataFrame.from_dict(metrics, orient="index")
+        _df_plot: pd.DataFrame = pd.DataFrame.from_dict(
+            {
+                key: {
+                    "value": stat.mu,
+                    "ci_lower": stat.ci()[0],
+                    "ci_upper": stat.ci()[1],
+                }
+                for key, stat in stats.items()
+            },
+            orient="index",
+        )
         _df_plot = _df_plot.loc[[
             *get_pairs(df=_df_label, kind="intra_group"),
             "intra_group_mean",
@@ -332,11 +256,11 @@ def main(_):
         )
         _df_plot["label"] = _df_plot.index.to_series().map(
             lambda v: (
-                f"Readers {reader_by_tag[v[0]].title} & {reader_by_tag[v[1]].title}"
+                f"Readers {reader_by_tag[v[0]].title} v.s. {reader_by_tag[v[1]].title}"
                 if isinstance(v, tuple)
                 else {
-                    "intra_group_mean": "Mean, within-group",
-                    "inter_group_mean": "Mean, across-group",
+                    "intra_group_mean": "Mean, same-expertise",
+                    "inter_group_mean": "Mean, different-expertise",
                     "overall_mean": "Mean, overall",
                 }[v]
             )
