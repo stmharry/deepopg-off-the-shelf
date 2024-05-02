@@ -316,21 +316,25 @@ function _MAIN() {
 
     "compare" )
 
+      _IMPORT_EXP_SH
+
       _SELECT_VARIABLE "DATASET_NAME" \
         "pano_train" \
         "pano_eval_v2" \
         "pano_test_v2_1" \
         "pano_ntuh_test_v2"
 
+      _SET_DATASET_NAME ${DATASET_NAME}
+
       case "${DATASET_NAME}" in
 
         "pano_train" )
 
 		      RAW_IMAGE_PATTERNS="
-			      ${ROOT_DIR}/data/images/PROMATON/*.jpg,
+			      ${ROOT_DIR}/data/images/PROMATON/TRP10*.jpg,
 			      ${ROOT_DIR}/results/${DATASET_PREFIX}/visualize/TRP10*.tooth.jpg,
-			      ${ROOT_DIR}/results/${DATASET_PREFIX}/visualize/*.findings.jpg,
-			      ${ROOT_DIR}/data/masks/segmentation-v5/PROMATON/*_vis.png,
+			      ${ROOT_DIR}/results/${DATASET_PREFIX}/visualize/TRP10*.findings.jpg,
+			      ${ROOT_DIR}/data/masks/segmentation-v5/PROMATON/TRP10*_vis.png,
 			    "
 
 			    ;;
@@ -402,6 +406,7 @@ function _MAIN() {
 
   esac
 
+  clear
   make ${TARGET} ${ADDITIONAL_TARGETS[@]}
 }
 

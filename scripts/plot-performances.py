@@ -9,7 +9,7 @@ import scipy.stats
 from absl import app, flags, logging
 from matplotlib.layout_engine import ConstrainedLayoutEngine
 
-from app.stats.utils import calculate_pvalue  # type: ignore
+from app.stats.utils import TStatistic
 
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_multi_string("csv", [], "CSV files to plot.")
@@ -389,18 +389,18 @@ def main(_):
             if metric.name == "kappa":
                 row_human = DF_HUMAN_KAPPA.loc[finding_name]
 
-                mu = row["value"] - row_human["value"]
-                se = np.sqrt(
-                    ((row["ci_upper"] - row["ci_lower"]) / (2 * Z)) ** 2
-                    + ((row_human["ci_upper"] - row_human["ci_lower"]) / (2 * Z)) ** 2
-                )
-                pvalue = calculate_pvalue(
-                    t=mu / se,
+                stat = TStatistic(
+                    mu=row["value"] - row_human["value"],
+                    se=np.sqrt(
+                        ((row["ci_upper"] - row["ci_lower"]) / (2 * Z)) ** 2
+                        + ((row_human["ci_upper"] - row_human["ci_lower"]) / (2 * Z))
+                        ** 2
+                    ),
                     dof=len(df) - 1,
                 )
                 logging.info(
                     f"- pvalue for overall mean v.s. human mean for {finding_name}:"
-                    f" {pvalue:.2g}"
+                    f" {stat.pvalue(mu0=0):.2g}"
                 )
 
                 ax.errorbar(
@@ -465,7 +465,7 @@ def main(_):
                         [],
                         color="gray",
                         linewidth=0.5,
-                        label="Mean, reader v.s. reader",
+                        label="Mean, overall for human reader pairs",
                     )[0],
                 ],
                 loc="lower right",

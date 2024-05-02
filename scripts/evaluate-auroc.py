@@ -778,8 +778,10 @@ def evaluate(
                 ylabel="Sensitivity" if num % num_columns == 0 else None,
                 color=metadata["color"],
                 title=(
-                    f"{metadata['title']}\n(N = {len(df_roc_metric)}, AUC ="
-                    f" {basic_metrics['auc.value']:.1%})"
+                    f"{metadata['title']} (n = {len(df_roc_metric)})\nAUC ="
+                    f" {basic_metrics['auc.value']:.1%} (95% CI:"
+                    f" {basic_metrics['auc.ci_lower']:.1%} -"
+                    f" {basic_metrics['auc.ci_upper']:.1%})"
                 ),
                 use_inset=True,
                 bbox_to_anchor=metadata["bbox_to_anchor"],
