@@ -24,7 +24,12 @@ from app.instance_detection import (
     InstanceDetectionFactory,
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
-from app.stats import fast_sensitivity_score, fast_specificity_score
+from app.stats import (
+    fast_f1_score,
+    fast_ppv_score,
+    fast_sensitivity_score,
+    fast_specificity_score,
+)
 
 plt.rcParams["font.family"] = "Arial"
 
@@ -364,11 +369,15 @@ def compile_binary_metrics(
         0.995,
         0.999,
     ],
+    max_metrics: list[str] = ["f1", "f1_5", "f2"],
+    operating_point_to_index: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, float]]:
     ppv = df_roc_metric["ppv"]
     npv = df_roc_metric["npv"]
 
-    operating_point_to_index: dict[str, Any] = {}
+    if operating_point_to_index is None:
+        operating_point_to_index = {}
+
     for ppv_threshold in thresholds:
         if ppv[ppv > ppv_threshold].empty:
             continue
@@ -385,9 +394,8 @@ def compile_binary_metrics(
             npv > npv_threshold
         ].index[-1]
 
-    operating_point_to_index["max_f1"] = df_roc_metric["f1"].idxmax()
-    operating_point_to_index["max_f1_5"] = df_roc_metric["f1_5"].idxmax()
-    operating_point_to_index["max_f2"] = df_roc_metric["f2"].idxmax()
+    for metric in max_metrics:
+        operating_point_to_index[f"max_{metric}"] = df_roc_metric[metric].idxmax()
 
     binary_metrics: dict[str, dict[str, float]] = {}
     for operating_point, index in operating_point_to_index.items():
@@ -649,6 +657,48 @@ def evaluate(
             df_roc_metric
         )
 
+        report_by_tag: dict[str, dict] = {
+            "ai@max_f2": {
+                "tpr": binary_metrics["max_f2"]["sensitivity.value"],
+                "fpr": 1 - binary_metrics["max_f2"]["specificity.value"],
+                "ppv": binary_metrics["max_f2"]["ppv.value"],
+                "npv": binary_metrics["max_f2"]["npv.value"],
+            }
+        }
+        for tag in human_tags:
+            _df_finding: pd.DataFrame = df_finding.sort_values(
+                f"score_human_{tag}", ascending=True
+            )
+            label: pd.Series = _df_finding["label"]  # type: ignore
+            score: pd.Series = _df_finding[f"score_human_{tag}"]  # type: ignore
+
+            report: dict = sklearn.metrics.classification_report(  # type: ignore
+                y_true=label,
+                y_pred=score,
+                output_dict=True,
+            )
+
+            df_roc_metric: pd.DataFrame = calculate_roc_metrics(
+                label=label, score=score
+            )
+            s_roc_metric: pd.Series = df_roc_metric.loc[
+                df_roc_metric["score"].diff().eq(1)
+            ].squeeze()
+
+            binary_metrics |= compile_binary_metrics(
+                df_roc_metric,
+                thresholds=[],
+                max_metrics=[],
+                operating_point_to_index={tag: s_roc_metric.name},
+            )
+
+            report_by_tag[tag] = {
+                "tpr": report["1"]["recall"],
+                "fpr": 1 - report["0"]["recall"],
+                "ppv": report["1"]["precision"],
+                "npv": report["0"]["precision"],
+            }
+
         logging.info(f"Finding {finding.value}")
         for metric_name, metric in basic_metrics.items():
             logging.info(f"  - {metric_name}: {metric}")
@@ -666,28 +716,6 @@ def evaluate(
                     "metric": f"{metric_name}@{operating_point}",
                     "value": metric,
                 })
-
-        report_by_tag: dict[str, dict] = {
-            "ai@max_f2": {
-                "tpr": binary_metrics["max_f2"]["sensitivity.value"],
-                "fpr": 1 - binary_metrics["max_f2"]["specificity.value"],
-                "ppv": binary_metrics["max_f2"]["ppv.value"],
-                "npv": binary_metrics["max_f2"]["npv.value"],
-            }
-        }
-        for tag in human_tags:
-            report: dict = sklearn.metrics.classification_report(  # type: ignore
-                y_true=label,
-                y_pred=df_finding[f"score_human_{tag}"],
-                output_dict=True,
-            )
-
-            report_by_tag[tag] = {
-                "tpr": report["1"]["recall"],
-                "fpr": 1 - report["0"]["recall"],
-                "ppv": report["1"]["precision"],
-                "npv": report["0"]["precision"],
-            }
 
         if len(human_tags) > 0:
             if FLAGS.stat_test:
@@ -714,6 +742,8 @@ def evaluate(
                     # we don't use sklearn here as it's too slow
                     ("sensitivity", fast_sensitivity_score),
                     ("specificity", fast_specificity_score),
+                    ("ppv", fast_ppv_score),
+                    ("f1", fast_f1_score),
                 ]:
 
                     for test_name, test_margin in test_name_margins:
