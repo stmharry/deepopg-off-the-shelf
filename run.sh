@@ -400,7 +400,7 @@ function _MAIN() {
 
     "plot-agreements" )
 
-      export CSV="results/2024-02-20-050603/evaluation.pano_ntuh_test_v2_1.postprocessed-with-2024-04-13-022434.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING.with-human/evaluation.csv"
+      export EVALUATION_DIR="${ROOT_DIR}/results/2024-02-20-050603/evaluation.pano_ntuh_test_v2_1.postprocessed-with-2024-04-13-022434.missing-scoring-SHARE_NOBG.finding-scoring-SCORE_MUL_SHARE_NOBG_NOMUL_MISSING.with-human"
 
       ;;
 

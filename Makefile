@@ -521,7 +521,7 @@ evaluate-auroc.with-human:
 		--human_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
 		--stat_test \
-		--plot \
+		--noplot \
 		--plot_title "$(DATASET_TITLE)"
 
 compare: IMAGE_HEIGHT ?= 600
@@ -547,9 +547,10 @@ plot-performances:
 		$(foreach CSV,$(CSVS),--csv "$(CSV)") \
 		--verbosity $(VERBOSITY)
 
-plot-agreements: check-RESULT_DIR check-CSV
+plot-agreements: check-RESULT_DIR
 plot-agreements:
 	$(RUN_SCRIPT) \
 		--result_dir $(RESULT_DIR) \
-		--csv $(CSV) \
+		--csv $(EVALUATION_DIR)/evaluation.csv \
+		--metric_csv $(EVALUATION_DIR)/metrics.csv \
 		--verbosity $(VERBOSITY)

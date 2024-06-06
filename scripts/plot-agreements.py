@@ -17,6 +17,7 @@ from app.stats.utils import TStatistic
 
 flags.DEFINE_string("result_dir", "./results", "Result directory.")
 flags.DEFINE_string("csv", None, "CSV files to plot.")
+flags.DEFINE_string("metric_csv", None, "Metric csv file.")
 FLAGS = flags.FLAGS
 
 
@@ -93,12 +94,10 @@ def _get_inter_group_pairs(tags: tuple[str, ...]) -> list[tuple[str, str]]:
     return inter_group_pairs
 
 
-def get_pairs(
-    df: pd.DataFrame,
+def _get_pairs(
+    tags: tuple[str, ...],
     kind: Literal["intra_group", "inter_group", "overall"],
 ) -> list[tuple[str, str]]:
-
-    tags: tuple[str, ...] = tuple(df.columns)
 
     match kind:
         case "intra_group":
@@ -109,6 +108,13 @@ def get_pairs(
 
         case "overall":
             return _get_intra_group_pairs(tags) + _get_inter_group_pairs(tags)
+
+
+def get_pairs(
+    tags: Iterable[str],
+    kind: Literal["intra_group", "inter_group", "overall"],
+) -> list[tuple[str, str]]:
+    return _get_pairs(tags=tuple(tags), kind=kind)
 
 
 def mean_kappa_score(df: pd.DataFrame, pairs: list[tuple[str, str]]) -> float:
@@ -131,17 +137,17 @@ def calculate_kappa_stats(
         df=df,
         fom_fns={
             "intra_group_mean": lambda df: mean_kappa_score(
-                df, pairs=get_pairs(df, kind="intra_group")
+                df, pairs=get_pairs(df.columns, kind="intra_group")
             ),
             "inter_group_mean": lambda df: mean_kappa_score(
-                df, pairs=get_pairs(df, kind="inter_group")
+                df, pairs=get_pairs(df.columns, kind="inter_group")
             ),
             "overall_mean": lambda df: mean_kappa_score(
-                df, pairs=get_pairs(df, kind="overall")
+                df, pairs=get_pairs(df.columns, kind="overall")
             ),
             "mean_diff": lambda df: (
-                mean_kappa_score(df, pairs=get_pairs(df, kind="intra_group"))
-                - mean_kappa_score(df, pairs=get_pairs(df, kind="inter_group"))
+                mean_kappa_score(df, pairs=get_pairs(df.columns, kind="intra_group"))
+                - mean_kappa_score(df, pairs=get_pairs(df.columns, kind="inter_group"))
             ),
         },
         axis="columns",
@@ -153,7 +159,7 @@ def calculate_kappa_stats(
             (col1, col2): lambda df, col1=col1, col2=col2: fast_kappa_score(
                 df[col1].to_numpy(), df[col2].to_numpy()
             )
-            for col1, col2 in get_pairs(df, kind="overall")
+            for col1, col2 in get_pairs(df.columns, kind="overall")
         },
         axis="index",
         method=method,
@@ -162,11 +168,18 @@ def calculate_kappa_stats(
     for col1, col2 in get_pairs(df, kind="overall"):
         stats[(col2, col1)] = stats[(col1, col2)]
 
+        logging.info(
+            f"Kappa score between {col1} and {col2}: {stats[(col1, col2)].mu:.2%}"
+            f" (95% CI: {stats[(col1, col2)].ci()[0]:.2%},"
+            f" {stats[(col1, col2)].ci()[1]:.2%})"
+        )
+
     return stats
 
 
 def main(_):
     df: pd.DataFrame = pd.read_csv(FLAGS.csv)
+    df_metric: pd.DataFrame = pd.read_csv(FLAGS.metric_csv)
 
     num_rows: int = len(CATEGORIES)
     num_cols: int = 1
@@ -196,7 +209,6 @@ def main(_):
         )
 
         stats: dict[Any, TStatistic] = calculate_kappa_stats(df=_df_label)
-        logging.info(stats)
 
         logging.info(
             f"Overall mean: {stats['overall_mean'].mu:.2%} (95% CI:"
@@ -221,6 +233,35 @@ def main(_):
 
         logging.info(f"pvalue between intra- and inter-group mean: {pvalue}")
 
+        # AI v.s. readers
+
+        _df_metric = df_metric.loc[
+            (df_metric["finding"] == category.enum)
+            & (df_metric["metric"] == "threshold.value@max_f2")
+        ]
+        threshold: float = float(_df_metric.squeeze()["value"])
+        _stats = calculate_fom_stats(
+            df=pd.concat(
+                [_df_label, _df["score"].gt(threshold).rename("AI")], axis="columns"
+            ),
+            fom_fns={
+                reader.tag: lambda df, tag=reader.tag: fast_kappa_score(
+                    df[tag].to_numpy(), df["AI"].to_numpy()
+                )
+                for reader in READERS
+            },
+            axis="index",
+            method="jackknife",
+        )
+
+        for reader in READERS:
+            logging.info(
+                f"Kappa score between AI and {reader.title}:"
+                f" {_stats[reader.tag].mu:.2%}"
+                f" (95% CI: {_stats[reader.tag].ci()[0]:.2%},"
+                f" {_stats[reader.tag].ci()[1]:.2%})"
+            )
+
         #
 
         _df_plot: pd.DataFrame = pd.DataFrame.from_dict(
@@ -235,9 +276,9 @@ def main(_):
             orient="index",
         )
         _df_plot = _df_plot.loc[[
-            *get_pairs(df=_df_label, kind="intra_group"),
+            *get_pairs(tags=_df_label.columns, kind="intra_group"),
             "intra_group_mean",
-            *get_pairs(df=_df_label, kind="inter_group"),
+            *get_pairs(tags=_df_label.columns, kind="inter_group"),
             "inter_group_mean",
             "overall_mean",
         ]]
