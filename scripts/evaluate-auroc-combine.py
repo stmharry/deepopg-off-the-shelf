@@ -225,19 +225,19 @@ def plot_roc_curve(
 
 def main(_):
     df_Netherlands: pd.DataFrame = pd.read_csv(
-        "/mnt/hdd/PANO.arlen/results/2024-03-14/evaluation-test.csv"
+        "/mnt/hdd/PANO.arlen/results/2024-06-03/evaluation-Netherland.csv"
     )
     df_Brazil: pd.DataFrame = pd.read_csv(
-        "/mnt/hdd/PANO.arlen/results/2024-03-29/Brazil.csv"
+        "/mnt/hdd/PANO.arlen/results/2024-06-03/evaluation-Brazil.csv"
     )
     df_Taiwzn: pd.DataFrame = pd.read_csv(
-        "/mnt/hdd/PANO.arlen/results/2024-03-14/evaluation-testB.csv"
+        "/mnt/hdd/PANO.arlen/results/2024-06-03/evaluation-Taiwan.csv"
     )
 
     df_list = [df_Netherlands, df_Brazil, df_Taiwzn]
 
     # evaluation_dir: Path = Path(FLAGS.result_dir, FLAGS.evaluation_dir)
-    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-04-06/")
+    evaluation_dir: Path = Path("/mnt/hdd/PANO.arlen/results/2024-06-28/")
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
     #
