@@ -509,8 +509,7 @@ evaluate-auroc:
 		$(COMMON_ARGS) \
 		--csv $(RESULT_CSV) \
 		--golden_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_golden_label.csv" \
-		--evaluation_dir $(EVALUATION_DIR) \
-		--plot_title "$(DATASET_TITLE)"
+		--evaluation_dir $(EVALUATION_DIR)
 
 evaluate-auroc.with-human: --check-COMMON
 evaluate-auroc.with-human:
@@ -521,8 +520,7 @@ evaluate-auroc.with-human:
 		--human_csv_path "$(DATA_DIR)/csvs/$(FINDING_PREFIX)_human_label_{}.csv" \
 		--evaluation_dir $(EVALUATION_DIR).with-human \
 		--stat_test \
-		--noplot \
-		--plot_title "$(DATASET_TITLE)"
+		--plot
 
 compare: IMAGE_HEIGHT ?= 600
 compare: HTML_PATH ?= $(RESULT_DIR_ROOT)/$(DATASET_NAME)/visualize.html

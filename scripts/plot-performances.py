@@ -22,6 +22,7 @@ class Dataset(object):
     type_: str | None
     color: str
     title: str
+    anon_title: str
 
 
 @dataclasses.dataclass
@@ -44,19 +45,22 @@ DATASETS: list[Dataset] = [
         name="pano_eval_v2",
         type_="internal",
         color="tab:blue",
-        title="Netherlands, test",
+        title="The Netherlands, test",
+        anon_title="Region A",
     ),
     Dataset(
         name="pano_test_v2_1",
         type_="external",
         color="tab:orange",
         title="Brazil",
+        anon_title="Region Y",
     ),
     Dataset(
         name="pano_ntuh_test_v2",
         type_="external",
         color="tab:green",
         title="Taiwan",
+        anon_title="Region Z",
     ),
 ]
 
@@ -102,11 +106,18 @@ METRICS: list[Metric] = [
         title="Precision",
         lim=(0.0, 1.0),
     ),
+    # Metric(
+    #     name="f1",
+    #     operating_point=OPERATING_POINT,
+    #     label="F1 Score",
+    #     title="F1 Score",
+    #     lim=(0.0, 1.0),
+    # ),
     Metric(
         name="kappa",
         operating_point=OPERATING_POINT,
-        label="Cohen's kappa",
-        title="Cohen's kappa (AI v.s. reference)",
+        label="Cohen's Kappa",
+        title="Cohen's Kappa (AI v.s. Reference)",
         lim=(0.0, 1.0),
     ),
 ]
@@ -273,7 +284,7 @@ def main(_):
     engine.set(hspace=0.075)
 
     for metric, ax in zip(metrics_to_plot, fig.axes):
-        logging.info(f"Plotting for {metric}...")
+        logging.info(f"- Metric {metric}...")
 
         assert metric.lim is not None
 
@@ -324,15 +335,12 @@ def main(_):
             )
 
         for finding_name, row in _df_finding.iterrows():
-            logging.info(
-                f"- Mean {metric.name} for {finding_name} is {row['value']:.1%} (95%"
-                f" CI: {row['ci_lower']:.1%} - {row['ci_upper']:.1%})"
-            )
-
             pvalue: float = float(row["pvalue"])
             logging.info(
-                f"- Internal/external test set {metric.name} discrepancy test pvalue:"
-                f" {pvalue:.2g}"
+                f"  - Finding: '{finding_name}'\n    - AI, mean metric across all test"
+                f" sets: {row['value']:.1%} (95% CI: {row['ci_lower']:.1%} -"
+                f" {row['ci_upper']:.1%})\n    - AI, internal/external test set metric"
+                f" discrepancy test pvalue: {pvalue:.2g}"
             )
 
             match pvalue:
@@ -399,7 +407,7 @@ def main(_):
                     dof=len(df) - 1,
                 )
                 logging.info(
-                    f"- pvalue for overall mean v.s. human mean for {finding_name}:"
+                    "    - AI mean v.s. human mean metric discrepancy test pvalue:"
                     f" {stat.pvalue(mu0=0):.2g}"
                 )
 
@@ -519,26 +527,41 @@ def main(_):
         ax.spines.top.set_visible(False)
         ax.spines.bottom.set_visible(False)
 
-    fig.legend(
-        handles=[
-            plt.plot(
-                [],
-                [],
-                color=dataset.color,
-                linewidth=0.5,
-                label=dataset.title,
-            )[0]
-            for dataset in DATASETS
-        ],
-        loc="outside lower center",
-        ncol=len(DATASETS),
-        fontsize="small",
-        frameon=False,
-    )
-    fig.suptitle("Dental finding summary performance for AI system", fontsize="large")
+    for is_anon in [False, True]:
+        handles: list[plt.Line2D]
+        pdf_path: Path
+        labelcolor: str | None
 
-    pdf_path: Path = Path(FLAGS.result_dir, "performances.pdf")
-    fig.savefig(pdf_path)
+        if is_anon:
+            handles = [
+                plt.plot(
+                    [], [], color=dataset.color, linewidth=0.5, label=dataset.anon_title
+                )[0]
+                for dataset in DATASETS
+            ]
+            pdf_path = Path(FLAGS.result_dir, "performances.anon.pdf")
+            labelcolor = "blue"
+
+        else:
+            handles = [
+                plt.plot(
+                    [], [], color=dataset.color, linewidth=0.5, label=dataset.title
+                )[0]
+                for dataset in DATASETS
+            ]
+            pdf_path = Path(FLAGS.result_dir, "performances.pdf")
+            labelcolor = None
+
+        legend = fig.legend(
+            handles=handles,
+            loc="outside lower center",
+            ncol=len(DATASETS),
+            fontsize="medium",
+            frameon=False,
+            labelcolor=labelcolor,
+        )
+        fig.savefig(pdf_path)
+        legend.remove()
 
 
 if __name__ == "__main__":

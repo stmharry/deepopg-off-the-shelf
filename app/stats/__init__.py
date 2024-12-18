@@ -1,5 +1,6 @@
 from app.stats.metrics import (
     fast_f1_score,
+    fast_f2_score,
     fast_kappa_score,
     fast_ppv_score,
     fast_sensitivity_score,

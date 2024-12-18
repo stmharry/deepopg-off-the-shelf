@@ -25,7 +25,9 @@ from app.instance_detection import (
 )
 from app.instance_detection import InstanceDetectionV1Category as Category
 from app.stats import (
+    calculate_fom_stats,
     fast_f1_score,
+    fast_f2_score,
     fast_ppv_score,
     fast_sensitivity_score,
     fast_specificity_score,
@@ -257,9 +259,8 @@ def calculate_roc_metrics(
 
     roc_metrics: dict[str, Any] = {
         "score": score,
-        "pp": tp + fp,
-        "pn": tn + fn,
-        #
+        "pp": pp,
+        "pn": pn,
         "tp": tp,
         "fp": fp,
         "tn": tn,
@@ -641,6 +642,8 @@ def evaluate(
 
     metrics: list[dict] = []
     for num, finding in enumerate(Category):
+        logging.info(f"Finding {finding.value}")
+
         metadata: CategoryMetadata = CATEGORY_METADATA[finding]
         df_finding: pd.DataFrame = df.loc[df["finding"].eq(finding.value)].sort_values(
             "score", ascending=True
@@ -653,9 +656,25 @@ def evaluate(
         basic_metrics: dict[str, float] = calculate_basic_metrics(
             label=label, score=score
         )
+        for metric_name, metric in basic_metrics.items():
+            logging.info(f"  - {metric_name}: {metric}")
+
+            metrics.append({
+                "finding": finding.value,
+                "metric": metric_name,
+                "value": metric,
+            })
+
         binary_metrics: dict[str, dict[str, float]] = compile_binary_metrics(
             df_roc_metric
         )
+        for operating_point, finding_metrics in binary_metrics.items():
+            for metric_name, metric in finding_metrics.items():
+                metrics.append({
+                    "finding": finding.value,
+                    "metric": f"{metric_name}@{operating_point}",
+                    "value": metric,
+                })
 
         report_by_tag: dict[str, dict] = {
             "ai@max_f2": {
@@ -669,28 +688,44 @@ def evaluate(
             _df_finding: pd.DataFrame = df_finding.sort_values(
                 f"score_human_{tag}", ascending=True
             )
-            label: pd.Series = _df_finding["label"]  # type: ignore
-            score: pd.Series = _df_finding[f"score_human_{tag}"]  # type: ignore
+            _label: pd.Series = _df_finding["label"]  # type: ignore
+            _score: pd.Series = _df_finding[f"score_human_{tag}"]  # type: ignore
 
             report: dict = sklearn.metrics.classification_report(  # type: ignore
-                y_true=label,
-                y_pred=score,
+                y_true=_label,
+                y_pred=_score,
                 output_dict=True,
             )
 
-            df_roc_metric: pd.DataFrame = calculate_roc_metrics(
-                label=label, score=score
+            _df_roc_metric: pd.DataFrame = calculate_roc_metrics(
+                label=_label, score=_score
             )
-            s_roc_metric: pd.Series = df_roc_metric.loc[
-                df_roc_metric["score"].diff().eq(1)
+            _s_roc_metric: pd.Series = df_roc_metric.loc[
+                _df_roc_metric["score"].diff().eq(1)
             ].squeeze()
 
-            binary_metrics |= compile_binary_metrics(
-                df_roc_metric,
+            _basic_metrics: dict[str, float] = calculate_basic_metrics(
+                label=_label, score=_score
+            )
+            for metric_name, metric in _basic_metrics.items():
+                metrics.append({
+                    "finding": finding.value,
+                    "metric": f"{tag}:{metric_name}",
+                    "value": metric,
+                })
+
+            _binary_metrics: dict[str, dict[str, float]] = compile_binary_metrics(
+                _df_roc_metric,
                 thresholds=[],
                 max_metrics=[],
-                operating_point_to_index={tag: s_roc_metric.name},
+                operating_point_to_index={tag: _s_roc_metric.name},
             )
+            for metric_name, metric in _binary_metrics[tag].items():
+                metrics.append({
+                    "finding": finding.value,
+                    "metric": f"{tag}:{metric_name}",
+                    "value": metric,
+                })
 
             report_by_tag[tag] = {
                 "tpr": report["1"]["recall"],
@@ -699,25 +734,49 @@ def evaluate(
                 "npv": report["0"]["precision"],
             }
 
-        logging.info(f"Finding {finding.value}")
-        for metric_name, metric in basic_metrics.items():
-            logging.info(f"  - {metric_name}: {metric}")
-
-            metrics.append({
-                "finding": finding.value,
-                "metric": metric_name,
-                "value": metric,
-            })
-
-        for operating_point, finding_metrics in binary_metrics.items():
-            for metric_name, metric in finding_metrics.items():
-                metrics.append({
-                    "finding": finding.value,
-                    "metric": f"{metric_name}@{operating_point}",
-                    "value": metric,
-                })
-
         if len(human_tags) > 0:
+            # these are standalone mean human reader metrics
+
+            mean_binary_metrics = calculate_fom_stats(
+                df=df_finding,
+                fom_fns={
+                    metric_name: lambda df, metric_fn=metric_fn: np.mean([
+                        metric_fn(df["label"], df[f"score_human_{tag}"])
+                        for tag in human_tags
+                    ])
+                    for metric_name, metric_fn in [
+                        # we don't use sklearn here as it's too slow
+                        ("sensitivity", fast_sensitivity_score),
+                        ("specificity", fast_specificity_score),
+                        ("ppv", fast_ppv_score),
+                        ("f1", fast_f1_score),
+                        ("f2", fast_f2_score),
+                    ]
+                },
+                axis="index",
+            )
+
+            for metric_name, metric in mean_binary_metrics.items():
+                metrics.extend([
+                    {
+                        "finding": finding.value,
+                        "metric": f"mean_human:{metric_name}.value",
+                        "value": metric.mu,
+                    },
+                    {
+                        "finding": finding.value,
+                        "metric": f"mean_human:{metric_name}.ci_lower",
+                        "value": metric.ci()[0],
+                    },
+                    {
+                        "finding": finding.value,
+                        "metric": f"mean_human:{metric_name}.ci_upper",
+                        "value": metric.ci()[1],
+                    },
+                ])
+
+            # now we perform differential statistical tests between the AI and human readers
+
             if FLAGS.stat_test:
                 test_name_margins = [("superiority", 0), ("non-inferiority", 0.05)]
 
@@ -744,6 +803,7 @@ def evaluate(
                     ("specificity", fast_specificity_score),
                     ("ppv", fast_ppv_score),
                     ("f1", fast_f1_score),
+                    ("f2", fast_f2_score),
                 ]:
 
                     for test_name, test_margin in test_name_margins:
@@ -845,13 +905,13 @@ def evaluate(
                 handles=first_ax.lines,
                 loc="outside lower center",
                 ncols=len(first_ax.lines),
-                fontsize="small",
+                fontsize="large",
                 frameon=False,
             )
 
             if FLAGS.plot_title:
                 fig.suptitle(
-                    f"Dental finding summary performance ({FLAGS.plot_title})",
+                    f"Dental Finding Assessment Performance ({FLAGS.plot_title})",
                     fontsize="x-large",
                 )
 

@@ -34,15 +34,38 @@ def fast_ppv_score(
     return float(np.sum(y_true * y_pred) / (np.sum(y_pred) + eps))
 
 
-def fast_f1_score(
+def fast_f_beta_score(
     y_true: ArrayLike,
     y_pred: ArrayLike,
+    beta: float,
     eps: float = 1e-9,
 ) -> float:
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
 
-    return float(2 * np.sum(y_true * y_pred) / (np.sum(y_true) + np.sum(y_pred) + eps))
+    return float(
+        (1 + beta * beta)
+        * np.sum(y_true * y_pred)
+        / (beta * beta * np.sum(y_true) + np.sum(y_pred) + eps)
+    )
+
+
+def fast_f1_score(
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    eps: float = 1e-9,
+) -> float:
+
+    return fast_f_beta_score(y_true, y_pred, beta=1, eps=eps)
+
+
+def fast_f2_score(
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    eps: float = 1e-9,
+) -> float:
+
+    return fast_f_beta_score(y_true, y_pred, beta=2, eps=eps)
 
 
 def fast_kappa_score(

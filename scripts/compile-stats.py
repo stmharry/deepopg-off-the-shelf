@@ -34,6 +34,7 @@ FLAGS = flags.FLAGS
 
 
 class DicomInfo(BaseModel):
+    file_name: Path
     patient_id: str
     patient_name: str
     patient_sex: Literal["M", "F"]
@@ -65,6 +66,7 @@ def process_dicom(file_name: Path) -> DicomInfo | None:
     with pydicom.dcmread(dicom_path) as ds:
         try:
             return DicomInfo(
+                file_name=file_name,
                 patient_id=ds.PatientID,
                 patient_name=str(ds.PatientName),
                 patient_sex=ds.PatientSex,
@@ -94,8 +96,6 @@ def process_demographic_stats(
     df_dicom: pd.DataFrame = pd.DataFrame(
         [dicom_info.model_dump() for dicom_info in dicom_infos]
     )
-    sex_counts: pd.Series = df_dicom["patient_sex"].value_counts()
-    age: pd.Series = df_dicom["patient_age"]  # type: ignore
 
     return {
         "Sex, n (%)": {

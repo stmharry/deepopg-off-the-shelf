@@ -108,6 +108,7 @@ def visualize_data(
             category_ids=visualize_category_ids,
             min_score=FLAGS.min_score,
         )
+        logging.debug(f"Visualizing {len(instances)} instances.")
         if ignore_scores:
             instances.remove("scores")
 
@@ -130,11 +131,12 @@ def main(_):
     category_re_groups: dict[str | None, str]
     if FLAGS.visualize_subset:
         category_re_groups = {
-            None: r"(?P<name>.*)",
-            "tooth": r"TOOTH_(?P<name>\d+)",
-            "m3": r"TOOTH_(?P<name>18|28|38|48)",
-            "findings": r"(?!TOOTH_\d+)",
+            # None: r"(?P<name>.*)",
+            "tooth": r"TOOTH(_(?P<name>\d+))?",
+            # "m3": r"TOOTH_(?P<name>18|28|38|48)",
+            "findings": r"(?!TOOTH)",
         }
+
     else:
         category_re_groups = {
             None: r"(?P<name>.*)",
