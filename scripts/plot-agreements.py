@@ -426,7 +426,8 @@ def main(_):
 
         ax.set_title(category.title, fontsize="medium", loc="left")
 
-    fig.suptitle("Dental finding summary agreement (Taiwan)", fontsize="x-large")
+    # fig.suptitle("Dental finding summary agreement (Taiwan)", fontsize="x-large")
+    breakpoint()
 
     pdf_path: Path = Path(FLAGS.result_dir, "agreements.pdf")
     fig.savefig(pdf_path)

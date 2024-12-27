@@ -189,7 +189,7 @@ def apply_per_finding(df: pd.DataFrame) -> pd.Series:
     dof: float = var_e**2 / var0_e**2 * (len(df_e) - 1)
     pvalue: float = float(2 * scipy.stats.t.cdf(-np.abs(t), df=dof))
 
-    #
+    # overall mean
 
     mu: float = float(df["value"].mean(axis=0))
     var0: float = float(df["value"].var(axis=0, ddof=1))
@@ -200,6 +200,7 @@ def apply_per_finding(df: pd.DataFrame) -> pd.Series:
     return pd.Series({
         "max_value": df["ci_upper"].max(),
         "external_max_value": df_e["ci_upper"].max(),
+        #
         "center_pos": df["position"].median(),
         "left_pos": df["position"].min(),
         "right_pos": df["position"].max(),
@@ -207,10 +208,14 @@ def apply_per_finding(df: pd.DataFrame) -> pd.Series:
         "external_center_pos": df_e["position"].median(),
         "external_left_pos": df_e["position"].min(),
         "external_right_pos": df_e["position"].max(),
+        #
+        "external_mean_value": mu_e,
+        "external_mean_ci_lower": mu_e - Z * se_e,
+        "external_mean_ci_upper": mu_e + Z * se_e,
         "pvalue": pvalue,
-        "value": mu,
-        "ci_lower": mu - Z * se,
-        "ci_upper": mu + Z * se,
+        "mean_value": mu,
+        "mean_ci_lower": mu - Z * se,
+        "mean_ci_upper": mu + Z * se,
     })
 
 
@@ -337,10 +342,24 @@ def main(_):
         for finding_name, row in _df_finding.iterrows():
             pvalue: float = float(row["pvalue"])
             logging.info(
-                f"  - Finding: '{finding_name}'\n    - AI, mean metric across all test"
-                f" sets: {row['value']:.1%} (95% CI: {row['ci_lower']:.1%} -"
-                f" {row['ci_upper']:.1%})\n    - AI, internal/external test set metric"
-                f" discrepancy test pvalue: {pvalue:.2g}"
+                "\n".join([
+                    f"  - Finding: '{finding_name}'",
+                    (
+                        "    - AI, mean metric across external test sets:"
+                        f" {row['external_mean_value']:.1%} (95% CI:"
+                        f" {row['external_mean_ci_lower']:.1%} -"
+                        f" {row['external_mean_ci_upper']:.1%})"
+                    ),
+                    (
+                        "    - AI, mean metric across all test sets:"
+                        f" {row['mean_value']:.1%} (95% CI:"
+                        f" {row['mean_ci_lower']:.1%} - {row['mean_ci_upper']:.1%})"
+                    ),
+                    (
+                        "    - AI, internal/external test set metric discrepancy test"
+                        f" pvalue: {pvalue:.2g}"
+                    ),
+                ])
             )
 
             match pvalue:
@@ -398,9 +417,9 @@ def main(_):
                 row_human = DF_HUMAN_KAPPA.loc[finding_name]
 
                 stat = TStatistic(
-                    mu=row["value"] - row_human["value"],
+                    mu=row["mean_value"] - row_human["value"],
                     se=np.sqrt(
-                        ((row["ci_upper"] - row["ci_lower"]) / (2 * Z)) ** 2
+                        ((row["mean_ci_upper"] - row["mean_ci_lower"]) / (2 * Z)) ** 2
                         + ((row_human["ci_upper"] - row_human["ci_lower"]) / (2 * Z))
                         ** 2
                     ),
@@ -527,41 +546,21 @@ def main(_):
         ax.spines.top.set_visible(False)
         ax.spines.bottom.set_visible(False)
 
-    for is_anon in [False, True]:
-        handles: list[plt.Line2D]
-        pdf_path: Path
-        labelcolor: str | None
+    handles: list[plt.Line2D] = [
+        plt.plot([], [], color=dataset.color, linewidth=0.5, label=dataset.title)[0]
+        for dataset in DATASETS
+    ]
+    fig.legend(
+        handles=handles,
+        loc="outside lower center",
+        ncol=len(DATASETS),
+        fontsize="medium",
+        frameon=False,
+        labelcolor=None,
+    )
 
-        if is_anon:
-            handles = [
-                plt.plot(
-                    [], [], color=dataset.color, linewidth=0.5, label=dataset.anon_title
-                )[0]
-                for dataset in DATASETS
-            ]
-            pdf_path = Path(FLAGS.result_dir, "performances.anon.pdf")
-            labelcolor = "blue"
-
-        else:
-            handles = [
-                plt.plot(
-                    [], [], color=dataset.color, linewidth=0.5, label=dataset.title
-                )[0]
-                for dataset in DATASETS
-            ]
-            pdf_path = Path(FLAGS.result_dir, "performances.pdf")
-            labelcolor = None
-
-        legend = fig.legend(
-            handles=handles,
-            loc="outside lower center",
-            ncol=len(DATASETS),
-            fontsize="medium",
-            frameon=False,
-            labelcolor=labelcolor,
-        )
-        fig.savefig(pdf_path)
-        legend.remove()
+    pdf_path: Path = Path(FLAGS.result_dir, "performances.pdf")
+    fig.savefig(pdf_path)
 
 
 if __name__ == "__main__":
