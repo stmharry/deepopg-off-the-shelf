@@ -1,5 +1,5 @@
 model: yolov8m-seg.pt
-epochs: 50
+epochs: 75
 batch: 1
 imgsz: 1440
 save_period: 5
@@ -8,7 +8,7 @@ workers: 12
 
 pretrained: true
 rect: true
-close_mosaic: 10
+close_mosaic: 25
 amp: true
 plots: true
 
@@ -16,9 +16,11 @@ hsv_h: 0.0
 hsv_s: 0.0
 hsv_v: 0.9
 degrees: 15.0
-scale: 0.5
-shear: 5.0
+scale: 0.75
+shear: 15.0
 perspective: 0.0
 flipud: 0.0
 fliplr: 0.0
 mosaic: 1.0
+mixup: 0.0
+copy_paste: 0.5

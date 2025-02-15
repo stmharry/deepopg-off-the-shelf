@@ -1,0 +1,72 @@
+VERSION: 2
+
+MODEL:
+  META_ARCHITECTURE: "PanopticFPNV2"
+  WEIGHTS: "detectron2://COCO-PanopticSegmentation/panoptic_fpn_R_50_3x/139514569/model_final_c10459.pkl"
+  MASK_ON: True
+
+  BACKBONE:
+    NAME: "build_resnet_fpn_backbone"
+
+  RESNETS:
+    DEPTH: 50
+    OUT_FEATURES: ["res2", "res3", "res4", "res5"]
+
+  FPN:
+    IN_FEATURES: ["res2", "res3", "res4", "res5"]
+    OUT_CHANNELS: 256
+
+  ANCHOR_GENERATOR:
+    SIZES: [[32], [64], [128], [256], [512]]
+    ASPECT_RATIOS: [[0.5, 1.0, 2.0]]
+
+  RPN:
+    HEAD_NAME: "StandardRPNHead"
+    IN_FEATURES: ["p2", "p3", "p4", "p5", "p6"]
+
+    BATCH_SIZE_PER_IMAGE: 256
+    PRE_NMS_TOPK_TRAIN: 2000
+    PRE_NMS_TOPK_TEST: 1000
+    POST_NMS_TOPK_TRAIN: 1000
+    POST_NMS_TOPK_TEST: 1000
+
+  ROI_HEADS:
+    NAME: "StandardROIHeads"
+    # NUM_CLASSES: 10
+    IN_FEATURES: ["p2", "p3", "p4", "p5"]
+    BATCH_SIZE_PER_IMAGE: 512
+    SCORE_THRESH_TEST: 0.5
+
+  ROI_BOX_HEAD:
+    NAME: "FastRCNNConvFCHead"
+    POOLER_RESOLUTION: 7
+    NUM_FC: 2
+
+  ROI_MASK_HEAD:
+    NAME: "MaskRCNNConvUpsampleHead"
+    POOLER_RESOLUTION: 14
+    NUM_CONV: 4
+
+  SEM_SEG_HEAD:
+    NAME: "SemSegFPNHead"
+    IN_FEATURES: ["p2", "p3", "p4", "p5"]
+    # NUM_CLASSES: 10
+    CONVS_DIM: 128
+    COMMON_STRIDE: 4
+    LOSS_WEIGHT: 0.5
+
+INPUT:
+  MIN_SIZE_TRAIN: (640, 672, 704, 736, 768, 800)
+  FORMAT: "RGB"
+
+DATALOADER:
+  NUM_WORKERS: 4
+
+SOLVER:
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.02
+  STEPS: (60000, 80000)
+  MAX_ITER: 90000
+
+TEST:
+  EVAL_PERIOD: 1000
